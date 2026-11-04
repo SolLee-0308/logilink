@@ -57,8 +57,12 @@ export const columnsOf = (kind: BulkKind) => (kind === "ITEM" ? ITEM_COLUMNS : R
 
 /** 엑셀 머리글 → 키. 공백·대소문자·별표(*)를 무시하고 비교한다 */
 export function mapHeaders(kind: BulkKind, headers: string[]): { keys: (string | null)[]; missing: string[] } {
+  return mapColumns(columnsOf(kind), headers);
+}
+
+/** 머리글 이름(공백·*·괄호 무시)으로 열을 찾는다 — 열 순서가 바뀌어도 된다 */
+export function mapColumns(cols: BulkColumn[], headers: string[]): { keys: (string | null)[]; missing: string[] } {
   const norm = (s: string) => s.replace(/[\s*()（）]/g, "").toLowerCase();
-  const cols = columnsOf(kind);
   const keys = headers.map((h) => cols.find((c) => norm(c.header) === norm(h))?.key ?? null);
   const missing = cols.filter((c) => c.required && !keys.includes(c.key)).map((c) => c.header);
   return { keys, missing };

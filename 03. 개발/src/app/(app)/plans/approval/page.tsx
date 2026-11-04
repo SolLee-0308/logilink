@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
 import { ApprovalScreen } from "@/features/plans/ApprovalScreen";
+import { parseApprovalListQuery } from "@/features/plans/approval-list";
 import { Forbidden } from "@/features/master/Forbidden";
 import { can } from "@/domain/permissions";
-import { PLAN_REJECT_GROUP } from "@/domain/master";
 import { todayKst } from "@/lib/format";
-import { listCodeOptions } from "@/server/master/queries";
 import { listApproval } from "@/server/plans/queries";
 import { requireUser } from "@/server/session";
+import { db } from "@/server/db";
 
 export const metadata: Metadata = { title: "승인 대기" };
 export const dynamic = "force-dynamic";
 
-export default async function ApprovalPage() {
+/** 승인 대기 목록 — 행을 누르면 상세 화면에서 승인·반려 */
+export default async function ApprovalPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requireUser();
   if (!can(me.roles, "approval", "view")) return <Forbidden title="승인 대기" crumbs={["입고 계획", "승인 대기"]} />;
-  const [rows, reasons] = await Promise.all([listApproval(me), listCodeOptions(PLAN_REJECT_GROUP)]);
-  return <ApprovalScreen rows={rows} reasons={reasons} today={todayKst()} />;
+  const initial = parseApprovalListQuery(await searchParams);
+  const client = initial.client ? await db.client.findUnique({ where: { id: Number(initial.client) }, select: { id: true, name: true } }) : null;
+  return <ApprovalScreen rows={await listApproval(me)} today={todayKst()} initial={initial} initialClient={client} />;
 }

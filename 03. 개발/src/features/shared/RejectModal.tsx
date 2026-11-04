@@ -25,7 +25,16 @@ export function RejectModal({
   target,
   reasons,
   onSubmit,
+  reasonLabel = "반려 사유",
+  submitLabel = "반려",
+  closeLabel = "취소",
+  placeholder = "화주사가 무엇을 고쳐야 하는지 적어 주세요.",
 }: {
+  /** 입고예정 취소 등 다른 사유 입력에 쓸 때 문구 */
+  reasonLabel?: string;
+  submitLabel?: string;
+  closeLabel?: string;
+  placeholder?: string;
   open: boolean;
   onClose: () => void;
   title: string;
@@ -49,7 +58,7 @@ export function RejectModal({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!code) return setError("반려 사유를 선택하세요.");
+    if (!code) return setError(`${reasonLabel}를 선택하세요.`);
     if (reason?.requiresText && !text.trim()) return setError(`"${reason.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`);
     setPending(true);
     const r = await onSubmit(code, text.trim());
@@ -68,16 +77,16 @@ export function RejectModal({
       footer={
         <>
           <Button onClick={close} disabled={pending}>
-            취소
+            {closeLabel}
           </Button>
-          <Button type="submit" variant="primary" disabled={pending}>
-            반려
+          <Button type="submit" variant="danger" disabled={pending}>
+            {submitLabel}
           </Button>
         </>
       }
     >
       <div className={styles.target}>{target}</div>
-      <FormField label="반려 사유" htmlFor="rej-code" required>
+      <FormField label={reasonLabel} htmlFor="rej-code" required>
         <Select id="rej-code" value={code} onChange={(e) => setCode(e.target.value)} data-autofocus>
           <option value="">사유를 선택하세요</option>
           {reasons.map((r) => (
@@ -93,7 +102,7 @@ export function RejectModal({
           value={text}
           onChange={(e) => setText(e.target.value)}
           maxLength={500}
-          placeholder="화주사가 무엇을 고쳐야 하는지 적어 주세요."
+          placeholder={placeholder}
         />
       </FormField>
       <FormError>{error}</FormError>

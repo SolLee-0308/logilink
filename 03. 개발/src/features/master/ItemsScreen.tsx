@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
-import { LinkButton } from "@/components/ui/Button";
+import { LinkButton, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { Select } from "@/components/ui/Form";
@@ -187,7 +187,13 @@ export function ItemsScreen({
 
   return (
     <>
-      <MasterHeader title={title} count={rows.length} rules={RULES.items} />
+      <MasterHeader
+        title={title}
+        count={rows.length}
+        rules={RULES.items}
+        // 단건·엑셀 일괄 등록은 등록 화면의 탭에서 고른다
+        actions={canEdit ? <CreateButton href={`/master/items/new${clientQuery}`}>등록</CreateButton> : undefined}
+      />
       <FilterBar>
         {!singleClient && (
           <>
@@ -239,14 +245,7 @@ export function ItemsScreen({
       <SplitView
         list={
           <>
-            <ListToolbar total={list.length}>
-              {/* 단건·엑셀 일괄 등록은 등록 화면의 탭에서 고른다 */}
-              {canEdit && (
-                <LinkButton size="sm" variant="primary" href={`/master/items/new${clientQuery}`}>
-                  + 등록
-                </LinkButton>
-              )}
-            </ListToolbar>
+            <ListToolbar total={list.length} />
             <DataTable
               caption={`${title} 목록`}
               columns={columns}

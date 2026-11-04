@@ -96,3 +96,15 @@ a {
     animation: none !important;
   }
 }
+
+/* 입력칸 안내 글자(placeholder) — 모든 입력칸 공통 */
+input::placeholder,
+textarea::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
+}
+
+/* 빈 날짜 칸의 "연도. 월. 일." — placeholder와 같은 연한 색 */
+input[type="date"][data-empty]::-webkit-datetime-edit {
+  color: var(--placeholder);
+}

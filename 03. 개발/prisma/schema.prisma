@@ -106,6 +106,7 @@ model Center {
   company     Company        @relation(fields: [companyId], references: [id])
   manager     User?          @relation("CenterManager", fields: [managerUserId], references: [id])
   users       User[]         @relation("CenterUsers")
+  defaultUsers   User[]   @relation("UserDefaultCenter")
   holidays    Holiday[]
   plans       InboundPlan[]
   clientLinks ClientCenter[]
@@ -147,6 +148,7 @@ model Client {
   items        Item[]
   itemRequests ItemRequest[]
   plans        InboundPlan[]
+  planAiReads  PlanAiRead[]
   users        User[]
 
   @@map("tb_client")
@@ -349,6 +351,8 @@ model User {
   roles     UserRole[]
   clientId  Int?     @map("client_id")
   centerId  Int?     @map("center_id")
+  /// 화주사 사용자의 기본 센터 — 입고예정 등록에서 처음 고른 센터 (그 화주사의 이용 센터 중 하나, 2026-11-04 Sol)
+  defaultCenterId Int? @map("default_center_id")
   isActive  Boolean  @default(true) @map("is_active")
   version   Int      @default(1)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -366,6 +370,7 @@ model User {
 
   client         Client?   @relation(fields: [clientId], references: [id])
   center         Center?   @relation("CenterUsers", fields: [centerId], references: [id])
+  defaultCenter  Center?   @relation("UserDefaultCenter", fields: [defaultCenterId], references: [id], onDelete: SetNull)
   managedCenters Center[]  @relation("CenterManager")
   managedClients Client[]  @relation("ClientManager")
   sessions       Session[]
@@ -552,6 +557,7 @@ model InboundPlan {
   lines     InboundPlanLine[]
   rejects   InboundPlanReject[]
   histories InboundPlanHistory[]
+  aiReads   PlanAiRead[]
 
   @@index([status, centerId])
   @@index([clientId, status])
@@ -647,4 +653,31 @@ model InboundPlanHistory {
   @@index([planId])
   @@index([actorId, action, at])
   @@map("tb_inb_plan_his")
+}
+
+/// 입고예정 AI 판독 작업 — 정의서 ①: 판독 결과는 저장 전까지 초안. AI 원본 결과와 사용자 수정 내용을 모두 보존한다.
+/// 원본 이미지 파일은 저장소가 정해질 때까지 보관하지 않고 파일 이름만 남긴다 (개발 후 처리 목록: 원본 문서 저장소)
+model PlanAiRead {
+  id         Int       @id @default(autoincrement())
+  clientId   Int       @map("client_id")
+  /// 이 판독으로 저장한 입고예정 (저장 전·버린 판독은 null)
+  planId     Int?      @map("plan_id")
+  fileNames  String[]  @map("file_names")
+  /// 판독 모델 ID. 예시 판독(API 키 없음)이면 "example"
+  model      String    @db.VarChar(40)
+  isExample  Boolean   @default(false) @map("is_example")
+  /// AI가 돌려준 원본 결과 그대로
+  rawResult  Json      @map("raw_result")
+  /// 사용자가 매칭·수정해 저장한 라인
+  finalLines Json?     @map("final_lines")
+  createdBy  String    @map("created_by") @db.VarChar(50)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  savedAt    DateTime? @map("saved_at") @db.Timestamptz(3)
+
+  client Client       @relation(fields: [clientId], references: [id])
+  plan   InboundPlan? @relation(fields: [planId], references: [id])
+
+  @@index([clientId, createdAt])
+  @@index([planId])
+  @@map("tb_inb_plan_ai_read")
 }

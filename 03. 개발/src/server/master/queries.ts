@@ -69,7 +69,12 @@ async function historyByKey(tableName: string): Promise<Map<string, ChangeEntry[
 
 export async function listClientOptions(): Promise<ClientOption[]> {
   const cid = await clientScope();
-  return db.client.findMany({ where: { id: cid }, select: { id: true, code: true, name: true, isActive: true }, orderBy: { code: "asc" } });
+  const rows = await db.client.findMany({
+    where: { id: cid },
+    select: { id: true, code: true, name: true, isActive: true, centers: { select: { center: { select: { id: true } } } } },
+    orderBy: { code: "asc" },
+  });
+  return rows.map(({ centers, ...c }) => ({ ...c, centerIds: centers.map((x) => x.center.id) }));
 }
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -308,7 +313,7 @@ export async function listUsers(id?: number): Promise<UserRow[]> {
     db.user.findMany({
       where: { clientId: cid, id },
       orderBy: { loginId: "asc" },
-      include: { client: { select: { name: true } }, center: { select: { name: true } } },
+      include: { client: { select: { name: true } }, center: { select: { name: true } }, defaultCenter: { select: { name: true } } },
     }),
     historyByKey("tb_user"),
   ]);
@@ -321,6 +326,8 @@ export async function listUsers(id?: number): Promise<UserRow[]> {
     clientName: r.client?.name ?? null,
     centerId: r.centerId,
     centerName: r.center?.name ?? null,
+    defaultCenterId: r.defaultCenterId,
+    defaultCenterName: r.defaultCenter?.name ?? null,
     isActive: r.isActive,
     locked: !!r.lockedAt,
     lockedAt: r.lockedAt ? iso(r.lockedAt) : null,

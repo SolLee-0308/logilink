@@ -9,11 +9,12 @@ import {
   IconClock,
   IconDoc,
   IconList,
+  IconPlus,
   IconTruck,
 } from "@/components/icons";
 
 /** 사이드바 건수 배지 키 */
-export type NavCountKey = "approvalWaiting" | "itemRequestWaiting";
+export type NavCountKey = "approvalWaiting" | "itemRequestWaiting" | "planRejected";
 
 export interface NavChild {
   label: string;
@@ -54,6 +55,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "입고 계획",
     items: [
+      // 화주사: 입고예정 등록(승인 전 건 관리, 건수 = 반려되어 고칠 건) / 3PL: 승인 대기 — 권한에 따라 하나만 보인다
+      { label: "입고예정 등록", href: "/plans/entry", icon: <IconPlus />, countKey: "planRejected" },
       { label: "승인 대기", href: "/plans/approval", icon: <IconCheck />, countKey: "approvalWaiting" },
       { label: "입고예정 조회", icon: <IconDoc /> },
       { label: "ASN·상차 현황", icon: <IconTruck /> },

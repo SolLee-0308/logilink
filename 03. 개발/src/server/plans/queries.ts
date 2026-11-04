@@ -4,7 +4,7 @@ import type { PlanActor } from "@/server/plans/service";
 import type { ItemUnit } from "@/domain/master";
 import { can } from "@/domain/permissions";
 import { kstDayRange, todayKst } from "@/lib/format";
-import type { ApprovalRow, ApprovalTab, PlanDetail } from "@/features/plans/types";
+import type { ApprovalQueue, ApprovalRow, ApprovalTab, PlanDetail } from "@/features/plans/types";
 
 const iso = (d: Date) => d.toISOString();
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -32,6 +32,7 @@ function toRow(p: RowSource, tab: ApprovalTab): ApprovalRow {
     tab,
     clientId: p.clientId,
     clientName: p.client.name,
+    centerId: p.centerId,
     centerName: p.center.name,
     planDate: ymd(p.planDate),
     status: p.status,
@@ -77,11 +78,19 @@ export async function countApprovalWaiting(me: PlanActor) {
   return db.inboundPlan.count({ where: { ...centerScope(me), status: "WAITING" } });
 }
 
+/** 상세를 볼 수 있는 범위 — 3PL: 소속 센터 / 화주사(입고예정 등록): 자기 화주사 */
+function detailScope(me: PlanActor) {
+  if (can(me.roles, "approval", "view")) return centerScope(me);
+  if (can(me.roles, "planEntry", "view") && me.clientId) return { clientId: me.clientId };
+  return null;
+}
+
 /** 상세 — 라인·가장 최근 반려본·처리 이력 */
 export async function getPlanDetail(me: PlanActor, id: number): Promise<PlanDetail | null> {
-  if (!can(me.roles, "approval", "view")) return null;
+  const scope = detailScope(me);
+  if (!scope) return null;
   const p = await db.inboundPlan.findFirst({
-    where: { id, ...centerScope(me) },
+    where: { id, ...scope },
     include: {
       client: { select: { name: true } },
       center: { select: { name: true } },
@@ -98,6 +107,7 @@ export async function getPlanDetail(me: PlanActor, id: number): Promise<PlanDeta
     planNo: base.planNo,
     clientId: base.clientId,
     clientName: base.clientName,
+    centerId: base.centerId,
     centerName: base.centerName,
     planDate: base.planDate,
     status: base.status,
@@ -149,4 +159,66 @@ export async function getPlanDetail(me: PlanActor, id: number): Promise<PlanDeta
       reasonText: h.reasonText,
     })),
   };
+}
+
+/** 승인대기 순서 — 목록의 승인대기 탭과 같은 순서(입고예정일 → 번호). 상세에서 [이전]·[다음]·처리 후 다음 건 */
+export async function approvalQueue(me: PlanActor, id: number): Promise<ApprovalQueue> {
+  const ids = can(me.roles, "approval", "view")
+    ? (
+        await db.inboundPlan.findMany({
+          where: { ...centerScope(me), status: "WAITING" },
+          orderBy: [{ planDate: "asc" }, { planNo: "asc" }],
+          select: { id: true },
+        })
+      ).map((r) => r.id)
+    : [];
+  const i = ids.indexOf(id);
+  return {
+    position: i >= 0 ? i + 1 : null,
+    total: ids.length,
+    prevId: i > 0 ? ids[i - 1] : null,
+    nextId: i >= 0 ? (ids[i + 1] ?? null) : null,
+    afterId: (i >= 0 ? ids[i + 1] : undefined) ?? ids.find((x) => x !== id) ?? null,
+  };
+}
+
+export interface ClientPick {
+  id: number;
+  code: string;
+  name: string;
+  bizNo: string;
+  isActive: boolean;
+}
+
+/**
+ * 화주사 찾기 — 화주사가 많아져도 고를 수 있게 서버에서 찾는다 (화주사명·화주사 코드·사업자번호).
+ * 3PL 사용자는 소속 센터를 이용하는 화주사만 (센터가 없는 계정은 전체).
+ */
+export async function searchClients(me: PlanActor, opt: { q: string; offset?: number }): Promise<{ items: ClientPick[]; total: number }> {
+  if (!can(me.roles, "approval", "view")) return { items: [], total: 0 };
+  const q = opt.q.trim().slice(0, 50);
+  const center = me.centerId ? await db.center.findUnique({ where: { id: me.centerId }, select: { code: true } }) : null;
+  const where = {
+    ...(center ? { centers: { some: { centerCode: center.code } } } : {}),
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: "insensitive" as const } },
+            { code: { contains: q, mode: "insensitive" as const } },
+            { bizNo: { contains: q } },
+          ],
+        }
+      : {}),
+  };
+  const [total, items] = await Promise.all([
+    db.client.count({ where }),
+    db.client.findMany({
+      where,
+      orderBy: [{ isActive: "desc" }, { name: "asc" }],
+      skip: Math.max(opt.offset ?? 0, 0),
+      take: 50,
+      select: { id: true, code: true, name: true, bizNo: true, isActive: true },
+    }),
+  ]);
+  return { items, total };
 }

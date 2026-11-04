@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
-import { Button } from "@/components/ui/Button";
+import { Button, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input } from "@/components/ui/Form";
@@ -59,7 +59,16 @@ export function CodesScreen({
 
   return (
     <>
-      <MasterHeader title="사유 코드" count={rows.length} rules={RULES.codes} />
+      <MasterHeader
+        title="사유 코드"
+        count={rows.length}
+        rules={RULES.codes}
+        actions={
+          <CreateButton onClick={edit.openNew} disabled={!group}>
+            등록
+          </CreateButton>
+        }
+      />
       <FilterBar>
         <FilterField label="코드 그룹">
           <ChipGroup
@@ -86,11 +95,7 @@ export function CodesScreen({
       <SplitView
         list={
           <>
-            <ListToolbar total={list.length}>
-              <Button variant="primary" size="sm" onClick={edit.openNew} disabled={!group}>
-                + 등록
-              </Button>
-            </ListToolbar>
+            <ListToolbar total={list.length} />
             <DataTable
               caption={`${group?.name ?? ""} 코드 목록`}
               columns={columns}

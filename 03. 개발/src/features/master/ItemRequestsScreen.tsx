@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Tag } from "@/components/ui/Badges";
-import { LinkButton } from "@/components/ui/Button";
+import { CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { Select } from "@/components/ui/Form";
@@ -165,7 +165,13 @@ export function ItemRequestsScreen({
 
   return (
     <>
-      <MasterHeader title="품목 등록 요청" count={counts.wait} rules={RULES.itemRequests} />
+      <MasterHeader
+        title="품목 등록 요청"
+        count={counts.wait}
+        rules={RULES.itemRequests}
+        // 단건·엑셀 일괄 요청은 등록 요청 화면의 탭에서 고른다
+        actions={!canReview ? <CreateButton href="/master/item-requests/new">등록 요청</CreateButton> : undefined}
+      />
       <FilterBar>
         {clients.length > 1 && (
           <>
@@ -192,15 +198,7 @@ export function ItemRequestsScreen({
       </FilterBar>
       <Tabs label="요청 상태" value={tab} onChange={setTab} panelId="req-body" items={REQ_TABS.map((k) => ({ key: k, label: tabLabel[k], count: counts[k] }))} />
       <div id="req-body" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        <ListToolbar total={list.length}>
-          <span className="muted">행을 누르면 상세 화면에서 {canReview ? "확인·등록·반려합니다." : "내용과 처리 결과를 봅니다."}</span>
-          {!canReview && (
-            // 단건·엑셀 일괄 요청은 등록 요청 화면의 탭에서 고른다
-            <LinkButton size="sm" variant="primary" href="/master/item-requests/new">
-              + 등록 요청
-            </LinkButton>
-          )}
-        </ListToolbar>
+        <ListToolbar total={list.length} />
         <DataTable
           caption="품목 등록 요청 목록"
           columns={columns}

@@ -1,6 +1,6 @@
 import "server-only";
 import ExcelJS from "exceljs";
-import { BULK_MAX_ROWS, columnsOf, isExampleRow, mapHeaders, missingHeaderMessage, type BulkKind, type RawRow } from "@/domain/item-bulk";
+import { BULK_MAX_ROWS, columnsOf, isExampleRow, mapColumns, missingHeaderMessage, type BulkColumn, type BulkKind, type RawRow } from "@/domain/item-bulk";
 
 /**
  * 품목 엑셀 일괄 등록·요청 양식 만들기 / 올린 파일 읽기 (서버에서만)
@@ -9,11 +9,40 @@ import { BULK_MAX_ROWS, columnsOf, isExampleRow, mapHeaders, missingHeaderMessag
 
 const TITLE: Record<BulkKind, string> = { ITEM: "품목 일괄 등록", REQUEST: "품목 등록 요청" };
 
-export async function buildTemplate(kind: BulkKind): Promise<Buffer> {
-  const cols = columnsOf(kind);
+/** 양식 한 종류 — 첫 시트 이름·열·최대 행·작성 안내·머리글 검사 */
+export interface SheetSpec {
+  title: string;
+  columns: BulkColumn[];
+  maxRows: number;
+  guide: string[];
+  isExample: (raw: RawRow) => boolean;
+  /** 필수 열이 빠졌을 때 안내 (없으면 null) */
+  headerError: (headers: string[], keys: (string | null)[], missing: string[]) => string | null;
+}
+
+function itemSpec(kind: BulkKind): SheetSpec {
+  return {
+    title: TITLE[kind],
+    columns: columnsOf(kind),
+    maxRows: BULK_MAX_ROWS,
+    guide: [
+      "올리면 먼저 행마다 검사 결과를 보여 주고, 오류가 없는 행만 등록합니다. 오류 행은 내려받아 고친 뒤 다시 올리면 됩니다.",
+      ...(kind === "REQUEST" ? ["요청은 3PL이 검토한 뒤 품목으로 등록됩니다. 단위 환산(BOX·PLT 입수)과 추가 바코드는 3PL이 등록 후 보완합니다."] : []),
+    ],
+    isExample: (raw) => isExampleRow(kind, raw),
+    headerError: (headers, _keys, missing) => (missing.length ? missingHeaderMessage(kind, headers, missing) : null),
+  };
+}
+
+export const buildTemplate = (kind: BulkKind) => buildSheetTemplate(itemSpec(kind));
+export const readRows = (kind: BulkKind, data: ArrayBuffer) => readSheet(itemSpec(kind), data);
+
+
+export async function buildSheetTemplate(spec: SheetSpec): Promise<Buffer> {
+  const cols = spec.columns;
   const wb = new ExcelJS.Workbook();
   wb.creator = "LogiLink";
-  const ws = wb.addWorksheet(TITLE[kind], { views: [{ state: "frozen", ySplit: 1 }] });
+  const ws = wb.addWorksheet(spec.title, { views: [{ state: "frozen", ySplit: 1 }] });
   ws.columns = cols.map((c) => ({ header: c.required ? `${c.header}*` : c.header, key: c.key, width: c.width }));
 
   const head = ws.getRow(1);
@@ -35,7 +64,7 @@ export async function buildTemplate(kind: BulkKind): Promise<Buffer> {
     const col = ws.getColumn(i + 1);
     if (/code|barcode|Barcode/i.test(c.key)) col.numFmt = "@";
     if (c.list) {
-      for (let r = 2; r <= BULK_MAX_ROWS + 1; r++) {
+      for (let r = 2; r <= spec.maxRows + 1; r++) {
         ws.getCell(r, i + 1).dataValidation = {
           type: "list",
           allowBlank: !c.required,
@@ -57,10 +86,8 @@ export async function buildTemplate(kind: BulkKind): Promise<Buffer> {
   guide.getRow(1).font = { bold: true };
   for (const c of cols) guide.addRow({ h: c.header, r: c.required ? "필수" : "", n: c.note });
   guide.addRow({});
-  guide.addRow({ h: "공통", n: `첫 번째 시트의 2행부터 입력합니다. 예시 행은 지우거나 덮어쓰세요. 한 번에 최대 ${BULK_MAX_ROWS.toLocaleString()}행까지 올릴 수 있습니다.` });
-  guide.addRow({ h: "", n: "올리면 먼저 행마다 검사 결과를 보여 주고, 오류가 없는 행만 등록합니다. 오류 행은 내려받아 고친 뒤 다시 올리면 됩니다." });
-  if (kind === "REQUEST")
-    guide.addRow({ h: "", n: "요청은 3PL이 검토한 뒤 품목으로 등록됩니다. 단위 환산(BOX·PLT 입수)과 추가 바코드는 3PL이 등록 후 보완합니다." });
+  guide.addRow({ h: "공통", n: `첫 번째 시트의 2행부터 입력합니다. 예시 행은 지우거나 덮어쓰세요. 한 번에 최대 ${spec.maxRows.toLocaleString()}행까지 올릴 수 있습니다.` });
+  for (const n of spec.guide) guide.addRow({ h: "", n });
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
@@ -83,7 +110,7 @@ function cellText(v: ExcelJS.CellValue): string {
 
 export type ReadResult = { ok: true; rows: { rowNo: number; raw: RawRow }[] } | { ok: false; error: string };
 
-export async function readRows(kind: BulkKind, data: ArrayBuffer): Promise<ReadResult> {
+export async function readSheet(spec: SheetSpec, data: ArrayBuffer): Promise<ReadResult> {
   const wb = new ExcelJS.Workbook();
   try {
     await wb.xlsx.load(data);
@@ -96,8 +123,9 @@ export async function readRows(kind: BulkKind, data: ArrayBuffer): Promise<ReadR
   const headerRow = ws.getRow(1);
   const headers: string[] = [];
   for (let c = 1; c <= headerRow.cellCount; c++) headers.push(cellText(headerRow.getCell(c).value).trim());
-  const { keys, missing } = mapHeaders(kind, headers);
-  if (missing.length) return { ok: false, error: missingHeaderMessage(kind, headers, missing) };
+  const { keys, missing } = mapColumns(spec.columns, headers);
+  const headerError = spec.headerError(headers, keys, missing);
+  if (headerError) return { ok: false, error: headerError };
 
   const rows: { rowNo: number; raw: RawRow }[] = [];
   for (let r = 2; r <= ws.rowCount; r++) {
@@ -106,10 +134,10 @@ export async function readRows(kind: BulkKind, data: ArrayBuffer): Promise<ReadR
     keys.forEach((k, i) => {
       if (k) raw[k] = cellText(row.getCell(i + 1).value).trim();
     });
-    if (Object.values(raw).every((v) => !v) || isExampleRow(kind, raw)) continue; // 빈 행·예시 행
+    if (Object.values(raw).every((v) => !v) || spec.isExample(raw)) continue; // 빈 행·예시 행
     rows.push({ rowNo: r, raw });
   }
   if (!rows.length) return { ok: false, error: "입력된 행이 없습니다. 2행부터 품목을 입력하세요." };
-  if (rows.length > BULK_MAX_ROWS) return { ok: false, error: `한 번에 ${BULK_MAX_ROWS.toLocaleString()}행까지 올릴 수 있습니다 (지금 ${rows.length.toLocaleString()}행). 나눠서 올리세요.` };
+  if (rows.length > spec.maxRows) return { ok: false, error: `한 번에 ${spec.maxRows.toLocaleString()}행까지 올릴 수 있습니다 (지금 ${rows.length.toLocaleString()}행). 나눠서 올리세요.` };
   return { ok: true, rows };
 }

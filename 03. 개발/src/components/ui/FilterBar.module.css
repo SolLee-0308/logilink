@@ -1,6 +1,6 @@
 .bar {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--card-line);
   border-radius: var(--r-box);
   padding: 12px;
   display: flex;

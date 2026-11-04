@@ -5,7 +5,9 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
   { className, ...rest },
   ref,
 ) {
-  return <input ref={ref} className={`${styles.control} ${className ?? ""}`} {...rest} />;
+  // 날짜 칸이 비어 있으면 "연도. 월. 일." 안내 글자를 placeholder처럼 연하게 (globals.css)
+  const emptyDate = rest.type === "date" && !rest.value;
+  return <input ref={ref} className={`${styles.control} ${className ?? ""}`} data-empty={emptyDate || undefined} {...rest} />;
 });
 
 export const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(

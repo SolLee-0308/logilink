@@ -10,6 +10,7 @@
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "exceljs": "^4.4.0",

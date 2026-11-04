@@ -610,6 +610,8 @@ const requestSchema = z.object({
   expiryManaged: z.boolean().nullable(),
   lotManaged: z.boolean().nullable(),
   note: z.string().trim().max(500, "메모는 500자 이내로 입력하세요."),
+  /** 새 요청의 원본 — 입고예정 등록 중 엑셀(EXCEL)·AI 판독(AI)에서 보낸 미매칭 신규 품목 */
+  source: z.enum(["DIRECT", "EXCEL", "AI"]).default("DIRECT"),
 });
 
 
@@ -677,7 +679,7 @@ export async function submitItemRequest(input: z.input<typeof requestSchema>): P
 
       if (!v.id) {
         const [requestNo] = await nextRequestNos(tx, 1);
-        const row = await tx.itemRequest.create({ data: { ...fields, requestNo, clientId, source: "DIRECT", requestedBy: actor } });
+        const row = await tx.itemRequest.create({ data: { ...fields, requestNo, clientId, source: v.source, requestedBy: actor } });
         await tx.itemRequestHistory.create({ data: { requestId: row.id, action: "REQUEST", actor, actorId: me.id } });
         return done(`품목 등록 요청 ${requestNo}을(를) 보냈습니다. 3PL이 검토 후 등록합니다.`, { id: row.id, requestNo });
       }
@@ -923,6 +925,8 @@ const userSchema = z
     roles: z.array(z.enum(USER_ROLES)).min(1, "역할을 하나 이상 고르세요."),
     clientId: z.number().int().positive().nullable(),
     centerId: z.number().int().positive().nullable(),
+    /** 화주사 사용자의 기본 센터 (입고예정 등록 센터 기본값) */
+    defaultCenterId: z.number().int().positive().nullable().default(null),
     isActive: z.boolean(),
   })
   .superRefine((v, ctx) => {
@@ -944,7 +948,11 @@ export async function saveUser(input: z.input<typeof userSchema>): Promise<Actio
   if (!p.success) return invalid(p.error);
   const v = { ...p.data, roles: sortRoles(p.data.roles) };
   const org = ROLE_META[v.roles[0]].org;
-  const scope = { clientId: org === "SHIPPER" ? v.clientId : null, centerId: org === "TPL" ? v.centerId : null };
+  const scope = {
+    clientId: org === "SHIPPER" ? v.clientId : null,
+    centerId: org === "TPL" ? v.centerId : null,
+    defaultCenterId: org === "SHIPPER" ? v.defaultCenterId : null,
+  };
   const actor = me.name;
 
   return run(() =>
@@ -958,6 +966,12 @@ export async function saveUser(input: z.input<typeof userSchema>): Promise<Actio
         if (!c) return fail("VALIDATION", "입력 내용을 확인하세요.", { clientId: "화주사를 찾을 수 없습니다." });
         if (!c.isActive && (!v.id || (await tx.user.findUnique({ where: { id: v.id } }))?.clientId !== c.id))
           return fail("VALIDATION", "입력 내용을 확인하세요.", { clientId: "사용 중인 화주사를 고르세요." });
+        // 기본 센터는 그 화주사가 이용하는 센터 중에서만
+        if (scope.defaultCenterId) {
+          const center = await tx.center.findUnique({ where: { id: scope.defaultCenterId }, select: { code: true } });
+          const linked = center && (await tx.clientCenter.findUnique({ where: { clientId_centerCode: { clientId: scope.clientId, centerCode: center.code } } }));
+          if (!linked) return fail("VALIDATION", "입력 내용을 확인하세요.", { defaultCenterId: "이 화주사가 이용하는 센터를 고르세요." });
+        }
       }
       if (!v.id) {
         if (await tx.user.findUnique({ where: { loginId: v.loginId } }))
@@ -966,7 +980,7 @@ export async function saveUser(input: z.input<typeof userSchema>): Promise<Actio
           data: { loginId: v.loginId, name: v.name, roles: v.roles, ...scope, isActive: v.isActive, createdBy: actor, updatedBy: actor },
         });
         await log(tx, "tb_user", String(row.id), "CREATE", actor, null, {
-          loginId: row.loginId, name: row.name, roles: rolesText(row.roles), clientId: row.clientId, centerId: row.centerId, isActive: row.isActive,
+          loginId: row.loginId, name: row.name, roles: rolesText(row.roles), clientId: row.clientId, centerId: row.centerId, defaultCenterId: row.defaultCenterId, isActive: row.isActive,
         });
         return done(`사용자 ${row.name}(${row.loginId})을(를) 등록했습니다.`, { id: row.id });
       }
@@ -974,7 +988,7 @@ export async function saveUser(input: z.input<typeof userSchema>): Promise<Actio
       if (!cur) return fail("NOT_FOUND", "사용자를 찾을 수 없습니다.");
       if (outOfScope(me, cur.clientId) || (cur.roles.includes("TPL_ADMIN") && !meAdmin)) return forbidden();
       if (cur.version !== v.version) return conflict();
-      const d = diff({ ...cur, roles: rolesText(cur.roles) }, { name: v.name, roles: rolesText(v.roles), clientId: scope.clientId, centerId: scope.centerId, isActive: v.isActive });
+      const d = diff({ ...cur, roles: rolesText(cur.roles) }, { name: v.name, roles: rolesText(v.roles), clientId: scope.clientId, centerId: scope.centerId, defaultCenterId: scope.defaultCenterId, isActive: v.isActive });
       if (!d) return done("바뀐 내용이 없습니다.", { id: cur.id });
       const r = await tx.user.updateMany({
         where: { id: v.id, version: v.version },

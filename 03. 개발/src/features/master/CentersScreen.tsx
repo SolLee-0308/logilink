@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { AddressInput } from "@/components/ui/AddressInput";
 import { ActiveBadge } from "@/components/ui/Badges";
-import { Button } from "@/components/ui/Button";
+import { Button, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
@@ -63,7 +63,12 @@ export function CentersScreen({ rows, candidates, canEdit }: { rows: CenterRow[]
 
   return (
     <>
-      <MasterHeader title="센터" count={rows.length} rules={RULES.centers} />
+      <MasterHeader
+        title="센터"
+        count={rows.length}
+        rules={RULES.centers}
+        actions={canEdit ? <CreateButton onClick={edit.openNew}>등록</CreateButton> : undefined}
+      />
       <FilterBar>
         <FilterField label="사용 여부">
           <ChipGroup options={ACTIVE_OPTIONS} value={active} onChange={setActive} />
@@ -72,13 +77,7 @@ export function CentersScreen({ rows, candidates, canEdit }: { rows: CenterRow[]
       <SplitView
         list={
           <>
-            <ListToolbar total={list.length}>
-              {canEdit && (
-                <Button variant="primary" size="sm" onClick={edit.openNew}>
-                  + 등록
-                </Button>
-              )}
-            </ListToolbar>
+            <ListToolbar total={list.length} />
             <DataTable
               caption="센터 목록"
               columns={columns}

@@ -1,0 +1,110 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.search {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: var(--fs-13);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 8px 10px;
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 1px;
+}
+
+.listWrap {
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  max-height: min(420px, 50vh);
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card-head);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--card-line);
+}
+
+.table td {
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-row);
+}
+
+.table tbody tr {
+  cursor: pointer;
+}
+
+.table tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.on,
+.on:hover {
+  background: var(--violet-50) !important;
+}
+
+.cCheck {
+  width: 36px;
+}
+
+.already {
+  margin-left: 6px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.flags {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.empty {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-12);
+}
+
+.picked {
+  margin-right: auto;
+  font-size: var(--fs-13);
+}
+
+.clear {
+  margin-left: 8px;
+  border: 0;
+  background: none;
+  color: var(--violet-600);
+  font-size: var(--fs-12);
+  text-decoration: underline;
+  cursor: pointer;
+}

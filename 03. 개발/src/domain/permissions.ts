@@ -73,6 +73,7 @@ export function resourceOfPath(href: string): Resource {
   if (href.startsWith("/master/item-requests")) return "itemRequests";
   if (href.startsWith("/master/holidays")) return "holidays";
   if (href.startsWith("/plans/approval")) return "approval";
+  if (href.startsWith("/plans/entry")) return "planEntry";
   return "master";
 }
 

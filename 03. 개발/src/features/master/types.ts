@@ -60,6 +60,8 @@ export interface ClientOption {
   code: string;
   name: string;
   isActive: boolean;
+  /** 이용 센터 id (사용자 기본 센터 고르기) */
+  centerIds?: number[];
 }
 
 export interface ItemUomRow {
@@ -196,6 +198,9 @@ export interface UserRow extends Audit {
   clientName: string | null;
   centerId: number | null;
   centerName: string | null;
+  /** 화주사 사용자의 기본 센터 (입고예정 등록 센터 기본값) */
+  defaultCenterId: number | null;
+  defaultCenterName: string | null;
   isActive: boolean;
   /** 로그인 잠금 (5회 연속 실패) */
   locked: boolean;

@@ -5,6 +5,8 @@ interface PageHeaderProps {
   /** 메뉴 경로 (마지막 항목이 현재 화면) */
   crumbs: string[];
   title: string;
+  /** 제목 바로 옆 상태 배지·태그 */
+  badges?: React.ReactNode;
   count?: number;
   /** 도움말(?) 버튼을 누를 때 */
   onHelp?: () => void;
@@ -13,7 +15,7 @@ interface PageHeaderProps {
   actions?: React.ReactNode;
 }
 
-export function PageHeader({ crumbs, title, count, onHelp, helpLabel = "화면 규칙 보기", actions }: PageHeaderProps) {
+export function PageHeader({ crumbs, title, badges, count, onHelp, helpLabel = "화면 규칙 보기", actions }: PageHeaderProps) {
   return (
     <header className={styles.wrap}>
       <nav className={styles.crumb} aria-label="현재 위치">
@@ -27,6 +29,7 @@ export function PageHeader({ crumbs, title, count, onHelp, helpLabel = "화면 �
       </nav>
       <div className={styles.head}>
         <h1>{title}</h1>
+        {badges}
         {count !== undefined && <CountBadge value={count} label={`${title} 건수`} />}
         {onHelp && (
           <button type="button" className={styles.help} onClick={onHelp} aria-label={helpLabel}>

@@ -134,7 +134,7 @@ async function main() {
   const rls = await db.$queryRawUnsafe<{ relname: string; relrowsecurity: boolean }[]>(
     "SELECT relname, relrowsecurity FROM pg_class WHERE relname LIKE 'tb_inb_plan%' AND relkind = 'r'",
   );
-  ok(rls.length === 5 && rls.every((x) => x.relrowsecurity), "새 테이블 5개 RLS 켜짐");
+  ok(rls.length === 6 && rls.every((x) => x.relrowsecurity), "입고예정 테이블 6개(AI 판독 작업 포함) RLS 켜짐");
 
   console.log(`\n${pass}/${pass + fail} 통과`);
   await db.$disconnect();

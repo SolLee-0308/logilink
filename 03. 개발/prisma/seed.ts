@@ -274,6 +274,7 @@ async function main() {
     ["do.yuna", "최유나", ["SHIPPER_STAFF", "SHIPPER_LOADER"], "DO"],
     ["do.minho", "윤민호", "SHIPPER_LOADER", "DO", false],
   ];
+  const DEFAULT_CENTER: Record<string, string> = { "hb.minji": "YI1" };
   const userId: Record<string, number> = {};
   const clientId: Record<string, number> = {};
   async function createUser([loginId, name, role, scopeKey, active]: (typeof users)[number]) {
@@ -286,6 +287,8 @@ async function main() {
         roles,
         clientId: isShipper ? clientId[scopeKey] : null,
         centerId: isShipper ? null : centerIdOf[scopeKey],
+        // 화주사 사용자 기본 센터 예시 — 박민지(한빛식품, 이용 센터 2곳)는 용인1센터
+        defaultCenterId: DEFAULT_CENTER[loginId] ? centerIdOf[DEFAULT_CENTER[loginId]] : null,
         isActive: active ?? true,
         // 개발용 시드라 첫 로그인 비밀번호 변경은 강제하지 않는다 (관리자 초기화 후에는 강제)
         passwordHash: await hashPassword(password),

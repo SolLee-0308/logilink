@@ -27,6 +27,13 @@ export const IconCheck = (p: IconProps) => (
   </Base>
 );
 
+export const IconPlus = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+    <path d="M8 5v6M5 8h6" />
+  </Base>
+);
+
 export const IconDoc = (p: IconProps) => (
   <Base {...p}>
     <rect x="2.5" y="2.5" width="11" height="11" rx="2" />

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AddressInput } from "@/components/ui/AddressInput";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
-import { Button } from "@/components/ui/Button";
+import { Button, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
@@ -93,7 +93,12 @@ export function ClientsScreen({
 
   return (
     <>
-      <MasterHeader title="화주사" count={rows.length} rules={RULES.clients} />
+      <MasterHeader
+        title="화주사"
+        count={rows.length}
+        rules={RULES.clients}
+        actions={canEdit ? <CreateButton onClick={edit.openNew}>등록</CreateButton> : undefined}
+      />
       <FilterBar>
         <FilterField label="사용 여부">
           <ChipGroup options={ACTIVE_OPTIONS} value={active} onChange={setActive} />
@@ -114,13 +119,7 @@ export function ClientsScreen({
       <SplitView
         list={
           <>
-            <ListToolbar total={list.length}>
-              {canEdit && (
-                <Button variant="primary" size="sm" onClick={edit.openNew}>
-                  + 등록
-                </Button>
-              )}
-            </ListToolbar>
+            <ListToolbar total={list.length} />
             <DataTable
               caption="화주사 목록"
               columns={columns}

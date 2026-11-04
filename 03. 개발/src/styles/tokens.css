@@ -28,9 +28,18 @@
   --line-2: #e2e2e7;
   --line-row: #f0f0f2;
   --line-hover: #c9c9d0;
+  /* 카드·패널 바깥 테두리와 카드 머리 띠 — 흰 바탕 위에서 영역이 갈리게 (2026-11-04 Sol: 흰 바탕 유지 + 테두리 강화) */
+  --card-line: #d8d8de;
+  --card-head: #f6f6f8;
+  /* 반려·취소·삭제 같은 되돌릴 수 없는 행위 */
+  --danger: #d92d20;
+  --danger-hover: #b42318;
+  --danger-soft: #fef0ef;
   --fg: #18181b;
   --muted: #6b6b73;
   --soft: #9a9aa2;
+  /* 입력칸 안내 글자 — 입력한 값과 확실히 구분되게 연하게 (2026-11-04 Sol) */
+  --placeholder: #bdbdc4;
   --th-fg: #8e8e96;
   --row-hover: #fbfbfc;
   --primary-hover: #2a2a2a;

@@ -14,8 +14,7 @@
   line-height: 1.4;
 }
 
-.secondary:hover:not(:disabled),
-.danger:hover:not(:disabled) {
+.secondary:hover:not(:disabled) {
   border-color: var(--line-hover);
 }
 
@@ -29,8 +28,27 @@
   background: var(--primary-hover);
 }
 
+/* 반려·취소·삭제 확정 — 붉은 채움 (2026-11-04 Sol) */
 .danger {
-  color: var(--st-rej-fg);
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+/* 목록 행의 삭제처럼 확인 창을 여는 버튼 — 붉은 글자 + 옅은 붉은 바탕 */
+.dangerSoft {
+  background: var(--danger-soft);
+  border-color: #f6c9c5;
+  color: var(--danger-hover);
+}
+
+.dangerSoft:hover:not(:disabled) {
+  border-color: var(--danger);
 }
 
 .btn:disabled {
@@ -46,4 +64,19 @@
 
 .link {
   text-decoration: none;
+}
+
+/* 새로 만들기 — 브랜드 보라 채움 */
+.create {
+  background: var(--violet-600);
+  border-color: var(--violet-600);
+  color: #fff;
+  font-weight: 600;
+  padding: 8px 16px 8px 13px;
+  box-shadow: 0 1px 2px rgba(76, 60, 200, 0.25);
+}
+
+.create:hover:not(:disabled) {
+  background: #5b4bd6;
+  border-color: #5b4bd6;
 }

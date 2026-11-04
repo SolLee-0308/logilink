@@ -1,4 +1,5 @@
 import type { ItemUnit } from "@/domain/master";
+import type { CatalogItem } from "@/domain/plan-entry";
 import type { PlanAction, PlanInputMethod, PlanStatus } from "@/domain/plan-status";
 
 /** 승인 대기 탭 — wait: 승인대기 / rej: 반려·화주사 수정 중 / done: 오늘 내가 처리 */
@@ -11,6 +12,7 @@ export interface ApprovalRow {
   tab: ApprovalTab;
   clientId: number;
   clientName: string;
+  centerId: number;
   centerName: string;
   /** YYYY-MM-DD */
   planDate: string;
@@ -76,4 +78,41 @@ export interface PlanDetail extends Omit<ApprovalRow, "tab" | "itemTexts" | "pro
   /** 가장 최근 반려본 (재요청 건 비교·반려 건 사유 표시) */
   lastReject: RejectSnapshotView | null;
   histories: PlanHistoryView[];
+}
+
+/** 승인 상세 — 승인대기 순서 (처리 후 다음 건) */
+export interface ApprovalQueue {
+  position: number | null;
+  total: number;
+  prevId: number | null;
+  nextId: number | null;
+  afterId: number | null;
+}
+
+/* ───────── 화주사 입고예정 등록 ───────── */
+
+/** 입고예정 등록 목록 탭 — 승인대기 / 반려·수정 필요 / 최근 승인 / 최근 취소 */
+export type EntryTab = "wait" | "rej" | "approved" | "canceled";
+
+export interface EntryRow extends Omit<ApprovalRow, "tab" | "processed"> {
+  tab: EntryTab;
+  /** 반려 사유 (반려 탭) */
+  rejectReason: string | null;
+  /** 승인·취소 일시 (최근 탭) */
+  closedAt: string | null;
+}
+
+export interface CenterOption {
+  id: number;
+  name: string;
+}
+
+/** 등록·수정 화면에 필요한 기준정보 — 이용 센터, 사용 중인 품목, 앞으로 1년 휴무일 */
+export interface EntryOptions {
+  centers: CenterOption[];
+  /** 센터 기본값 — 사용자 기본 센터, 없으면 이용 센터가 1곳일 때 그 센터 ("" = 고르지 않음) */
+  defaultCenterId: string;
+  items: CatalogItem[];
+  holidays: { centerId: number; date: string; name: string }[];
+  today: string;
 }

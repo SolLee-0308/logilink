@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Tag } from "@/components/ui/Badges";
-import { Button } from "@/components/ui/Button";
+import { Button, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { FormField, Input, Select } from "@/components/ui/Form";
@@ -108,7 +108,7 @@ export function HolidaysScreen({
             header: <span className="sr-only">삭제</span>,
             align: "right" as const,
             render: (r: HolidayRow) => (
-              <Button size="sm" variant="danger" onClick={() => setToDelete(r)} aria-label={`${r.date} ${r.name} 삭제`}>
+              <Button size="sm" variant="dangerSoft" onClick={() => setToDelete(r)} aria-label={`${r.date} ${r.name} 삭제`}>
                 삭제
               </Button>
             ),
@@ -119,7 +119,19 @@ export function HolidaysScreen({
 
   return (
     <>
-      <MasterHeader title="휴무일" count={rows.filter((r) => r.date >= today).length} rules={RULES.holidays} />
+      <MasterHeader
+        title="휴무일"
+        count={rows.filter((r) => r.date >= today).length}
+        rules={RULES.holidays}
+        actions={
+          canEdit ? (
+            <>
+              <Button onClick={() => setImporting(true)}>공공데이터 불러오기</Button>
+              <CreateButton onClick={() => setAdding((n) => n + 1)}>등록</CreateButton>
+            </>
+          ) : undefined
+        }
+      />
       <FilterBar>
         <FilterField label="연도" htmlFor="f-year">
           <Select id="f-year" value={year} onChange={(e) => setYear(e.target.value)}>
@@ -175,18 +187,7 @@ export function HolidaysScreen({
       )}
 
       <div className={styles.listcol}>
-        <ListToolbar total={list.length}>
-          {canEdit && (
-            <>
-              <Button size="sm" onClick={() => setImporting(true)}>
-                공공데이터 불러오기
-              </Button>
-              <Button variant="primary" size="sm" onClick={() => setAdding((n) => n + 1)}>
-                + 등록
-              </Button>
-            </>
-          )}
-        </ListToolbar>
+        <ListToolbar total={list.length} />
         <DataTable
           caption="휴무일 목록"
           columns={columns}

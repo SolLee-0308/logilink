@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
-import { Button } from "@/components/ui/Button";
+import { Button, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
@@ -13,14 +13,14 @@ import { ORG_LABEL, ROLE_META, USER_ROLES, rolesLabel, sortRoles, type UserRole 
 import { fmtDateTime, fmtShortDateTime, includesText } from "@/lib/format";
 import { resetUserPassword, saveUser, unlockUser } from "@/server/master/actions";
 import { loadUser } from "@/server/master/loaders";
-import { EditModal, Full, FormSection, ViewSection, useEditTarget } from "./record";
+import { EditModal, Full, FormSection, ViewSection, useEditTarget, type ViewItem } from "./record";
 import { LastChanged } from "./history";
 import { ACTIVE_OPTIONS, MasterHeader, matchActive, useAction, useSelection, type ActiveFilter } from "./shared";
 import { RULES } from "./rules";
 import type { CenterOption, ClientOption, UserRow } from "./types";
 import styles from "./UsersScreen.module.css";
 
-const LABELS = { loginId: "아이디", name: "이름", role: "역할", roles: "역할", clientId: "화주사", centerId: "센터", isActive: "사용 여부", locked: "잠금", password: "비밀번호" };
+const LABELS = { loginId: "아이디", name: "이름", role: "역할", roles: "역할", clientId: "화주사", centerId: "센터", defaultCenterId: "기본 센터", isActive: "사용 여부", locked: "잠금", password: "비밀번호" };
 
 /** 화면을 보는 사람이 고를 수 있는 역할 — 3PL 관리자 역할은 3PL 관리자만, 화주사 계정은 화주사 역할만 */
 function assignableRoles(viewerRoles: readonly UserRole[]): readonly UserRole[] {
@@ -130,7 +130,7 @@ export function UsersScreen({
     if (k === "role") return ROLE_META[v as UserRole]?.label ?? String(v);
     if (k === "roles") return typeof v === "string" && v ? rolesLabel(v.split(",") as UserRole[]) : "없음";
     if (k === "clientId") return clients.find((c) => c.id === v)?.name ?? "없음";
-    if (k === "centerId") return centers.find((c) => c.id === v)?.name ?? "없음";
+    if (k === "centerId" || k === "defaultCenterId") return centers.find((c) => c.id === v)?.name ?? "없음";
     if (k === "isActive") return v ? "사용" : "사용 안 함";
     if (k === "locked") return v ? "잠김" : "해제";
     return v === null || v === undefined ? "없음" : String(v);
@@ -138,7 +138,12 @@ export function UsersScreen({
 
   return (
     <>
-      <MasterHeader title="사용자·역할" count={rows.length} rules={RULES.users} />
+      <MasterHeader
+        title="사용자·역할"
+        count={rows.length}
+        rules={RULES.users}
+        actions={canEdit ? <CreateButton onClick={edit.openNew}>등록</CreateButton> : undefined}
+      />
       <FilterBar>
         <FilterField label="소속">
           <ChipGroup
@@ -189,13 +194,7 @@ export function UsersScreen({
       <SplitView
         list={
           <>
-            <ListToolbar total={list.length}>
-              {canEdit && (
-                <Button variant="primary" size="sm" onClick={edit.openNew}>
-                  + 등록
-                </Button>
-              )}
-            </ListToolbar>
+            <ListToolbar total={list.length} />
             <DataTable
               caption="사용자 목록"
               columns={columns}
@@ -254,6 +253,7 @@ export function UsersScreen({
                     </span>,
                   ],
                   [orgOf(current.roles) === "SHIPPER" ? "소속 화주사" : "소속 센터", current.clientName ?? current.centerName],
+                  ...(orgOf(current.roles) === "SHIPPER" ? [["기본 센터", current.defaultCenterName ?? "지정 안 함"] as ViewItem] : []),
                   ["사용 여부", current.isActive ? "사용" : "사용 안 함"],
                 ]}
               />
@@ -307,8 +307,11 @@ function UserEditModal({
   const [picked, setPicked] = useState<UserRole[]>(row?.roles ?? []);
   const [clientId, setClientId] = useState(row?.clientId ? String(row.clientId) : "");
   const [centerId, setCenterId] = useState(row?.centerId ? String(row.centerId) : centers.length === 1 ? String(centers[0].id) : "");
+  const [defaultCenterId, setDefaultCenterId] = useState(row?.defaultCenterId ? String(row.defaultCenterId) : "");
   const [isActive, setIsActive] = useState(row?.isActive ?? true);
   const act = useAction();
+  // 기본 센터 후보: 고른 화주사가 이용하는 센터
+  const clientCenters = centers.filter((c) => clients.find((x) => String(x.id) === clientId)?.centerIds?.includes(c.id));
 
   const org = orgOf(picked);
   const dirty = row
@@ -316,6 +319,7 @@ function UserEditModal({
       sortRoles(picked).join() !== sortRoles(row.roles).join() ||
       isActive !== row.isActive ||
       (org === "SHIPPER" && Number(clientId) !== row.clientId) ||
+      (org === "SHIPPER" && (Number(defaultCenterId) || null) !== row.defaultCenterId) ||
       (org === "TPL" && Number(centerId) !== row.centerId)
     : !!(loginId || name || picked.length || clientId || !isActive);
 
@@ -334,6 +338,7 @@ function UserEditModal({
           roles: picked,
           clientId: org === "SHIPPER" && clientId ? Number(clientId) : null,
           centerId: org === "TPL" && centerId ? Number(centerId) : null,
+          defaultCenterId: org === "SHIPPER" && defaultCenterId && clientCenters.some((c) => String(c.id) === defaultCenterId) ? Number(defaultCenterId) : null,
           isActive,
         }),
       (d) => d && onSaved(d.id),
@@ -395,7 +400,14 @@ function UserEditModal({
         </Full>
         {org === "SHIPPER" && (
           <FormField label="소속 화주사" htmlFor="u-client" required error={act.fieldErrors.clientId}>
-            <Select id="u-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            <Select
+              id="u-client"
+              value={clientId}
+              onChange={(e) => {
+                setClientId(e.target.value);
+                setDefaultCenterId("");
+              }}
+            >
               <option value="">화주사를 선택하세요</option>
               {clients
                 .filter((c) => c.isActive || c.id === row?.clientId)
@@ -405,6 +417,23 @@ function UserEditModal({
                     {c.isActive ? "" : " (사용 안 함)"}
                   </option>
                 ))}
+            </Select>
+          </FormField>
+        )}
+        {org === "SHIPPER" && (
+          <FormField
+            label="기본 센터"
+            htmlFor="u-default-center"
+            hint={clientId ? "입고예정 등록에서 처음 선택되는 센터입니다. 비우면 이용 센터가 1곳일 때만 자동으로 고릅니다." : "소속 화주사를 먼저 고르세요."}
+            error={act.fieldErrors.defaultCenterId}
+          >
+            <Select id="u-default-center" value={defaultCenterId} onChange={(e) => setDefaultCenterId(e.target.value)} disabled={!clientId}>
+              <option value="">지정 안 함</option>
+              {clientCenters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
             </Select>
           </FormField>
         )}
@@ -463,7 +492,7 @@ function AccountSection({ row, canManage }: { row: UserRow; canManage: boolean }
               잠금 해제
             </Button>
           )}
-          <Button size="sm" variant="danger" disabled={act.pending} onClick={() => setConfirmReset(true)}>
+          <Button size="sm" variant="dangerSoft" disabled={act.pending} onClick={() => setConfirmReset(true)}>
             비밀번호 초기화
           </Button>
         </div>

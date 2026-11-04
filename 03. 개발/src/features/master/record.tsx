@@ -20,10 +20,10 @@ export type ViewItem = [label: string, value: React.ReactNode, opts?: { full?: b
 const empty = <span className={styles.empty}>없음</span>;
 
 /** 조회 구역: 구역 제목 + 라벨/값 (값이 비면 "없음") */
-export function ViewSection({ title, items }: { title: string; items: ViewItem[] }) {
+export function ViewSection({ title, items }: { title?: string; items: ViewItem[] }) {
   return (
     <section className={styles.view}>
-      <h3>{title}</h3>
+      {title && <h3>{title}</h3>}
       <dl>
         {items.map(([label, value, opts]) => (
           <div key={label} className={opts?.full ? styles.full : undefined}>

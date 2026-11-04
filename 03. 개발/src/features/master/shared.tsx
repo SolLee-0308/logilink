@@ -13,11 +13,24 @@ import styles from "./shared.module.css";
 const RULE_SOURCE = "입고 업무프로세스 정의서 v1.4";
 
 /** 기준정보 화면 공통 머리: 경로 → 제목·건수·도움말 (하위 화면 이동은 사이드바 하위 메뉴) */
-export function MasterHeader({ title, count, rules }: { title: string; count?: number; rules: Rule[] }) {
+export function MasterHeader({
+  title,
+  count,
+  rules,
+  crumbs,
+  actions,
+}: {
+  title: string;
+  count?: number;
+  rules: Rule[];
+  crumbs?: string[];
+  /** 제목 줄 오른쪽 — 새로 만들기 버튼 */
+  actions?: React.ReactNode;
+}) {
   const [help, setHelp] = useState(false);
   return (
     <>
-      <PageHeader crumbs={["관리", "기준정보", title]} title={title} count={count} onHelp={() => setHelp(true)} />
+      <PageHeader crumbs={crumbs ?? ["관리", "기준정보", title]} title={title} count={count} onHelp={() => setHelp(true)} actions={actions} />
       <Sheet open={help} onClose={() => setHelp(false)} title="이 화면의 업무 규칙">
         <RuleList rules={rules} source={RULE_SOURCE} />
       </Sheet>
@@ -36,9 +49,15 @@ export function SubHeader({
   storageKey,
   rules,
   actions,
+  badges,
+  group = ["관리", "기준정보"],
 }: {
+  /** 제목 옆 상태 배지 */
+  badges?: React.ReactNode;
   /** 목록 화면 이름 (예: 품목) */
   section: string;
+  /** 경로 앞부분 (기본: 관리 › 기준정보) */
+  group?: string[];
   title: string;
   backHref: string;
   storageKey?: string;
@@ -61,7 +80,7 @@ export function SubHeader({
       <Link href={href} className={styles.back}>
         ← {section} 목록
       </Link>
-      <PageHeader crumbs={["관리", "기준정보", section, title]} title={title} onHelp={rules ? () => setHelp(true) : undefined} actions={actions} />
+      <PageHeader crumbs={[...group, section, title]} title={title} badges={badges} onHelp={rules ? () => setHelp(true) : undefined} actions={actions} />
       {rules && (
         <Sheet open={help} onClose={() => setHelp(false)} title="이 화면의 업무 규칙">
           <RuleList rules={rules} source={RULE_SOURCE} />

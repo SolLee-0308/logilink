@@ -1,6 +1,6 @@
 /* 단계 카드: ① 양식 → ② 파일 → ③ 검사 결과 */
 .step {
-  border: 1px solid var(--line);
+  border: 1px solid var(--card-line);
   border-radius: var(--r-panel);
   background: var(--bg);
   display: flex;
@@ -12,7 +12,15 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 16px 20px;
+  padding: 14px 20px;
+  background: var(--card-head);
+  border-bottom: 1px solid var(--card-line);
+  border-radius: calc(var(--r-panel) - 1px) calc(var(--r-panel) - 1px) 0 0;
+}
+
+.step > .stepHead:last-child {
+  border-bottom: 0;
+  border-radius: calc(var(--r-panel) - 1px);
 }
 
 .stepNo {
@@ -70,7 +78,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 0 20px 16px 58px;
+  padding: 16px 20px 16px 58px;
   min-width: 0;
 }
 
@@ -79,7 +87,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 20px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--card-line);
 }
 
 .placeholder {
