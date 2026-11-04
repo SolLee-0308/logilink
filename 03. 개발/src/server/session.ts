@@ -26,7 +26,8 @@ export interface SessionUser {
   id: number;
   loginId: string;
   name: string;
-  role: UserRole;
+  /** 역할 (여러 개일 수 있음, 같은 소속끼리만) */
+  roles: UserRole[];
   clientId: number | null;
   clientName: string | null;
   centerId: number | null;
@@ -70,12 +71,12 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   if (!s || s.expiresAt < new Date()) return null;
   const u = s.user;
   // 사용 안 함 계정·잠금·PDA 역할·사용 안 함 화주사 소속이면 세션을 인정하지 않는다
-  if (!u.isActive || u.lockedAt || !isWebRole(u.role) || (u.client && !u.client.isActive)) return null;
+  if (!u.isActive || u.lockedAt || !isWebRole(u.roles) || (u.client && !u.client.isActive)) return null;
   return {
     id: u.id,
     loginId: u.loginId,
     name: u.name,
-    role: u.role,
+    roles: u.roles,
     clientId: u.clientId,
     clientName: u.client?.name ?? null,
     centerId: u.centerId,

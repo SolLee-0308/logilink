@@ -54,6 +54,12 @@ enum HolidayKind {
   CENTER // 센터 휴무
 }
 
+/// 휴무일 출처
+enum HolidaySource {
+  API // 공공데이터(한국천문연구원 특일 정보)에서 불러옴
+  MANUAL // 직접 등록
+}
+
 /// 품목 등록 요청 상태
 enum ItemRequestStatus {
   WAITING // 등록대기
@@ -66,6 +72,7 @@ enum ItemRequestSource {
   DIRECT // 직접 입력
   EXCEL // 엑셀 업로드 미매칭
   AI // 이미지 AI 판독 미매칭
+  ITEM_EXCEL // 품목 엑셀 일괄 요청
 }
 
 enum ItemRequestAction {
@@ -334,11 +341,12 @@ model CommonCode {
 }
 
 /// 사용자 — 화주사 역할은 화주사, 3PL 역할은 센터에 소속 (DB 체크 제약으로도 보장)
+/// 한 사람이 역할을 여러 개 가질 수 있다(작은 화주사·센터). 단 3PL 역할과 화주사 역할은 섞지 않는다
 model User {
-  id        Int      @id @default(autoincrement())
-  loginId   String   @unique @map("login_id") @db.VarChar(50)
-  name      String   @db.VarChar(50)
-  role      UserRole
+  id        Int        @id @default(autoincrement())
+  loginId   String     @unique @map("login_id") @db.VarChar(50)
+  name      String     @db.VarChar(50)
+  roles     UserRole[]
   clientId  Int?     @map("client_id")
   centerId  Int?     @map("center_id")
   isActive  Boolean  @default(true) @map("is_active")
@@ -443,6 +451,7 @@ model Holiday {
   date      DateTime    @db.Date
   name      String      @db.VarChar(100)
   kind      HolidayKind
+  source    HolidaySource @default(MANUAL)
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   createdBy String      @map("created_by") @db.VarChar(50)
 

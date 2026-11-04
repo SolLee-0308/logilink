@@ -86,7 +86,7 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
     await logAttempt(input, "BLOCKED_INACTIVE", "사용 안 함 화주사 소속 계정", user.id);
     return { error: LOGIN_MSG.clientInactive };
   }
-  if (!isWebRole(user.role)) {
+  if (!isWebRole(user.roles)) {
     await logAttempt(input, "BLOCKED_PDA", "PDA 전용 역할의 Web 로그인", user.id);
     return { error: LOGIN_MSG.pda };
   }

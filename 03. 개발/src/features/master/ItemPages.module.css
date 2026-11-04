@@ -1,0 +1,15 @@
+/* 품목 등록 화면 탭 본문 */
+.tabBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.tabBody > [hidden] {
+  display: none;
+}
+
+.tabBody .tabBody {
+  margin-top: 0;
+}

@@ -1,34 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
-import { Button } from "@/components/ui/Button";
+import { LinkButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
-import { FormCheck, FormError, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
+import { Select } from "@/components/ui/Form";
+import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
-import {
-  ALIAS_SOURCE_LABEL,
-  ITEM_UNITS,
-  STORAGE_TEMP_LABEL,
-  STORAGE_TEMPS,
-  normalizeAlias,
-  type AliasSource,
-  type ItemUnit,
-  type StorageTemp,
-} from "@/domain/master";
+import { ALIAS_SOURCE_LABEL, STORAGE_TEMP_LABEL, STORAGE_TEMPS, type StorageTemp } from "@/domain/master";
 import { includesText } from "@/lib/format";
-import { saveItem } from "@/server/master/actions";
-import { loadItem } from "@/server/master/loaders";
-import { EditModal, Full, FormSection, ViewSection, useEditTarget } from "./record";
-import { ACTIVE_OPTIONS, MasterHeader, matchActive, useAction, useSelection, type ActiveFilter } from "./shared";
+import { itemsTitle } from "@/domain/master";
 import { LastChanged } from "./history";
+import { ViewSection } from "./record";
 import { RULES } from "./rules";
-import type { ClientOption, ItemBarcodeRow, ItemRow, ItemUomRow } from "./types";
+import { ACTIVE_OPTIONS, MasterHeader, matchActive, type ActiveFilter } from "./shared";
+import type { ClientOption, ItemRow, ItemUomRow } from "./types";
 import recordStyles from "./ClientsScreen.module.css";
 import styles from "./ItemsScreen.module.css";
 
-const LABELS = {
+/** 단위 환산 요약: EA · BOX=20 */
+export const uomSummary = (uoms: ItemUomRow[]) => uoms.map((u) => (u.qty === 1 ? u.unit : `${u.unit}=${u.qty}`)).join(" · ");
+
+
+export const LABELS = {
   name: "품목명",
   baseUnit: "기준 단위",
   storageTemp: "보관 온도대",
@@ -40,35 +36,86 @@ const LABELS = {
   aliases: "별칭",
 };
 
-const fmtHistory = (k: string, v: unknown) => {
+export const fmtHistory = (k: string, v: unknown) => {
   if (k === "storageTemp") return STORAGE_TEMP_LABEL[v as StorageTemp] ?? String(v);
   if (k === "isActive") return v ? "사용" : "사용 안 함";
   if (typeof v === "boolean") return v ? "관리" : "관리 안 함";
   return v === null || v === undefined || v === "" ? "없음" : String(v);
 };
 
-/** 단위 환산 요약: EA · BOX=20 */
-export const uomSummary = (uoms: ItemUomRow[]) => uoms.map((u) => (u.qty === 1 ? u.unit : `${u.unit}=${u.qty}`)).join(" · ");
-
 type TempFilter = "all" | StorageTemp;
 
+/** 목록 조회조건·선택 품목 — 주소(?client=&temp=&active=&q=&item=)에 남겨 등록·수정 화면에서 돌아와도 그대로 */
+export interface ItemListQuery {
+  client: string;
+  temp: TempFilter;
+  active: ActiveFilter;
+  q: string;
+  /** 선택(오른쪽 상세에 표시)한 품목 id */
+  item: number | null;
+}
+
+/** 등록·수정·엑셀 화면에서 [← 목록]·저장 후 돌아갈 주소 */
+export const ITEM_LIST_KEY = "logilink:items:list";
+
+export function itemListSearch(f: ItemListQuery) {
+  const p = new URLSearchParams();
+  if (f.client) p.set("client", f.client);
+  if (f.temp !== "all") p.set("temp", f.temp);
+  if (f.active !== "all") p.set("active", f.active);
+  if (f.q) p.set("q", f.q);
+  if (f.item) p.set("item", String(f.item));
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
+/** 기억해 둔 목록 주소에서 선택 품목만 바꾼다 (저장 후 그 품목이 선택된 목록으로) */
+export function itemListUrl(item?: number) {
+  let url = "/master/items";
+  try {
+    url = sessionStorage.getItem(ITEM_LIST_KEY) ?? url;
+  } catch {
+    /* 저장소를 못 쓰면 기본 목록 */
+  }
+  const u = new URL(url, "http://x");
+  if (item) u.searchParams.set("item", String(item));
+  return u.pathname + u.search;
+}
+
+/**
+ * 품목 관리(3PL) · 품목 조회(화주사) — 목록 + 오른쪽 상세 조회 패널
+ * - 3PL: 목록 위 [+ 등록](등록 화면에서 단건·엑셀 일괄 탭), 상세 패널 [수정] → 별도 화면
+ * - 화주사: 조회만. 새 품목은 품목 등록 요청 화면에서 신청한다 (U6)
+ */
 export function ItemsScreen({
   rows,
   clients,
-  initialClientId,
+  initial,
+  canEdit,
+  canRequest,
+  openRequests,
 }: {
   rows: ItemRow[];
   clients: ClientOption[];
-  /** 화주사 화면 요약에서 넘어온 화주사 필터 */
-  initialClientId?: number;
+  initial: ItemListQuery;
+  /** 3PL: 등록·수정 */
+  canEdit: boolean;
+  /** 화주사: 등록 요청 안내 */
+  canRequest: boolean;
+  /** 화주사: 검토 중(등록대기·반려)인 내 요청 건수 */
+  openRequests: number;
 }) {
-  const initialClient = initialClientId ? clients.find((c) => c.id === initialClientId) : undefined;
-  const [clientId, setClientId] = useState(initialClient ? String(initialClient.id) : "");
+  const initialClient = clients.find((c) => String(c.id) === initial.client);
+  const [clientId, setClientId] = useState(initialClient ? initial.client : "");
   // 화주사 선택 목록에서 사용 안 함 화주사는 기본 제외 (조회 필터에서만 포함 가능)
   const [withInactiveClients, setWithInactiveClients] = useState(!!initialClient && !initialClient.isActive);
-  const [temp, setTemp] = useState<TempFilter>("all");
-  const [active, setActive] = useState<ActiveFilter>("all");
-  const [q, setQ] = useState("");
+  const [temp, setTemp] = useState<TempFilter>(initial.temp);
+  const [active, setActive] = useState<ActiveFilter>(initial.active);
+  const [q, setQ] = useState(initial.q);
+  const [selected, setSelected] = useState<number | null>(initial.item);
+  const singleClient = clients.length <= 1;
+  const title = itemsTitle(canEdit);
+
   const list = useMemo(
     () =>
       rows.filter(
@@ -80,9 +127,20 @@ export function ItemsScreen({
       ),
     [rows, clientId, temp, active, q],
   );
-  const sel = useSelection(list.map((r) => r.id));
-  const current = sel.active === "new" ? null : rows.find((r) => r.id === sel.active) ?? null;
-  const edit = useEditTarget(loadItem);
+  // 걸러진 목록에 선택 품목이 없으면 첫 행을 보여 준다
+  const activeId = selected !== null && list.some((r) => r.id === selected) ? selected : (list[0]?.id ?? null);
+  const current = activeId === null ? null : (rows.find((r) => r.id === activeId) ?? null);
+
+  // 조회조건·선택을 주소에 반영 (서버 다시 읽기 없이) + 등록·수정 화면의 [← 목록]용으로 기억
+  useEffect(() => {
+    const url = `/master/items${itemListSearch({ client: clientId, temp, active, q, item: activeId })}`;
+    window.history.replaceState(null, "", url);
+    try {
+      sessionStorage.setItem(ITEM_LIST_KEY, url);
+    } catch {
+      /* 저장소를 못 써도 목록은 동작 */
+    }
+  }, [clientId, temp, active, q, activeId]);
 
   const columns: Column<ItemRow>[] = [
     { key: "code", header: "품목코드", render: (r) => <span className="mono">{r.code}</span> },
@@ -94,7 +152,8 @@ export function ItemsScreen({
         <>
           {r.name}
           <CellSub>
-            {r.clientName} · {STORAGE_TEMP_LABEL[r.storageTemp]}
+            {singleClient ? "" : `${r.clientName} · `}
+            {STORAGE_TEMP_LABEL[r.storageTemp]}
           </CellSub>
         </>
       ),
@@ -124,22 +183,30 @@ export function ItemsScreen({
     { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
+  const clientQuery = clientId ? `?client=${clientId}` : "";
+
   return (
     <>
-      <MasterHeader title="품목" count={rows.length} rules={RULES.items} />
+      <MasterHeader title={title} count={rows.length} rules={RULES.items} />
       <FilterBar>
-        <FilterField label="화주사" htmlFor="f-client">
-          <Select id="f-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-            <option value="">전체</option>
-            {clients.filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.isActive ? "" : " (사용 안 함)"}
-              </option>
-            ))}
-          </Select>
-        </FilterField>
-        <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
+        {!singleClient && (
+          <>
+            <FilterField label="화주사" htmlFor="f-client">
+              <Select id="f-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+                <option value="">전체</option>
+                {clients
+                  .filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.isActive ? "" : " (사용 안 함)"}
+                    </option>
+                  ))}
+              </Select>
+            </FilterField>
+            <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
+          </>
+        )}
         <FilterField label="온도대">
           <ChipGroup
             value={temp}
@@ -152,52 +219,53 @@ export function ItemsScreen({
         </FilterField>
         <SearchInput value={q} onChange={setQ} placeholder="품목코드, 품목명, 바코드, 별칭 검색" />
       </FilterBar>
+
+      {canRequest && (
+        <NoteBox tone="info">
+          찾는 품목이 없으면{" "}
+          <Link href="/master/item-requests" className={styles.inlineLink}>
+            품목 등록 요청
+          </Link>
+          에서 신청하세요. 3PL이 확인한 뒤 등록합니다.
+          {openRequests > 0 && (
+            <>
+              {" "}
+              지금 검토 중인 요청이 <strong className="mono">{openRequests}</strong>건 있습니다.
+            </>
+          )}
+        </NoteBox>
+      )}
+
       <SplitView
         list={
           <>
             <ListToolbar total={list.length}>
-              <Button variant="primary" size="sm" onClick={edit.openNew}>
-                + 등록
-              </Button>
+              {/* 단건·엑셀 일괄 등록은 등록 화면의 탭에서 고른다 */}
+              {canEdit && (
+                <LinkButton size="sm" variant="primary" href={`/master/items/new${clientQuery}`}>
+                  + 등록
+                </LinkButton>
+              )}
             </ListToolbar>
             <DataTable
-              caption="품목 목록"
+              caption={`${title} 목록`}
               columns={columns}
               rows={list}
               rowKey={(r) => String(r.id)}
-              activeKey={sel.active === "new" ? null : String(sel.active)}
-              onActivate={(k) => sel.select(Number(k))}
+              activeKey={activeId === null ? null : String(activeId)}
+              onActivate={(k) => setSelected(Number(k))}
               empty="조건에 맞는 품목이 없습니다. 조회조건을 바꿔 보세요."
             />
           </>
         }
-        panel={<ItemView row={current} onEdit={() => current && edit.openEdit(current.id)} opening={edit.loading} />}
+        panel={<ItemPanel row={current} canEdit={canEdit} />}
       />
-      {edit.target && (
-        <ItemEditModal
-          key={edit.nonce}
-          row={edit.target === "new" ? null : edit.target}
-          clients={clients}
-          defaultClientId={clientId}
-          onClose={edit.close}
-          onSaved={(id) => {
-            edit.close();
-            sel.select(id);
-          }}
-          onConflict={(id) => edit.reload(id)}
-        />
-      )}
     </>
   );
 }
 
-interface AliasDraft {
-  alias: string;
-  source: AliasSource;
-}
-
-/** 조회 전용 패널 + [수정] */
-function ItemView({ row, onEdit, opening }: { row: ItemRow | null; onEdit: () => void; opening: boolean }) {
+/** 오른쪽 상세 조회 패널 — 3PL에게만 [수정] (수정 화면으로 이동) */
+function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) {
   if (!row) {
     return (
       <SidePanel label="품목 상세">
@@ -213,11 +281,13 @@ function ItemView({ row, onEdit, opening }: { row: ItemRow | null; onEdit: () =>
         <>
           <PanelTitle mono>{row.code}</PanelTitle>
           <ActiveBadge active={row.isActive} />
-          <span className={recordStyles.headAction}>
-            <Button size="sm" onClick={onEdit} disabled={opening}>
-              수정
-            </Button>
-          </span>
+          {canEdit && (
+            <span className={recordStyles.headAction}>
+              <LinkButton size="sm" href={`/master/items/${row.id}/edit`}>
+                수정
+              </LinkButton>
+            </span>
+          )}
         </>
       }
       sub={`${row.clientName} · ${row.name}`}
@@ -277,334 +347,5 @@ function ItemView({ row, onEdit, opening }: { row: ItemRow | null; onEdit: () =>
         ]}
       />
     </SidePanel>
-  );
-}
-
-const sig = (p: {
-  name: string;
-  storageTemp: string;
-  expiryManaged: boolean;
-  lotManaged: boolean;
-  isActive: boolean;
-  baseUnit: string;
-  uoms: { unit: string; qty: string | number }[];
-  barcodes: ItemBarcodeRow[];
-  aliases: { alias: string }[];
-}) =>
-  JSON.stringify({
-    ...p,
-    uoms: p.uoms.map((u) => `${u.unit}:${u.qty}`).sort().join(","),
-    barcodes: p.barcodes.map((b) => `${b.unit}:${b.barcode}:${b.isPrimary}`).sort().join(","),
-    aliases: p.aliases.map((a) => normalizeAlias(a.alias)).sort().join(","),
-  });
-
-/** [+ 등록]·[수정] 공용 넓은 편집 모달 — 열 때 최신 데이터·version을 다시 읽어 온다(useEditTarget) */
-function ItemEditModal({
-  row,
-  clients,
-  defaultClientId,
-  onClose,
-  onSaved,
-  onConflict,
-}: {
-  row: ItemRow | null;
-  clients: ClientOption[];
-  defaultClientId: string;
-  onClose: () => void;
-  onSaved: (id: number) => void;
-  onConflict: (id: number) => void;
-}) {
-  const defaultActiveClient = clients.find((c) => String(c.id) === defaultClientId && c.isActive);
-  const [clientId, setClientId] = useState(row ? String(row.clientId) : defaultActiveClient ? defaultClientId : "");
-  const [code, setCode] = useState(row?.code ?? "");
-  const [name, setName] = useState(row?.name ?? "");
-  const [storageTemp, setStorageTemp] = useState<StorageTemp | "">(row?.storageTemp ?? "");
-  const [expiryManaged, setExpiryManaged] = useState(row?.expiryManaged ?? false);
-  const [lotManaged, setLotManaged] = useState(row?.lotManaged ?? false);
-  const [isActive, setIsActive] = useState(row?.isActive ?? true);
-  const [baseUnit, setBaseUnit] = useState<ItemUnit>(row?.baseUnit ?? "EA");
-  // 환산 수량은 입력 중 빈 값을 허용하려고 문자열로 둔다
-  const [uoms, setUoms] = useState<{ unit: ItemUnit; qty: string }[]>(
-    row?.uoms.map((u) => ({ unit: u.unit, qty: String(u.qty) })) ?? [{ unit: "EA", qty: "1" }],
-  );
-  const [barcodes, setBarcodes] = useState<ItemBarcodeRow[]>(row?.barcodes ?? [{ unit: "EA", barcode: "", isPrimary: true }]);
-  const [aliases, setAliases] = useState<AliasDraft[]>(row?.aliases.map((a) => ({ alias: a.alias, source: a.source })) ?? []);
-  const [aliasInput, setAliasInput] = useState("");
-  const [aliasError, setAliasError] = useState("");
-  const act = useAction();
-
-  // 처음 열었을 때의 값 — 달라진 것이 있어야 [저장]이 켜지고, 닫을 때 확인창을 띄운다
-  const [initialSig] = useState(() =>
-    sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + (row ? "" : `|${clientId}|${code}`),
-  );
-  const currentSig = sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + (row ? "" : `|${clientId}|${code}`);
-  const dirty = currentSig !== initialSig || aliasInput.trim() !== "";
-
-  const usedUnits = new Set(uoms.map((u) => u.unit));
-  const freeUnits = ITEM_UNITS.filter((u) => !usedUnits.has(u));
-
-  /** 기준 단위를 바꾸면 그 단위의 환산을 1로 맞춘다 */
-  function changeBase(u: ItemUnit) {
-    setBaseUnit(u);
-    setUoms((prev) => {
-      const rest = prev.filter((x) => x.unit !== u).map((x) => (x.qty === "1" ? { ...x, qty: "" } : x));
-      return [{ unit: u, qty: "1" }, ...rest];
-    });
-  }
-
-  function addAlias() {
-    const a = aliasInput.trim();
-    if (!a) return;
-    if (aliases.some((x) => normalizeAlias(x.alias) === normalizeAlias(a))) return setAliasError("이미 추가한 별칭입니다.");
-    if (normalizeAlias(a) === normalizeAlias(name)) return setAliasError("품목명과 같은 별칭은 넣지 않아도 됩니다.");
-    setAliases([...aliases, { alias: a, source: "MANUAL" }]);
-    setAliasInput("");
-    setAliasError("");
-  }
-
-  function submit() {
-    act.run(
-      () =>
-        saveItem({
-          id: row?.id,
-          version: row?.version,
-          clientId: Number(clientId) || 0,
-          code,
-          name,
-          baseUnit,
-          storageTemp: storageTemp as StorageTemp,
-          expiryManaged,
-          lotManaged,
-          isActive,
-          uoms: uoms.map((u) => ({ unit: u.unit, qty: u.qty === "" ? NaN : Number(u.qty) })),
-          barcodes: barcodes.map((b) => ({ ...b, barcode: b.barcode.trim() })),
-          aliases: aliases.map((a) => a.alias),
-        }),
-      (d) => d && onSaved(d.id),
-      row ? () => onConflict(row.id) : undefined,
-    );
-  }
-
-  return (
-    <EditModal
-      open
-      title={row ? `품목 수정 · ${row.code} ${row.name}` : "품목 등록"}
-      description={row ? undefined : "화주사와 품목코드는 등록 후 바꿀 수 없습니다."}
-      dirty={dirty}
-      pending={act.pending}
-      error={act.error}
-      submitLabel={row ? "저장" : "등록"}
-      onClose={onClose}
-      onSubmit={submit}
-    >
-      <FormSection title="기본 정보">
-        {row ? (
-          <>
-            <FormStatic label="화주사">{row.clientName}</FormStatic>
-            <FormStatic label="품목코드">
-              <span className="mono">{row.code}</span> <span className="muted">(등록 후 수정 불가)</span>
-            </FormStatic>
-          </>
-        ) : (
-          <>
-            <FormField label="화주사" htmlFor="i-client" required error={act.fieldErrors.clientId}>
-              <Select id="i-client" value={clientId} onChange={(e) => setClientId(e.target.value)} data-autofocus>
-                <option value="">화주사를 선택하세요</option>
-                {clients
-                  .filter((c) => c.isActive)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-              </Select>
-            </FormField>
-            <FormField label="품목코드" htmlFor="i-code" required error={act.fieldErrors.code}>
-              <Input id="i-code" className="mono" value={code} onChange={(e) => setCode(e.target.value)} maxLength={40} autoComplete="off" />
-            </FormField>
-          </>
-        )}
-        <FormField label="품목명" htmlFor="i-name" required error={act.fieldErrors.name}>
-          <Input id="i-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} {...(row ? { "data-autofocus": true } : {})} />
-        </FormField>
-        <FormField label="보관 온도대" htmlFor="i-temp" required error={act.fieldErrors.storageTemp}>
-          <Select id="i-temp" value={storageTemp} onChange={(e) => setStorageTemp(e.target.value as StorageTemp)}>
-            <option value="">온도대를 선택하세요</option>
-            {STORAGE_TEMPS.map((t) => (
-              <option key={t} value={t}>
-                {STORAGE_TEMP_LABEL[t]}
-              </option>
-            ))}
-          </Select>
-        </FormField>
-        <Full>
-          <div className={styles.checks}>
-            <FormCheck id="i-expiry" label="유통기한 관리" checked={expiryManaged} onChange={setExpiryManaged} />
-            <FormCheck id="i-lot" label="로트 관리" checked={lotManaged} onChange={setLotManaged} />
-            <FormCheck id="i-active" label="사용" checked={isActive} onChange={setIsActive} />
-          </div>
-          {(expiryManaged || lotManaged) && <p className="muted">유통기한·로트 관리 품목은 입고예정에 입력이 필수이고, 검수 때 실물과 다르면 현장에서 입력합니다.</p>}
-        </Full>
-      </FormSection>
-
-      <FormSection title="단위 · 바코드">
-        <div className={styles.block}>
-          <FormField label="기준 단위" htmlFor="i-base" required hint="수량 계산의 기준이 되는 가장 작은 단위입니다.">
-            <Select id="i-base" value={baseUnit} onChange={(e) => changeBase(e.target.value as ItemUnit)}>
-              {ITEM_UNITS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <ul className={styles.rows} aria-label="단위 환산 목록">
-            {uoms.map((u, i) => (
-              <li key={u.unit} className={styles.uomRow}>
-                <span className="mono">1 {u.unit}</span>
-                {u.unit === baseUnit ? (
-                  <span className="muted">기준 단위</span>
-                ) : (
-                  <>
-                    <span aria-hidden="true">=</span>
-                    <Input
-                      className={`mono ${styles.qty}`}
-                      inputMode="numeric"
-                      aria-label={`${u.unit} 환산 수량`}
-                      value={u.qty}
-                      onChange={(e) => {
-                        const qty = e.target.value.replace(/[^\d]/g, "");
-                        setUoms(uoms.map((x, j) => (j === i ? { ...x, qty } : x)));
-                      }}
-                      maxLength={6}
-                    />
-                    <span className="mono">{baseUnit}</span>
-                    <button
-                      type="button"
-                      className={styles.remove}
-                      aria-label={`${u.unit} 단위 빼기`}
-                      disabled={barcodes.some((b) => b.unit === u.unit)}
-                      title={barcodes.some((b) => b.unit === u.unit) ? "이 단위를 쓰는 바코드를 먼저 빼세요." : undefined}
-                      onClick={() => setUoms(uoms.filter((_, j) => j !== i))}
-                    >
-                      ×
-                    </button>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-          {freeUnits.length > 0 && (
-            <div className={styles.addRow}>
-              {freeUnits.map((u) => (
-                <Button key={u} size="sm" onClick={() => setUoms([...uoms, { unit: u, qty: "" }])}>
-                  + {u} 추가
-                </Button>
-              ))}
-            </div>
-          )}
-          <FormError>{act.fieldErrors.uoms}</FormError>
-        </div>
-
-        <div className={styles.block}>
-          <span className={styles.blockLabel}>바코드</span>
-          <ul className={styles.rows} aria-label="바코드 목록">
-            {barcodes.map((b, i) => (
-              <li key={i} className={styles.barcodeRow}>
-                <label className={styles.primary} title="대표 바코드">
-                  <input
-                    type="radio"
-                    name="primary-barcode"
-                    checked={b.isPrimary}
-                    onChange={() => setBarcodes(barcodes.map((x, j) => ({ ...x, isPrimary: j === i })))}
-                  />
-                  <span className="sr-only">대표 바코드로 지정</span>
-                </label>
-                <Input
-                  className="mono"
-                  inputMode="numeric"
-                  aria-label={`바코드 ${i + 1}`}
-                  value={b.barcode}
-                  onChange={(e) => setBarcodes(barcodes.map((x, j) => (j === i ? { ...x, barcode: e.target.value.replace(/\s/g, "") } : x)))}
-                  maxLength={14}
-                  autoComplete="off"
-                />
-                <Select
-                  aria-label={`바코드 ${i + 1} 단위`}
-                  value={b.unit}
-                  onChange={(e) => setBarcodes(barcodes.map((x, j) => (j === i ? { ...x, unit: e.target.value as ItemUnit } : x)))}
-                >
-                  {uoms.map((u) => (
-                    <option key={u.unit} value={u.unit}>
-                      {u.unit}
-                    </option>
-                  ))}
-                </Select>
-                <button
-                  type="button"
-                  className={styles.remove}
-                  aria-label={`바코드 ${i + 1} 빼기`}
-                  disabled={barcodes.length === 1}
-                  onClick={() => {
-                    const next = barcodes.filter((_, j) => j !== i);
-                    if (b.isPrimary && next[0]) next[0] = { ...next[0], isPrimary: true };
-                    setBarcodes(next);
-                  }}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-          <div className={styles.addRow}>
-            <Button size="sm" onClick={() => setBarcodes([...barcodes, { unit: baseUnit, barcode: "", isPrimary: barcodes.length === 0 }])}>
-              + 바코드 추가
-            </Button>
-            <span className="muted">● 대표 · 숫자 8~14자리</span>
-          </div>
-          <FormError>{act.fieldErrors.barcodes}</FormError>
-        </div>
-      </FormSection>
-
-      <FormSection title="별칭 (AI 판독·엑셀 자동 매칭용)">
-        <Full>
-          {aliases.length > 0 ? (
-            <ul className={styles.aliases} aria-label="별칭 목록">
-              {aliases.map((a) => (
-                <li key={a.alias} className={styles.alias} title={ALIAS_SOURCE_LABEL[a.source]}>
-                  {a.alias}
-                  <button type="button" aria-label={`별칭 ${a.alias} 빼기`} onClick={() => setAliases(aliases.filter((x) => x !== a))}>
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">등록된 별칭이 없습니다.</p>
-          )}
-        </Full>
-        <Full>
-          <div className={styles.aliasAdd}>
-            <Input
-              aria-label="새 별칭"
-              placeholder="예: 국산콩두부 300"
-              value={aliasInput}
-              onChange={(e) => setAliasInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addAlias();
-                }
-              }}
-              maxLength={200}
-            />
-            <Button size="sm" onClick={addAlias}>
-              추가
-            </Button>
-          </div>
-          <FormError>{aliasError || act.fieldErrors.aliases}</FormError>
-        </Full>
-      </FormSection>
-    </EditModal>
   );
 }

@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Sheet } from "@/components/ui/Overlay";
 import { RuleList, type Rule } from "@/components/ui/RuleList";
 import { useToast } from "@/components/ui/Toast";
 import type { ActionResult } from "@/server/action-result";
+import styles from "./shared.module.css";
 
 const RULE_SOURCE = "입고 업무프로세스 정의서 v1.4";
 
@@ -19,6 +21,52 @@ export function MasterHeader({ title, count, rules }: { title: string; count?: n
       <Sheet open={help} onClose={() => setHelp(false)} title="이 화면의 업무 규칙">
         <RuleList rules={rules} source={RULE_SOURCE} />
       </Sheet>
+    </>
+  );
+}
+
+/**
+ * 기준정보 하위 화면 머리(상세·등록·엑셀 일괄 등록): 경로에 목록 화면을 넣고, 제목 왼쪽에 [← 목록]
+ * backHref는 기본 주소이고, 목록이 기억해 둔 조회조건 주소(storageKey)가 있으면 그쪽으로 돌아간다.
+ */
+export function SubHeader({
+  section,
+  title,
+  backHref,
+  storageKey,
+  rules,
+  actions,
+}: {
+  /** 목록 화면 이름 (예: 품목) */
+  section: string;
+  title: string;
+  backHref: string;
+  storageKey?: string;
+  rules?: Rule[];
+  actions?: React.ReactNode;
+}) {
+  const [help, setHelp] = useState(false);
+  const [href, setHref] = useState(backHref);
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      if (saved?.startsWith(backHref)) setHref(saved);
+    } catch {
+      /* 저장소를 못 쓰면 기본 주소 */
+    }
+  }, [backHref, storageKey]);
+  return (
+    <>
+      <Link href={href} className={styles.back}>
+        ← {section} 목록
+      </Link>
+      <PageHeader crumbs={["관리", "기준정보", section, title]} title={title} onHelp={rules ? () => setHelp(true) : undefined} actions={actions} />
+      {rules && (
+        <Sheet open={help} onClose={() => setHelp(false)} title="이 화면의 업무 규칙">
+          <RuleList rules={rules} source={RULE_SOURCE} />
+        </Sheet>
+      )}
     </>
   );
 }

@@ -13,7 +13,7 @@ async function main() {
     include: { lines: { orderBy: { lineNo: "asc" }, include: { item: true } } },
   });
   const r = await savePlan(
-    { id: u.id, name: u.name, role: u.role, clientId: u.clientId, centerId: u.centerId },
+    { id: u.id, name: u.name, roles: u.roles, clientId: u.clientId, centerId: u.centerId },
     {
       id: p.id,
       version: p.version,

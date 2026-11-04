@@ -17,6 +17,8 @@ export type NavCountKey = "approvalWaiting" | "itemRequestWaiting";
 
 export interface NavChild {
   label: string;
+  /** 화주사 계정에 보일 이름 (역할에 따라 할 수 있는 일이 달라 이름도 다르게) */
+  shipperLabel?: string;
   href: string;
   countKey?: NavCountKey;
 }
@@ -39,7 +41,8 @@ export const MASTER_MENU: NavChild[] = [
   { label: "회사 정보", href: "/master/company" },
   { label: "센터", href: "/master/centers" },
   { label: "화주사", href: "/master/clients" },
-  { label: "품목", href: "/master/items" },
+  // 3PL: 조회 + 등록·수정 / 화주사: 조회만 (2026-11-04 Sol 확정)
+  { label: "품목 관리", shipperLabel: "품목 조회", href: "/master/items" },
   { label: "품목 등록 요청", href: "/master/item-requests", countKey: "itemRequestWaiting" },
   { label: "사유 코드", href: "/master/codes" },
   { label: "사용자·역할", href: "/master/users" },

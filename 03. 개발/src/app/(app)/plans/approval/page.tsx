@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ApprovalPage() {
   const me = await requireUser();
-  if (!can(me.role, "approval", "view")) return <Forbidden title="승인 대기" crumbs={["입고 계획", "승인 대기"]} />;
+  if (!can(me.roles, "approval", "view")) return <Forbidden title="승인 대기" crumbs={["입고 계획", "승인 대기"]} />;
   const [rows, reasons] = await Promise.all([listApproval(me), listCodeOptions(PLAN_REJECT_GROUP)]);
   return <ApprovalScreen rows={rows} reasons={reasons} today={todayKst()} />;
 }

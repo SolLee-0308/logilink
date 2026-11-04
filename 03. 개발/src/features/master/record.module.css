@@ -72,3 +72,57 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* 상세·등록 화면 카드 (모달 대신 본문) */
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cardHead {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardHead h2 {
+  font-size: var(--fs-16);
+  font-weight: 600;
+  margin: 0;
+}
+
+.cardHead p {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+
+.cardBody {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cardFoot {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.cardFootStart {
+  position: static;
+  justify-content: flex-start;
+}

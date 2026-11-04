@@ -258,10 +258,11 @@ async function main() {
 
   type Role = "SHIPPER_STAFF" | "SHIPPER_LOADER" | "TPL_ADMIN" | "TPL_OPERATOR" | "TPL_INSPECTOR";
   // [아이디, 이름, 역할, 소속(3PL은 센터 코드 / 화주사는 화주사 약어), 사용 여부]
-  const users: [loginId: string, name: string, role: Role, scope: string, active?: boolean][] = [
+  // 역할이 여러 개면 배열 (작은 화주사·센터에서 한 사람이 여러 역할을 맡는 경우)
+  const users: [loginId: string, name: string, role: Role | Role[], scope: string, active?: boolean][] = [
     ["han.soyul", "한소율", "TPL_ADMIN", "YI1"],
     ["kim.haneul", "김하늘", "TPL_OPERATOR", "YI1"],
-    ["lee.jun", "이준", "TPL_OPERATOR", "YI1"],
+    ["lee.jun", "이준", ["TPL_OPERATOR", "TPL_INSPECTOR"], "YI1"],
     ["jung.minseo", "정민서", "TPL_OPERATOR", "IC2"],
     ["park.seoyeon", "박서연", "TPL_INSPECTOR", "YI1"],
     ["choi.woojin", "최우진", "TPL_INSPECTOR", "YI1"],
@@ -270,18 +271,19 @@ async function main() {
     ["gm.doyun", "이도윤", "SHIPPER_STAFF", "GM"],
     ["gm.sera", "오세라", "SHIPPER_LOADER", "GM"],
     ["of.seojun", "정서준", "SHIPPER_STAFF", "OF"],
-    ["do.yuna", "최유나", "SHIPPER_STAFF", "DO"],
+    ["do.yuna", "최유나", ["SHIPPER_STAFF", "SHIPPER_LOADER"], "DO"],
     ["do.minho", "윤민호", "SHIPPER_LOADER", "DO", false],
   ];
   const userId: Record<string, number> = {};
   const clientId: Record<string, number> = {};
   async function createUser([loginId, name, role, scopeKey, active]: (typeof users)[number]) {
-    const isShipper = role.startsWith("SHIPPER");
+    const roles = Array.isArray(role) ? role : [role];
+    const isShipper = roles[0].startsWith("SHIPPER");
     const row = await db.user.create({
       data: {
         loginId,
         name,
-        role,
+        roles,
         clientId: isShipper ? clientId[scopeKey] : null,
         centerId: isShipper ? null : centerIdOf[scopeKey],
         isActive: active ?? true,
@@ -294,9 +296,10 @@ async function main() {
       },
     });
     userId[loginId] = row.id;
-    created("tb_user", row.id, { loginId, name, role, clientId: row.clientId, centerId: row.centerId, isActive: row.isActive });
+    created("tb_user", row.id, { loginId, name, roles: roles.join(","), clientId: row.clientId, centerId: row.centerId, isActive: row.isActive });
   }
-  for (const u of users) if (!u[2].startsWith("SHIPPER")) await createUser(u);
+  const isShipperUser = (u: (typeof users)[number]) => (Array.isArray(u[2]) ? u[2][0] : u[2]).startsWith("SHIPPER");
+  for (const u of users) if (!isShipperUser(u)) await createUser(u);
 
   // 화주사 — 3PL 담당 운영자·이용 센터 포함
   for (const c of CLIENTS) {
@@ -320,7 +323,7 @@ async function main() {
       centers: [...centers].sort().join(", "), isActive: row.isActive,
     });
   }
-  for (const u of users) if (u[2].startsWith("SHIPPER")) await createUser(u);
+  for (const u of users) if (isShipperUser(u)) await createUser(u);
 
   const itemId: Record<string, number> = {};
   for (const it of ITEMS) {

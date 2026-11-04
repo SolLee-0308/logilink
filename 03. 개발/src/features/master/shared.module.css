@@ -1,0 +1,20 @@
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  text-decoration: none;
+  margin-bottom: -6px;
+  width: fit-content;
+}
+
+.back:hover {
+  color: var(--fg);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

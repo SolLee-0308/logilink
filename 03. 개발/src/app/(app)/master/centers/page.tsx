@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CentersPage() {
   const me = await requireUser();
-  if (!can(me.role, "centers", "view")) return <Forbidden title="센터" />;
+  if (!can(me.roles, "centers", "view")) return <Forbidden title="센터" />;
   const [rows, candidates] = await Promise.all([listCenterRows(), listManagerCandidates()]);
-  return <CentersScreen rows={rows} candidates={candidates} canEdit={can(me.role, "centers", "edit")} />;
+  return <CentersScreen rows={rows} candidates={candidates} canEdit={can(me.roles, "centers", "edit")} />;
 }

@@ -17,7 +17,7 @@ const ok = (c: boolean, m: string, extra?: unknown) => {
 
 async function actor(loginId: string): Promise<PlanActor> {
   const u = await db.user.findUniqueOrThrow({ where: { loginId } });
-  return { id: u.id, name: u.name, role: u.role, clientId: u.clientId, centerId: u.centerId };
+  return { id: u.id, name: u.name, roles: u.roles, clientId: u.clientId, centerId: u.centerId };
 }
 async function plan(clientCode: string, status: string, n = 0) {
   const rows = await db.inboundPlan.findMany({

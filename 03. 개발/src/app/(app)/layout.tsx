@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/layout/AppShell";
-import { ORG_LABEL, ROLE_META } from "@/domain/master";
+import { ORG_LABEL, ROLE_META, rolesLabel } from "@/domain/master";
 import { countWaitingItemRequests } from "@/server/master/queries";
 import { countApprovalWaiting } from "@/server/plans/queries";
 import { requireUser } from "@/server/session";
@@ -10,11 +10,11 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireUser();
   const [itemRequestWaiting, approvalWaiting] = await Promise.all([countWaitingItemRequests(), countApprovalWaiting(me)]);
-  const meta = ROLE_META[me.role];
+  const meta = ROLE_META[me.roles[0]];
   const viewer = {
     name: me.name,
-    role: me.role,
-    roleLabel: meta.label,
+    roles: me.roles,
+    roleLabel: rolesLabel(me.roles),
     orgLabel: `${ORG_LABEL[meta.org]} · ${me.clientName ?? me.centerName ?? ""}`,
   };
   return (

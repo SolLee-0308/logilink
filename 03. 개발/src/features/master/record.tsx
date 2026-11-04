@@ -124,6 +124,69 @@ export function EditModal({
 }
 
 /**
+ * 페이지 안 편집 카드 — EditModal과 같은 규칙(변경이 있어야 [저장], 저장 안 한 변경이 있으면 이동·취소 때 확인)을
+ * 모달 대신 화면 본문에서 쓴다. 품목처럼 입력 항목이 많은 상세·등록 화면용.
+ */
+export function EditCard({
+  title,
+  description,
+  dirty,
+  pending,
+  error,
+  submitLabel = "저장",
+  onCancel,
+  onSubmit,
+  children,
+}: {
+  title: string;
+  description?: React.ReactNode;
+  dirty: boolean;
+  pending: boolean;
+  error?: string | null;
+  submitLabel?: string;
+  onCancel: () => void;
+  onSubmit: () => void;
+  children: React.ReactNode;
+}) {
+  const guard = useUnsavedGuard();
+  useUnsavedChanges(dirty);
+
+  async function cancel() {
+    if (dirty && !(await guard.confirmLeave())) return;
+    onCancel();
+  }
+
+  return (
+    <form
+      className={styles.card}
+      aria-label={title}
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (dirty && !pending) onSubmit();
+      }}
+    >
+      <div className={styles.cardHead}>
+        <h2>{title}</h2>
+        {description && <p className="muted">{description}</p>}
+      </div>
+      <div className={styles.cardBody}>
+        {error && <NoteBox tone="error">{error}</NoteBox>}
+        {children}
+      </div>
+      <div className={styles.cardFoot}>
+        <Button onClick={cancel} disabled={pending}>
+          취소
+        </Button>
+        <Button type="submit" variant="primary" disabled={!dirty || pending}>
+          {pending ? "저장 중…" : submitLabel}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
  * 편집 대상 불러오기 — [수정]을 누르는 순간 서버에서 최신 데이터와 version을 다시 읽는다.
  * target: null(닫힘) / "new"(등록) / 불러온 행
  */

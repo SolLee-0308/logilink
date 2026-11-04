@@ -14,7 +14,7 @@ import type { CenterRow, ClientRow, CommonCodeRow, CompanyRow, ItemRow, SettingR
 
 async function allowed(resource: Resource) {
   const me = await getActor();
-  return can(me.role, resource, "view");
+  return can(me.roles, resource, "view");
 }
 
 const notFound = (what: string) => fail("NOT_FOUND", `${what}을(를) 찾을 수 없습니다. 목록을 새로 고쳐 보세요.`);

@@ -5,14 +5,20 @@ import { z } from "zod";
 import { db } from "@/server/db";
 import { getActor, type SessionUser } from "@/server/session";
 import { hashPassword, tempPassword } from "@/server/auth/password";
-import { can, isShipperRole, type Op, type Resource } from "@/domain/permissions";
+import { can, canReviewItemRequests, isShipperRole, type Op, type Resource } from "@/domain/permissions";
 import { MSG, addressErrors, formatBizNo, formatPhone, isValidBizNo, isValidEmail, isValidPhone, isValidTime, textError } from "@/domain/validators";
 import { fail, type ActionResult } from "@/server/action-result";
-import { BARCODE_PATTERN, ITEM_REQ_REJECT_GROUP, ITEM_UNITS, ROLE_META, STORAGE_TEMPS, USER_ROLES, normalizeAlias } from "@/domain/master";
+import { BARCODE_PATTERN, ITEM_REQ_REJECT_GROUP, ITEM_UNITS, ROLE_META, STORAGE_TEMPS, USER_ROLES, isManagerCandidate, normalizeAlias, sortRoles } from "@/domain/master";
 import type { Prisma } from "@/generated/prisma/client";
+import type { UserRole } from "@/domain/master";
 import { CLIENT_PREFIX_PATTERN, PREFIX_EXHAUSTED_MSG, composeClientCode, nextClientSerial } from "@/domain/client-code";
 import { deactivateBlock, removeCenterBlock } from "@/domain/unclosed";
 import { countUnclosed } from "@/server/master/unclosed";
+import { fetchPublicHolidays } from "@/server/master/public-holidays";
+import { todayKst } from "@/lib/format";
+import { BULK_MAX_ROWS, fileDuplicates, parseItemRow, parseRequestRow, type BulkKind, type RawRow, type RequestDraft } from "@/domain/item-bulk";
+import { readRows } from "@/server/master/excel";
+import type { BulkPreview } from "@/features/master/types";
 
 type Tx = Prisma.TransactionClient;
 
@@ -41,12 +47,12 @@ const forbidden = () => fail("FORBIDDEN", "이 작업을 할 권한이 없습니
 /** 처리자 + 권한 확인 — 화면 숨김과 별개로 서버에서 다시 검사한다 */
 async function actorFor(resource: Resource, op: Op): Promise<SessionUser | null> {
   const me = await getActor();
-  return can(me.role, resource, op) ? me : null;
+  return can(me.roles, resource, op) ? me : null;
 }
 
 /** 화주사 계정은 자기 화주사 데이터만 바꿀 수 있다 */
 const outOfScope = (me: SessionUser, clientId: number | null | undefined) =>
-  isShipperRole(me.role) && clientId !== me.clientId;
+  isShipperRole(me.roles) && clientId !== me.clientId;
 
 async function log(tx: Tx, tableName: string, recordKey: string, action: string, actor: string, before: object | null, after: object | null) {
   await tx.changeLog.create({
@@ -191,7 +197,7 @@ export async function saveClient(input: ClientInput): Promise<ActionResult<{ id:
     if (inactiveNew) return { ok: false, errors: { centerCodes: `${inactiveNew.name}은(는) 사용 안 함 센터라 고를 수 없습니다` } };
     // 3PL 담당 운영자: 사용 중 · 이용 센터 중 한 곳 소속 · 3PL 관리자/운영담당
     const m = await tx.user.findUnique({ where: { id: v.managerUserId }, include: { center: true } });
-    const ok = m && m.isActive && (m.role === "TPL_ADMIN" || m.role === "TPL_OPERATOR") && m.center && centerCodes.includes(m.center.code);
+    const ok = m && m.isActive && isManagerCandidate(m.roles) && m.center && centerCodes.includes(m.center.code);
     if (!ok) return { ok: false, errors: { managerUserId: "이용 센터에 소속된 3PL 관리자·운영담당 중에서 고르세요" } };
     return { ok: true, managerName: m.name };
   }
@@ -377,23 +383,41 @@ const barcodeText = (b: { unit: string; barcode: string; isPrimary: boolean }[])
   [...b].sort((x, y) => Number(y.isPrimary) - Number(x.isPrimary) || x.barcode.localeCompare(y.barcode)).map((x) => `${x.barcode}(${x.unit}${x.isPrimary ? "·대표" : ""})`).join(", ");
 const aliasText = (a: string[]) => [...a].sort().join(", ");
 
+/** 이력에 남기는 품목 값 */
+const itemSnapshot = (v: Omit<ItemInput, "id" | "version" | "clientId" | "code">) => ({
+  name: v.name,
+  baseUnit: v.baseUnit,
+  storageTemp: v.storageTemp,
+  expiryManaged: v.expiryManaged,
+  lotManaged: v.lotManaged,
+  isActive: v.isActive,
+  uoms: uomText(v.uoms),
+  barcodes: barcodeText(v.barcodes),
+  aliases: aliasText(v.aliases),
+});
+
+/** 품목 1건 등록 (단건 등록·엑셀 일괄 등록 공용) — 중복 확인은 호출하는 쪽에서 */
+async function createItemTx(tx: Tx, v: ItemInput, actor: string, logExtra: Record<string, unknown> = {}) {
+  const row = await tx.item.create({
+    data: {
+      clientId: v.clientId, code: v.code, name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp,
+      expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, isActive: v.isActive, createdBy: actor, updatedBy: actor,
+    },
+  });
+  await syncItemChildren(tx, row.id, v.clientId, v, actor);
+  await log(tx, "tb_item", String(row.id), "CREATE", actor, null, { code: row.code, ...itemSnapshot(v), ...logExtra });
+  return row;
+}
+
 export async function saveItem(input: z.input<typeof itemSchema>): Promise<ActionResult<{ id: number }>> {
+  // 품목 등록·수정은 3PL만. 화주사는 등록 요청으로 보낸다 (2026-11-04 Sol, U6)
+  const me = await actorFor("items", "edit");
+  if (!me) return forbidden();
   const p = itemSchema.safeParse(input);
   if (!p.success) return invalid(p.error);
   const v = p.data;
-  const me = await getActor();
   const actor = me.name;
-  const snapshot = {
-    name: v.name,
-    baseUnit: v.baseUnit,
-    storageTemp: v.storageTemp,
-    expiryManaged: v.expiryManaged,
-    lotManaged: v.lotManaged,
-    isActive: v.isActive,
-    uoms: uomText(v.uoms),
-    barcodes: barcodeText(v.barcodes),
-    aliases: aliasText(v.aliases),
-  };
+  const snapshot = itemSnapshot(v);
 
   return run(() =>
     db.$transaction(async (tx) => {
@@ -403,14 +427,7 @@ export async function saveItem(input: z.input<typeof itemSchema>): Promise<Actio
         if (!client?.isActive) return fail("VALIDATION", "입력 내용을 확인하세요.", { clientId: "사용 중인 화주사를 선택하세요." });
         const dup = await itemDuplicates(tx, v.clientId, { code: v.code, barcodes: v.barcodes.map((b) => b.barcode), aliases: v.aliases });
         if (Object.keys(dup).length) return fail("VALIDATION", "입력 내용을 확인하세요.", dup);
-        const row = await tx.item.create({
-          data: {
-            clientId: v.clientId, code: v.code, name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp,
-            expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, isActive: v.isActive, createdBy: actor, updatedBy: actor,
-          },
-        });
-        await syncItemChildren(tx, row.id, v.clientId, v, actor);
-        await log(tx, "tb_item", String(row.id), "CREATE", actor, null, { code: row.code, ...snapshot });
+        const row = await createItemTx(tx, v, actor);
         return done(`품목 ${row.code}을(를) 등록했습니다.`, { id: row.id });
       }
 
@@ -467,6 +484,7 @@ export async function registerItemRequest(input: z.input<typeof registerSchema>)
   if (!p.success) return invalid(p.error);
   const v = p.data;
   const me = await getActor();
+  if (!canReviewItemRequests(me.roles)) return forbidden();
   const actor = me.name;
 
   return run(() =>
@@ -539,6 +557,7 @@ export async function rejectItemRequest(input: z.input<typeof rejectSchema>): Pr
   if (!p.success) return invalid(p.error);
   const v = p.data;
   const me = await getActor();
+  if (!canReviewItemRequests(me.roles)) return forbidden();
   const actor = me.name;
 
   return run(() =>
@@ -574,6 +593,263 @@ export async function rejectItemRequest(input: z.input<typeof rejectSchema>): Pr
       });
       return done(`${req.requestNo} 요청을 반려했습니다.`);
     }),
+  );
+}
+
+/* ───────── 품목 등록 요청 — 화주사 요청·재요청 ───────── */
+
+const requestSchema = z.object({
+  /** 반려된 요청을 고쳐 다시 보낼 때 */
+  id: z.number().int().positive().optional(),
+  version: z.number().int().positive().optional(),
+  itemCode: z.string().trim().min(1, "품목코드를 입력하세요.").max(40, "품목코드는 40자 이내로 입력하세요."),
+  itemName: trimmed(200, "품목명"),
+  unit: z.enum(ITEM_UNITS, { error: "단위를 선택하세요." }),
+  barcode: z.string().trim().regex(BARCODE_PATTERN, "바코드는 숫자 8~14자리로 입력하세요."),
+  storageTemp: z.enum(STORAGE_TEMPS).nullable(),
+  expiryManaged: z.boolean().nullable(),
+  lotManaged: z.boolean().nullable(),
+  note: z.string().trim().max(500, "메모는 500자 이내로 입력하세요."),
+});
+
+
+
+/** 품목 등록 요청번호 IR-YYYYMMDD-NNNN (요청일 기준 일련번호) */
+async function nextRequestNos(tx: Tx, count: number) {
+  const prefix = `IR-${todayKst().replaceAll("-", "")}-`;
+  const used = await tx.itemRequest.findMany({ where: { requestNo: { startsWith: prefix } }, select: { requestNo: true } });
+  const max = used.reduce((m, u) => Math.max(m, Number(u.requestNo.slice(prefix.length)) || 0), 0);
+  return Array.from({ length: count }, (_, i) => `${prefix}${String(max + 1 + i).padStart(4, "0")}`);
+}
+
+/**
+ * 요청 중복 확인 — 같은 화주사에 이미 등록된 품목, 또는 검토 중(등록대기·반려)인 다른 요청과 품목코드·바코드가 겹치면 막는다
+ * 결과 키: itemCode / barcode
+ */
+async function requestDuplicates(tx: Tx, clientId: number, items: { itemCode: string; barcode: string }[], exceptRequestId?: number) {
+  const codes = items.map((i) => i.itemCode);
+  const barcodes = items.map((i) => i.barcode);
+  const [itemByCode, itemByBarcode, reqs] = await Promise.all([
+    tx.item.findMany({ where: { clientId, code: { in: codes } }, select: { code: true, name: true } }),
+    tx.itemBarcode.findMany({ where: { clientId, barcode: { in: barcodes } }, select: { barcode: true, item: { select: { code: true } } } }),
+    tx.itemRequest.findMany({
+      where: {
+        clientId,
+        status: { in: ["WAITING", "REJECTED"] },
+        OR: [{ itemCode: { in: codes } }, { barcode: { in: barcodes } }],
+        ...(exceptRequestId ? { NOT: { id: exceptRequestId } } : {}),
+      },
+      select: { requestNo: true, itemCode: true, barcode: true },
+    }),
+  ]);
+  return items.map((i) => {
+    const e: Record<string, string> = {};
+    const ic = itemByCode.find((x) => x.code === i.itemCode);
+    if (ic) e.itemCode = `이미 등록된 품목코드입니다 (${ic.name}).`;
+    const ib = itemByBarcode.find((x) => x.barcode === i.barcode);
+    if (ib) e.barcode = `이미 ${ib.item.code} 품목이 쓰는 바코드입니다.`;
+    const rc = reqs.find((x) => x.itemCode === i.itemCode);
+    if (rc && !e.itemCode) e.itemCode = `검토 중인 요청 ${rc.requestNo}과(와) 품목코드가 같습니다.`;
+    const rb = reqs.find((x) => x.barcode === i.barcode);
+    if (rb && !e.barcode) e.barcode = `검토 중인 요청 ${rb.requestNo}과(와) 바코드가 같습니다.`;
+    return e;
+  });
+}
+
+/** 화주사: 품목 등록 요청 (단건) — 새 요청 또는 반려된 요청을 고쳐 재요청 */
+export async function submitItemRequest(input: z.input<typeof requestSchema>): Promise<ActionResult<{ id: number; requestNo: string }>> {
+  const me = await actorFor("itemRequests", "edit");
+  if (!me?.clientId) return forbidden();
+  const clientId = me.clientId;
+  const p = requestSchema.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const v = p.data;
+  const actor = me.name;
+  const fields = {
+    itemCode: v.itemCode, itemName: v.itemName, unit: v.unit, barcode: v.barcode, storageTemp: v.storageTemp,
+    expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, sourceNote: v.note || null,
+  };
+
+  return run(() =>
+    db.$transaction(async (tx) => {
+      const [dup] = await requestDuplicates(tx, clientId, [v], v.id);
+      if (Object.keys(dup).length) return fail("VALIDATION", "입력 내용을 확인하세요.", dup);
+
+      if (!v.id) {
+        const [requestNo] = await nextRequestNos(tx, 1);
+        const row = await tx.itemRequest.create({ data: { ...fields, requestNo, clientId, source: "DIRECT", requestedBy: actor } });
+        await tx.itemRequestHistory.create({ data: { requestId: row.id, action: "REQUEST", actor, actorId: me.id } });
+        return done(`품목 등록 요청 ${requestNo}을(를) 보냈습니다. 3PL이 검토 후 등록합니다.`, { id: row.id, requestNo });
+      }
+
+      const cur = await tx.itemRequest.findUnique({ where: { id: v.id } });
+      if (!cur || cur.clientId !== clientId) return fail("NOT_FOUND", "요청을 찾을 수 없습니다.");
+      if (cur.version !== v.version) return fail("CONFLICT", "3PL이 먼저 처리했거나 다른 사용자가 고친 요청입니다. 최신 내용을 불러옵니다.");
+      if (cur.status !== "REJECTED") return fail("STATE", "반려된 요청만 고쳐서 다시 보낼 수 있습니다.");
+      const r = await tx.itemRequest.updateMany({
+        where: { id: v.id, version: v.version, status: "REJECTED" },
+        data: { ...fields, status: "WAITING", resubmitCount: { increment: 1 }, version: { increment: 1 }, requestedBy: actor, requestedAt: new Date() },
+      });
+      if (r.count === 0) throw new Error("CONFLICT_RACE");
+      const changed = (["itemCode", "itemName", "unit", "barcode"] as const).filter((k) => cur[k] !== v[k]).map((k) => `${FIELD_LABEL[k]} '${cur[k]}' → '${v[k]}'`);
+      await tx.itemRequestHistory.create({
+        data: { requestId: cur.id, action: "RESUBMIT", actor, actorId: me.id, memo: changed.length ? `수정: ${changed.join(", ")}` : null },
+      });
+      return done(`${cur.requestNo} 요청을 고쳐 다시 보냈습니다.`, { id: cur.id, requestNo: cur.requestNo });
+    }),
+  );
+}
+
+/* ───────── 품목 엑셀 일괄 등록(3PL) · 일괄 요청(화주사) ───────── */
+
+/** 3PL은 품목 일괄 등록, 화주사는 품목 등록 요청을 일괄로 보낸다 */
+async function bulkActor(): Promise<{ me: SessionUser; kind: BulkKind } | null> {
+  const me = await getActor();
+  if (can(me.roles, "items", "edit")) return { me, kind: "ITEM" };
+  if (can(me.roles, "itemRequests", "edit") && me.clientId) return { me, kind: "REQUEST" };
+  return null;
+}
+
+type BulkChecked =
+  | { rowNo: number; raw: RawRow; errors: string[]; item?: undefined; request?: undefined }
+  | { rowNo: number; raw: RawRow; errors: []; item: ItemInput; request?: undefined }
+  | { rowNo: number; raw: RawRow; errors: []; item?: undefined; request: RequestDraft };
+
+/** 행마다 형식 → 파일 안 중복 → 기존 품목·검토 중 요청과 중복 순으로 확인한다 */
+async function checkBulk(tx: Tx, kind: BulkKind, clientId: number, rows: { rowNo: number; raw: RawRow }[]): Promise<BulkChecked[]> {
+  if (kind === "ITEM") {
+    const parsed = rows.map((r): { rowNo: number; raw: RawRow; errors: string[]; item?: ItemInput } => {
+      const p = parseItemRow(r.raw);
+      if (!p.ok) return { ...r, errors: p.errors };
+      const z = itemSchema.safeParse({ ...p.value, clientId, isActive: true });
+      if (!z.success) return { ...r, errors: [...new Set(z.error.issues.map((i) => i.message))] };
+      return { ...r, errors: [] as string[], item: z.data };
+    });
+    const ok = parsed.filter((p) => p.item);
+    const inFile = fileDuplicates(ok.map((p) => ({ rowNo: p.rowNo, code: p.item!.code, barcodes: p.item!.barcodes.map((b) => b.barcode), aliases: p.item!.aliases })));
+    const codes = ok.map((p) => p.item!.code);
+    const barcodes = ok.flatMap((p) => p.item!.barcodes.map((b) => b.barcode));
+    const aliases = ok.flatMap((p) => p.item!.aliases.map(normalizeAlias));
+    const [byCode, byBarcode, byAlias] = await Promise.all([
+      tx.item.findMany({ where: { clientId, code: { in: codes } }, select: { code: true, name: true } }),
+      tx.itemBarcode.findMany({ where: { clientId, barcode: { in: barcodes } }, select: { barcode: true, item: { select: { code: true } } } }),
+      tx.itemAlias.findMany({ where: { clientId, normalized: { in: aliases } }, select: { alias: true, normalized: true, item: { select: { code: true } } } }),
+    ]);
+    return parsed.map((p): BulkChecked => {
+      if (!p.item) return { rowNo: p.rowNo, raw: p.raw, errors: p.errors };
+      const item = p.item;
+      const e = [...(inFile.get(p.rowNo) ?? [])];
+      const c = byCode.find((x) => x.code === item.code);
+      if (c) e.push(`이미 등록된 품목코드입니다 (${c.name}).`);
+      for (const b of item.barcodes) {
+        const hit = byBarcode.find((x) => x.barcode === b.barcode);
+        if (hit) e.push(`바코드 ${b.barcode}은(는) ${hit.item.code} 품목이 쓰고 있습니다.`);
+      }
+      for (const a of item.aliases) {
+        const hit = byAlias.find((x) => x.normalized === normalizeAlias(a));
+        if (hit) e.push(`별칭 '${a}'은(는) ${hit.item.code} 품목이 쓰고 있습니다.`);
+      }
+      return e.length ? { rowNo: p.rowNo, raw: p.raw, errors: e } : { rowNo: p.rowNo, raw: p.raw, errors: [], item };
+    });
+  }
+
+  const parsed = rows.map((r): { rowNo: number; raw: RawRow; errors: string[]; request?: RequestDraft } => {
+    const p = parseRequestRow(r.raw);
+    return p.ok ? { ...r, errors: [] as string[], request: p.value } : { ...r, errors: p.errors };
+  });
+  const ok = parsed.filter((p) => p.request);
+  const inFile = fileDuplicates(ok.map((p) => ({ rowNo: p.rowNo, code: p.request!.code, barcodes: [p.request!.barcode] })));
+  const dups = await requestDuplicates(tx, clientId, ok.map((p) => ({ itemCode: p.request!.code, barcode: p.request!.barcode })));
+  const dupBy = new Map(ok.map((p, i) => [p.rowNo, dups[i]]));
+  return parsed.map((p): BulkChecked => {
+    if (!p.request) return { rowNo: p.rowNo, raw: p.raw, errors: p.errors };
+    const e = [...(inFile.get(p.rowNo) ?? []), ...Object.values(dupBy.get(p.rowNo) ?? {})];
+    return e.length ? { rowNo: p.rowNo, raw: p.raw, errors: e } : { rowNo: p.rowNo, raw: p.raw, errors: [], request: p.request };
+  });
+}
+
+/** 화주사 확인 — 3PL은 고른 화주사(사용 중), 화주사 계정은 자기 화주사 */
+async function bulkClient(me: SessionUser, kind: BulkKind, clientId: number | null) {
+  const id = kind === "REQUEST" ? me.clientId : clientId;
+  if (!id) return null;
+  const c = await db.client.findUnique({ where: { id }, select: { id: true, name: true, isActive: true } });
+  return c?.isActive ? c : null;
+}
+
+/** 1단계: 파일을 읽어 행마다 검사 결과를 돌려준다 (저장하지 않음) */
+export async function previewItemBulk(form: FormData): Promise<ActionResult<BulkPreview>> {
+  const who = await bulkActor();
+  if (!who) return forbidden();
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) return fail("VALIDATION", "엑셀 파일을 고르세요.", { file: "엑셀 파일을 고르세요." });
+  if (!/\.xlsx$/i.test(file.name)) return fail("VALIDATION", "확장자가 .xlsx인 엑셀 파일만 올릴 수 있습니다.", { file: ".xlsx 파일을 고르세요." });
+  const client = await bulkClient(who.me, who.kind, Number(form.get("clientId")) || null);
+  if (!client) return fail("VALIDATION", "화주사를 선택하세요.", { clientId: "사용 중인 화주사를 선택하세요." });
+
+  const read = await readRows(who.kind, await file.arrayBuffer());
+  if (!read.ok) return fail("VALIDATION", read.error, { file: read.error });
+  const checked = await checkBulk(db as unknown as Tx, who.kind, client.id, read.rows);
+  return {
+    ok: true,
+    message: "",
+    data: {
+      kind: who.kind,
+      clientId: client.id,
+      clientName: client.name,
+      fileName: file.name,
+      rows: checked.map((c) => ({ rowNo: c.rowNo, raw: c.raw, errors: c.errors })),
+    },
+  };
+}
+
+/**
+ * 2단계: 오류 없는 행만 등록(요청). 미리보기 뒤 그사이 다른 사람이 같은 코드·바코드를 등록했을 수 있어 서버에서 다시 검사하고,
+ * 하나라도 걸리면 아무것도 저장하지 않고 다시 확인하게 한다.
+ */
+export async function commitItemBulk(input: { clientId: number; rows: { rowNo: number; raw: RawRow }[] }): Promise<ActionResult<{ count: number }>> {
+  const who = await bulkActor();
+  if (!who) return forbidden();
+  const { me, kind } = who;
+  if (!Array.isArray(input.rows) || input.rows.length === 0) return fail("VALIDATION", "등록할 행이 없습니다.");
+  if (input.rows.length > BULK_MAX_ROWS) return fail("VALIDATION", `한 번에 ${BULK_MAX_ROWS.toLocaleString()}행까지 등록할 수 있습니다.`);
+  const client = await bulkClient(me, kind, input.clientId);
+  if (!client) return fail("VALIDATION", "사용 중인 화주사를 선택하세요.");
+  const actor = me.name;
+  const rows = input.rows.map((r) => ({ rowNo: Number(r.rowNo), raw: Object.fromEntries(Object.entries(r.raw ?? {}).map(([k, v]) => [k, String(v ?? "")])) }));
+
+  return run(() =>
+    db.$transaction(
+      async (tx) => {
+        const checked = await checkBulk(tx, kind, client.id, rows);
+        const bad = checked.filter((c) => c.errors.length);
+        if (bad.length)
+          return fail(
+            "CONFLICT",
+            `${bad.map((b) => `${b.rowNo}행`).slice(0, 5).join(", ")}${bad.length > 5 ? ` 외 ${bad.length - 5}건` : ""}이(가) 그사이 등록된 품목·요청과 겹칩니다. 파일을 다시 올려 확인하세요.`,
+          );
+
+        if (kind === "ITEM") {
+          for (const c of checked) await createItemTx(tx, c.item!, actor, { fromExcel: true });
+          return done(`${client.name} 품목 ${checked.length.toLocaleString()}건을 등록했습니다.`, { count: checked.length });
+        }
+
+        const nos = await nextRequestNos(tx, checked.length);
+        const created = await tx.itemRequest.createManyAndReturn({
+          data: checked.map((c, i) => {
+            const r = c.request!;
+            return {
+              requestNo: nos[i], clientId: client.id, itemCode: r.code, itemName: r.name, unit: r.unit, barcode: r.barcode,
+              storageTemp: r.storageTemp, expiryManaged: r.expiryManaged, lotManaged: r.lotManaged, sourceNote: r.note,
+              source: "ITEM_EXCEL" as const, requestedBy: actor,
+            };
+          }),
+          select: { id: true },
+        });
+        await tx.itemRequestHistory.createMany({ data: created.map((r) => ({ requestId: r.id, action: "REQUEST" as const, actor, actorId: me.id, memo: "엑셀 일괄 요청" })) });
+        return done(`품목 등록 요청 ${created.length.toLocaleString()}건을 보냈습니다. 3PL이 검토 후 등록합니다.`, { count: created.length });
+      },
+      { timeout: 120_000, maxWait: 10_000 },
+    ),
   );
 }
 
@@ -644,32 +920,39 @@ const userSchema = z
       .toLowerCase()
       .regex(/^[a-z0-9._-]{3,50}$/, "아이디는 영문 소문자·숫자·점(.)·밑줄·하이픈 3~50자로 입력하세요."),
     name: trimmed(50, "이름"),
-    role: z.enum(USER_ROLES, { error: "역할을 선택하세요." }),
+    roles: z.array(z.enum(USER_ROLES)).min(1, "역할을 하나 이상 고르세요."),
     clientId: z.number().int().positive().nullable(),
     centerId: z.number().int().positive().nullable(),
     isActive: z.boolean(),
   })
   .superRefine((v, ctx) => {
-    const org = ROLE_META[v.role].org;
+    if (!v.roles.length) return;
+    const orgs = new Set(v.roles.map((r) => ROLE_META[r].org));
+    if (orgs.size > 1) return ctx.addIssue({ code: "custom", path: ["roles"], message: "3PL 역할과 화주사 역할은 함께 줄 수 없습니다." });
+    const org = ROLE_META[v.roles[0]].org;
     if (org === "SHIPPER" && !v.clientId) ctx.addIssue({ code: "custom", path: ["clientId"], message: "화주사를 선택하세요." });
     if (org === "TPL" && !v.centerId) ctx.addIssue({ code: "custom", path: ["centerId"], message: "센터를 선택하세요." });
   });
+
+/** 이력 비교·표시용: 역할 코드를 정렬해 쉼표로 잇는다 */
+const rolesText = (roles: readonly UserRole[]) => sortRoles(roles).join(",");
 
 export async function saveUser(input: z.input<typeof userSchema>): Promise<ActionResult<{ id: number }>> {
   const me = await actorFor("users", "edit");
   if (!me) return forbidden();
   const p = userSchema.safeParse(input);
   if (!p.success) return invalid(p.error);
-  const v = p.data;
-  const org = ROLE_META[v.role].org;
+  const v = { ...p.data, roles: sortRoles(p.data.roles) };
+  const org = ROLE_META[v.roles[0]].org;
   const scope = { clientId: org === "SHIPPER" ? v.clientId : null, centerId: org === "TPL" ? v.centerId : null };
   const actor = me.name;
 
   return run(() =>
     db.$transaction(async (tx) => {
       // 화주사 계정은 자기 화주사 사용자만, 3PL 관리자 역할은 3PL 관리자만 부여·수정한다
-      if (isShipperRole(me.role) && (org !== "SHIPPER" || scope.clientId !== me.clientId)) return forbidden();
-      if (v.role === "TPL_ADMIN" && me.role !== "TPL_ADMIN") return forbidden();
+      if (isShipperRole(me.roles) && (org !== "SHIPPER" || scope.clientId !== me.clientId)) return forbidden();
+      const meAdmin = me.roles.includes("TPL_ADMIN");
+      if (v.roles.includes("TPL_ADMIN") && !meAdmin) return forbidden();
       if (scope.clientId) {
         const c = await tx.client.findUnique({ where: { id: scope.clientId } });
         if (!c) return fail("VALIDATION", "입력 내용을 확인하세요.", { clientId: "화주사를 찾을 수 없습니다." });
@@ -680,22 +963,22 @@ export async function saveUser(input: z.input<typeof userSchema>): Promise<Actio
         if (await tx.user.findUnique({ where: { loginId: v.loginId } }))
           return fail("VALIDATION", "입력 내용을 확인하세요.", { loginId: "이미 쓰고 있는 아이디입니다." });
         const row = await tx.user.create({
-          data: { loginId: v.loginId, name: v.name, role: v.role, ...scope, isActive: v.isActive, createdBy: actor, updatedBy: actor },
+          data: { loginId: v.loginId, name: v.name, roles: v.roles, ...scope, isActive: v.isActive, createdBy: actor, updatedBy: actor },
         });
         await log(tx, "tb_user", String(row.id), "CREATE", actor, null, {
-          loginId: row.loginId, name: row.name, role: row.role, clientId: row.clientId, centerId: row.centerId, isActive: row.isActive,
+          loginId: row.loginId, name: row.name, roles: rolesText(row.roles), clientId: row.clientId, centerId: row.centerId, isActive: row.isActive,
         });
         return done(`사용자 ${row.name}(${row.loginId})을(를) 등록했습니다.`, { id: row.id });
       }
       const cur = await tx.user.findUnique({ where: { id: v.id } });
       if (!cur) return fail("NOT_FOUND", "사용자를 찾을 수 없습니다.");
-      if (outOfScope(me, cur.clientId) || (cur.role === "TPL_ADMIN" && me.role !== "TPL_ADMIN")) return forbidden();
+      if (outOfScope(me, cur.clientId) || (cur.roles.includes("TPL_ADMIN") && !meAdmin)) return forbidden();
       if (cur.version !== v.version) return conflict();
-      const d = diff(cur, { name: v.name, role: v.role, clientId: scope.clientId, centerId: scope.centerId, isActive: v.isActive });
+      const d = diff({ ...cur, roles: rolesText(cur.roles) }, { name: v.name, roles: rolesText(v.roles), clientId: scope.clientId, centerId: scope.centerId, isActive: v.isActive });
       if (!d) return done("바뀐 내용이 없습니다.", { id: cur.id });
       const r = await tx.user.updateMany({
         where: { id: v.id, version: v.version },
-        data: { name: v.name, role: v.role, ...scope, isActive: v.isActive, updatedBy: actor, version: { increment: 1 } },
+        data: { name: v.name, roles: v.roles, ...scope, isActive: v.isActive, updatedBy: actor, version: { increment: 1 } },
       });
       if (r.count === 0) return conflict();
       await log(tx, "tb_user", String(cur.id), "UPDATE", actor, d.b, d.a);
@@ -854,7 +1137,7 @@ export async function saveCenter(input: CenterInput): Promise<ActionResult<{ id:
       // 담당자: 그 센터 소속 · 사용 중 · 3PL 관리자/운영담당만
       if (v.managerUserId) {
         const m = await tx.user.findUnique({ where: { id: v.managerUserId } });
-        const ok = m && m.isActive && (m.role === "TPL_ADMIN" || m.role === "TPL_OPERATOR") && !isNew && m.centerId === input.id;
+        const ok = m && m.isActive && isManagerCandidate(m.roles) && !isNew && m.centerId === input.id;
         if (!ok) return fail("VALIDATION", "입력 내용을 확인하세요.", { managerUserId: "이 센터에 소속된 3PL 관리자·운영담당 중에서 고르세요" });
       }
       const sameName = await tx.center.findFirst({ where: { name: v.name, ...(isNew ? {} : { NOT: { id: input.id } }) } });
@@ -895,29 +1178,33 @@ const holidaySchema = z.object({
 });
 
 export async function addHoliday(input: z.input<typeof holidaySchema>): Promise<ActionResult<{ id: number }>> {
+  const me = await actorFor("holidays", "edit");
+  if (!me) return forbidden();
   const p = holidaySchema.safeParse(input);
   if (!p.success) return invalid(p.error);
   const v = p.data;
   const date = new Date(`${v.date}T00:00:00Z`);
   if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== v.date)
     return fail("VALIDATION", "입력 내용을 확인하세요.", { date: "올바른 날짜를 선택하세요." });
-  const me = await getActor();
   const actor = me.name;
 
   return run(() =>
     db.$transaction(async (tx) => {
       const exists = await tx.holiday.findUnique({ where: { centerId_date: { centerId: v.centerId, date } } });
       if (exists) return fail("VALIDATION", "입력 내용을 확인하세요.", { date: `이미 등록된 날짜입니다 (${exists.name}).` });
-      const row = await tx.holiday.create({ data: { centerId: v.centerId, date, name: v.name, kind: v.kind, createdBy: actor } });
-      await log(tx, "tb_holiday", String(row.id), "CREATE", actor, null, { date: v.date, name: v.name, kind: v.kind });
+      const center = await tx.center.findUnique({ where: { id: v.centerId } });
+      if (!center?.isActive) return fail("VALIDATION", "입력 내용을 확인하세요.", { centerId: "사용 중인 센터를 선택하세요." });
+      const row = await tx.holiday.create({ data: { centerId: v.centerId, date, name: v.name, kind: v.kind, source: "MANUAL", createdBy: actor } });
+      await log(tx, "tb_holiday", String(row.id), "CREATE", actor, null, { date: v.date, name: v.name, kind: v.kind, source: "MANUAL" });
       return done(`${v.date} ${v.name}을(를) 휴무일로 등록했습니다.`, { id: row.id });
     }),
   );
 }
 
-/** 휴무일은 전표가 참조하지 않으므로 삭제한다. 삭제 내역은 변경 이력에 남는다 */
+/** 휴무일은 전표가 참조하지 않으므로 삭제한다(공공데이터에서 불러온 것도). 삭제 내역은 변경 이력에 남는다 */
 export async function deleteHoliday(input: { id: number }): Promise<ActionResult> {
-  const me = await getActor();
+  const me = await actorFor("holidays", "edit");
+  if (!me) return forbidden();
   const actor = me.name;
   return run(() =>
     db.$transaction(async (tx) => {
@@ -925,8 +1212,62 @@ export async function deleteHoliday(input: { id: number }): Promise<ActionResult
       if (!cur) return fail("NOT_FOUND", "이미 삭제된 휴무일입니다.");
       await tx.holiday.delete({ where: { id: cur.id } });
       const date = cur.date.toISOString().slice(0, 10);
-      await log(tx, "tb_holiday", String(cur.id), "DELETE", actor, { date, name: cur.name, kind: cur.kind }, null);
+      await log(tx, "tb_holiday", String(cur.id), "DELETE", actor, { date, name: cur.name, kind: cur.kind, source: cur.source }, null);
       return done(`${date} ${cur.name}을(를) 휴무일에서 뺐습니다.`);
+    }),
+  );
+}
+
+const importSchema = z.object({
+  year: z.number().int().min(2000, "연도를 확인하세요.").max(2100, "연도를 확인하세요."),
+  /** 비우면 사용 중인 모든 센터 */
+  centerId: z.number().int().positive().nullable(),
+});
+
+/**
+ * 공공데이터(특일 정보)의 공휴일을 센터 휴무일로 넣는다.
+ * 이미 휴무일이 있는 날짜(직접 등록 포함)는 건너뛴다. 전에 삭제한 공휴일은 다시 들어간다 (2026-11-04 Sol 결정).
+ */
+export async function importPublicHolidays(input: z.input<typeof importSchema>): Promise<ActionResult<{ added: number; skipped: number }>> {
+  const me = await actorFor("holidays", "edit");
+  if (!me) return forbidden();
+  const p = importSchema.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const v = p.data;
+  const actor = me.name;
+
+  const fetched = await fetchPublicHolidays(v.year);
+  if (!fetched.ok) return fail("EXTERNAL", fetched.error);
+  if (fetched.rows.length === 0) return fail("EXTERNAL", `공공데이터에 ${v.year}년 공휴일이 아직 없습니다. 보통 전년도 하반기에 공개됩니다.`);
+
+  return run(() =>
+    db.$transaction(async (tx) => {
+      const centers = await tx.center.findMany({ where: { isActive: true, ...(v.centerId ? { id: v.centerId } : {}) }, select: { id: true, name: true } });
+      if (!centers.length) return fail("VALIDATION", "입력 내용을 확인하세요.", { centerId: "사용 중인 센터를 선택하세요." });
+      const dates = fetched.rows.map((r) => ymdDate(r.date));
+      const existing = await tx.holiday.findMany({ where: { centerId: { in: centers.map((c) => c.id) }, date: { in: dates } }, select: { centerId: true, date: true } });
+      const taken = new Set(existing.map((e) => `${e.centerId}|${e.date.toISOString().slice(0, 10)}`));
+      // 같은 날 이름이 둘이면(예: 어린이날·부처님오신날 겹침) 한 행으로 합친다
+      const byDate = new Map<string, string>();
+      for (const r of fetched.rows) byDate.set(r.date, byDate.has(r.date) ? `${byDate.get(r.date)} · ${r.name}`.slice(0, 100) : r.name);
+      let added = 0;
+      let skipped = 0;
+      for (const c of centers) {
+        for (const [date, name] of byDate) {
+          if (taken.has(`${c.id}|${date}`)) {
+            skipped++;
+            continue;
+          }
+          const row = await tx.holiday.create({ data: { centerId: c.id, date: ymdDate(date), name, kind: "PUBLIC", source: "API", createdBy: actor } });
+          await log(tx, "tb_holiday", String(row.id), "CREATE", actor, null, { date, name, kind: "PUBLIC", source: "API" });
+          added++;
+        }
+      }
+      const where = centers.length === 1 ? centers[0].name : `센터 ${centers.length}곳`;
+      const msg = added
+        ? `${v.year}년 공휴일 ${added}건을 ${where}에 불러왔습니다.${skipped ? ` 이미 등록된 ${skipped}건은 건너뛰었습니다.` : ""}`
+        : `${v.year}년 공휴일이 ${where}에 모두 등록되어 있습니다. 새로 넣은 날짜는 없습니다.`;
+      return done(msg, { added, skipped });
     }),
   );
 }

@@ -145,9 +145,21 @@ export interface ItemRequestRow {
   rejectReasonName: string | null;
   rejectReasonText: string | null;
   registeredItemCode: string | null;
+  registeredItemId: number | null;
   /** 오늘 내가 등록·반려했으면 그 처리 ("오늘 처리" 탭) */
   doneByMeToday: { action: "REGISTER" | "REJECT"; at: string } | null;
   histories: ItemRequestHistoryRow[];
+}
+
+/** 요청 상세 — 같은 화주사의 등록대기 요청 순서 (엑셀로 들어온 여러 건을 이어서 검토) */
+export interface ItemRequestQueue {
+  /** 등록대기 중 몇 번째인지 (등록대기가 아니면 null) */
+  position: number | null;
+  total: number;
+  prevId: number | null;
+  nextId: number | null;
+  /** 이 요청을 처리한 뒤 열 요청 */
+  afterId: number | null;
 }
 
 export interface CodeOption {
@@ -178,7 +190,8 @@ export interface UserRow extends Audit {
   id: number;
   loginId: string;
   name: string;
-  role: UserRole;
+  /** 역할 (USER_ROLES 순, 같은 소속끼리만 여러 개) */
+  roles: UserRole[];
   clientId: number | null;
   clientName: string | null;
   centerId: number | null;
@@ -262,6 +275,27 @@ export interface HolidayRow {
   date: string;
   name: string;
   kind: HolidayKind;
+  /** API: 공공데이터에서 불러옴 / MANUAL: 직접 등록 */
+  source: "API" | "MANUAL";
   createdAt: string;
   createdBy: string;
+}
+
+/** 품목 엑셀 일괄 등록·요청 미리보기 */
+export interface BulkPreviewRow {
+  /** 엑셀 행 번호 */
+  rowNo: number;
+  /** 열 키 → 셀 값 */
+  raw: Record<string, string>;
+  /** 비어 있으면 등록 가능 */
+  errors: string[];
+}
+
+export interface BulkPreview {
+  /** ITEM: 3PL 품목 일괄 등록 / REQUEST: 화주사 품목 등록 요청 */
+  kind: "ITEM" | "REQUEST";
+  clientId: number;
+  clientName: string;
+  fileName: string;
+  rows: BulkPreviewRow[];
 }

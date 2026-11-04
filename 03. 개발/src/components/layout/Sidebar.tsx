@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { NAV_GROUPS, type NavCountKey, type NavItem } from "@/config/navigation";
-import { can, resourceOfPath } from "@/domain/permissions";
+import { can, isShipperRole, resourceOfPath } from "@/domain/permissions";
 import type { UserRole } from "@/domain/master";
 import { logout } from "@/server/auth/actions";
 import { useNavCounts } from "./NavCounts";
@@ -15,7 +15,7 @@ type Counts = Partial<Record<NavCountKey, number>>;
 /** 로그인 사용자 표시 정보 */
 export interface Viewer {
   name: string;
-  role: UserRole;
+  roles: UserRole[];
   roleLabel: string;
   /** 3PL · 용인1센터 / 화주사 · 한빛식품 */
   orgLabel: string;
@@ -30,8 +30,17 @@ export function Sidebar({ serverCounts = {}, viewer }: { serverCounts?: Counts; 
   const groups = NAV_GROUPS.map((g) => ({
     ...g,
     items: g.items
-      .filter((it) => !it.href || can(viewer.role, resourceOfPath(it.href), "view"))
-      .map((it) => (it.children ? { ...it, children: it.children.filter((c) => can(viewer.role, resourceOfPath(c.href), "view")) } : it)),
+      .filter((it) => !it.href || can(viewer.roles, resourceOfPath(it.href), "view"))
+      .map((it) =>
+        it.children
+          ? {
+              ...it,
+              children: it.children
+                .filter((c) => can(viewer.roles, resourceOfPath(c.href), "view"))
+                .map((c) => (c.shipperLabel && isShipperRole(viewer.roles) ? { ...c, label: c.shipperLabel } : c)),
+            }
+          : it,
+      ),
   })).filter((g) => g.items.length > 0);
   const { counts: clientCounts } = useNavCounts();
   const counts: Counts = { ...serverCounts, ...clientCounts };

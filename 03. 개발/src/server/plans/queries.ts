@@ -48,7 +48,7 @@ function toRow(p: RowSource, tab: ApprovalTab): ApprovalRow {
 
 /** 승인 대기 화면 목록 — 승인대기 / 반려(화주사 수정 중) / 오늘 내가 승인·반려한 건 */
 export async function listApproval(me: PlanActor): Promise<ApprovalRow[]> {
-  if (!can(me.role, "approval", "view")) return [];
+  if (!can(me.roles, "approval", "view")) return [];
   const { start, end } = kstDayRange(todayKst());
   const [open, mine] = await Promise.all([
     loadRows({ ...centerScope(me), status: { in: ["WAITING", "REJECTED"] } }),
@@ -73,13 +73,13 @@ export async function listApproval(me: PlanActor): Promise<ApprovalRow[]> {
 }
 
 export async function countApprovalWaiting(me: PlanActor) {
-  if (!can(me.role, "approval", "view")) return 0;
+  if (!can(me.roles, "approval", "view")) return 0;
   return db.inboundPlan.count({ where: { ...centerScope(me), status: "WAITING" } });
 }
 
 /** 상세 — 라인·가장 최근 반려본·처리 이력 */
 export async function getPlanDetail(me: PlanActor, id: number): Promise<PlanDetail | null> {
-  if (!can(me.role, "approval", "view")) return null;
+  if (!can(me.roles, "approval", "view")) return null;
   const p = await db.inboundPlan.findFirst({
     where: { id, ...centerScope(me) },
     include: {

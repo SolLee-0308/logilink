@@ -17,6 +17,15 @@ export const ROLE_META: Record<UserRole, { label: string; org: "TPL" | "SHIPPER"
 
 export const ORG_LABEL = { TPL: "3PL", SHIPPER: "화주사" } as const;
 
+/** 역할 표시 순서대로 정렬 (USER_ROLES 순) */
+export const sortRoles = (roles: readonly UserRole[]) => USER_ROLES.filter((r) => roles.includes(r));
+
+/** 여러 역할 표시: "3PL 운영담당 · 3PL 입고검수자" */
+export const rolesLabel = (roles: readonly UserRole[]) => sortRoles(roles).map((r) => ROLE_META[r].label).join(" · ");
+
+/** 3PL 관리자·운영담당 (센터·화주사 담당자 후보) */
+export const isManagerCandidate = (roles: readonly UserRole[]) => roles.some((r) => r === "TPL_ADMIN" || r === "TPL_OPERATOR");
+
 export const ITEM_UNITS = ["EA", "BOX", "PLT"] as const;
 export type ItemUnit = (typeof ITEM_UNITS)[number];
 
@@ -29,13 +38,14 @@ export const ITEM_REQUEST_STATUS_META: Record<ItemRequestStatus, { label: string
   REGISTERED: { label: "등록완료", tone: "ok", tab: "등록완료" },
 };
 
-export const ITEM_REQUEST_SOURCES = ["DIRECT", "EXCEL", "AI"] as const;
+export const ITEM_REQUEST_SOURCES = ["DIRECT", "EXCEL", "AI", "ITEM_EXCEL"] as const;
 export type ItemRequestSource = (typeof ITEM_REQUEST_SOURCES)[number];
 
 export const SOURCE_LABEL: Record<ItemRequestSource, string> = {
   DIRECT: "직접 입력",
   EXCEL: "엑셀 미매칭",
   AI: "이미지 AI 판독 미매칭",
+  ITEM_EXCEL: "엑셀 일괄 요청",
 };
 
 export const ITEM_REQUEST_ACTION_LABEL = {
@@ -72,3 +82,6 @@ export const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = { PUBLIC: "공휴
 /** 입고예정 반려·취소 사유 코드 그룹 */
 export const PLAN_REJECT_GROUP = "PLAN_REJECT";
 export const CANCEL_GROUP = "CANCEL";
+
+/** 품목 메뉴·화면 이름 — 3PL은 조회 + 등록·수정(품목 관리), 화주사는 조회만(품목 조회) (2026-11-04 Sol 확정) */
+export const itemsTitle = (canEdit: boolean) => (canEdit ? "품목 관리" : "품목 조회");

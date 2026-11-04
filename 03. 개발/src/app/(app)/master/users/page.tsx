@@ -16,9 +16,9 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       rows={rows}
       clients={clients}
       centers={centers}
-      viewerRole={me.role}
-      canEdit={can(me.role, "users", "edit")}
-      canManageAccounts={can(me.role, "accounts", "edit")}
+      viewerRoles={me.roles}
+      canEdit={can(me.roles, "users", "edit")}
+      canManageAccounts={can(me.roles, "accounts", "edit")}
       initialClientId={Number.isInteger(client) && client > 0 ? client : undefined}
     />
   );

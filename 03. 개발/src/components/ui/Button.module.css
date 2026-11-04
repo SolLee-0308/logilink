@@ -43,3 +43,7 @@
   font-size: var(--fs-12);
   border-radius: 8px;
 }
+
+.link {
+  text-decoration: none;
+}

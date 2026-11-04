@@ -10,6 +10,6 @@ export const dynamic = "force-dynamic";
 
 export default async function CompanyPage() {
   const me = await requireUser();
-  if (!can(me.role, "company", "view")) return <Forbidden title="회사 정보" />;
-  return <CompanyScreen company={await getCompany()} canEdit={can(me.role, "company", "edit")} />;
+  if (!can(me.roles, "company", "view")) return <Forbidden title="회사 정보" />;
+  return <CompanyScreen company={await getCompany()} canEdit={can(me.roles, "company", "edit")} />;
 }

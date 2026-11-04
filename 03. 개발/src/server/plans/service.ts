@@ -16,7 +16,7 @@ import { CONFLICT_MSG, SAVE_CONFLICT_MSG, canReview, canShipperEdit, nextPlanNo,
 import { todayKst } from "@/lib/format";
 
 type Tx = Prisma.TransactionClient;
-export type PlanActor = Pick<SessionUser, "id" | "name" | "role" | "clientId" | "centerId">;
+export type PlanActor = Pick<SessionUser, "id" | "name" | "roles" | "clientId" | "centerId">;
 
 const ok = <T>(message: string, data?: T): ActionResult<T> => ({ ok: true, message, data });
 const forbidden = () => fail("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
@@ -69,7 +69,7 @@ const saveSchema = z.object({
 export type SavePlanInput = z.input<typeof saveSchema>;
 
 export async function savePlan(me: PlanActor, input: SavePlanInput): Promise<ActionResult<{ id: number; planNo: string }>> {
-  if (!can(me.role, "planEntry", "edit") || !me.clientId) return forbidden();
+  if (!can(me.roles, "planEntry", "edit") || !me.clientId) return forbidden();
   const p = saveSchema.safeParse(input);
   if (!p.success) {
     const fe: Record<string, string> = {};
@@ -176,7 +176,7 @@ export async function cancelPlanByShipper(
   me: PlanActor,
   input: { id: number; version: number; reasonCode: string; reasonText?: string },
 ): Promise<ActionResult> {
-  if (!can(me.role, "planEntry", "edit") || !me.clientId) return forbidden();
+  if (!can(me.roles, "planEntry", "edit") || !me.clientId) return forbidden();
   const text = input.reasonText?.trim() ?? "";
   return guarded(
     () =>
@@ -224,7 +224,7 @@ async function reviewTarget(tx: Tx, me: PlanActor, id: number, version: number) 
 }
 
 export async function approvePlan(me: PlanActor, input: { id: number; version: number }): Promise<ActionResult> {
-  if (!can(me.role, "approval", "edit")) return forbidden();
+  if (!can(me.roles, "approval", "edit")) return forbidden();
   return guarded(
     () =>
       db.$transaction(async (tx) => {
@@ -248,7 +248,7 @@ export async function rejectPlan(
   me: PlanActor,
   input: { id: number; version: number; reasonCode: string; reasonText?: string },
 ): Promise<ActionResult> {
-  if (!can(me.role, "approval", "edit")) return forbidden();
+  if (!can(me.roles, "approval", "edit")) return forbidden();
   const text = input.reasonText?.trim() ?? "";
   if (text.length > 500) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
   return guarded(

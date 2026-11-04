@@ -1,15 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Tag } from "@/components/ui/Badges";
 import { Button } from "@/components/ui/Button";
-import { ChipGroup, FilterBar, FilterField } from "@/components/ui/FilterBar";
+import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
+import { ChipGroup, FilterBar, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { FormField, Input, Select } from "@/components/ui/Form";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { Modal } from "@/components/ui/Overlay";
-import { KeyValue, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
+import { ListToolbar } from "@/components/ui/SplitView";
 import { HOLIDAY_KIND_LABEL, type HolidayKind } from "@/domain/master";
-import { fmtDateTime } from "@/lib/format";
-import { addHoliday, deleteHoliday } from "@/server/master/actions";
+import { fmtShortDateTime, includesText } from "@/lib/format";
+import { addHoliday, deleteHoliday, importPublicHolidays } from "@/server/master/actions";
 import { EditModal, FormSection } from "./record";
 import { MasterHeader, useAction } from "./shared";
 import { RULES } from "./rules";
@@ -17,76 +19,118 @@ import type { CenterOption, HolidayRow } from "./types";
 import styles from "./HolidaysScreen.module.css";
 
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
-/** 날짜만 있는 값이라 모든 계산을 UTC 기준으로 한다 */
-const utc = (d: string) => new Date(`${d}T00:00:00Z`);
-const ymd = (d: Date) => d.toISOString().slice(0, 10);
-const weekday = (d: string) => WEEKDAY[utc(d).getUTCDay()];
+/** 날짜만 있는 값이라 요일은 UTC 기준으로 계산한다 */
+const weekday = (d: string) => WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()];
 
-/** YYYY-MM 월에서 n개월 이동 */
-function shiftMonth(month: string, n: number) {
-  const d = utc(`${month}-01`);
-  d.setUTCMonth(d.getUTCMonth() + n);
-  return ymd(d).slice(0, 7);
-}
+const SOURCE_LABEL = { API: "공공데이터", MANUAL: "직접 등록" } as const;
+type SourceFilter = "all" | keyof typeof SOURCE_LABEL;
 
-/** 달력 칸: 그 달 1일이 든 주의 일요일부터 말일이 든 주의 토요일까지 */
-function monthCells(month: string) {
-  const first = utc(`${month}-01`);
-  const start = new Date(first);
-  start.setUTCDate(1 - first.getUTCDay());
-  const last = utc(`${shiftMonth(month, 1)}-01`);
-  last.setUTCDate(0);
-  const end = new Date(last);
-  end.setUTCDate(last.getUTCDate() + (6 - last.getUTCDay()));
-  const cells: string[] = [];
-  for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) cells.push(ymd(d));
-  return cells;
-}
-
-const monthLabel = (m: string) => `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`;
-const dateLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일 (${weekday(d)})`;
-
+/**
+ * 휴무일 — 연도별 목록 (2026-11-04 Sol: 달력 → 목록으로 되돌림)
+ * 공공데이터(특일 정보)에서 공휴일을 불러온 뒤, 직접 추가·삭제한다. 불러온 공휴일도 삭제할 수 있다.
+ */
 export function HolidaysScreen({
   rows,
   centers,
   today,
+  canEdit,
 }: {
   rows: HolidayRow[];
   centers: CenterOption[];
   /** YYYY-MM-DD (서버 기준 오늘) */
   today: string;
+  /** 등록·삭제·불러오기 (3PL) */
+  canEdit: boolean;
 }) {
-  const [month, setMonth] = useState(today.slice(0, 7));
+  const thisYear = Number(today.slice(0, 4));
+  const [year, setYear] = useState(String(thisYear));
   const [centerId, setCenterId] = useState("");
   const [kind, setKind] = useState<"all" | HolidayKind>("all");
-  const [selected, setSelected] = useState<number | null>(null);
-  /** 등록 모달: 열려 있으면 미리 채울 날짜 */
-  const [newDate, setNewDate] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
-  const visible = useMemo(
-    () => rows.filter((r) => (!centerId || r.centerId === Number(centerId)) && (kind === "all" || r.kind === kind)),
-    [rows, centerId, kind],
-  );
-  const byDate = useMemo(() => {
-    const m = new Map<string, HolidayRow[]>();
-    for (const r of visible) m.set(r.date, [...(m.get(r.date) ?? []), r]);
-    return m;
-  }, [visible]);
-  const monthRows = visible.filter((r) => r.date.startsWith(month));
-  const cells = useMemo(() => monthCells(month), [month]);
-  const current = selected === null ? null : (rows.find((r) => r.id === selected) ?? null);
+  const [source, setSource] = useState<SourceFilter>("all");
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(0);
+  const [importing, setImporting] = useState(false);
+  const [toDelete, setToDelete] = useState<HolidayRow | null>(null);
   const multiCenter = centers.length > 1;
 
-  function openNew(date: string) {
-    setNewDate(date);
-    setNonce((n) => n + 1);
-  }
+  // 연도 선택지: 등록된 연도 + 올해 앞뒤 1년
+  const years = useMemo(() => {
+    const s = new Set([thisYear - 1, thisYear, thisYear + 1, ...rows.map((r) => Number(r.date.slice(0, 4)))]);
+    return [...s].sort((a, b) => b - a);
+  }, [rows, thisYear]);
+
+  const list = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          (!year || r.date.startsWith(year)) &&
+          (!centerId || r.centerId === Number(centerId)) &&
+          (kind === "all" || r.kind === kind) &&
+          (source === "all" || r.source === source) &&
+          includesText([r.name, r.date], q),
+      ),
+    [rows, year, centerId, kind, source, q],
+  );
+
+  const columns: Column<HolidayRow>[] = [
+    {
+      key: "date",
+      header: "날짜",
+      render: (r) => (
+        <span className={r.date < today ? "muted" : undefined}>
+          <span className="mono">{r.date}</span> ({weekday(r.date)})
+        </span>
+      ),
+    },
+    { key: "name", header: "휴무일 이름", wrap: true, render: (r) => r.name },
+    {
+      key: "kind",
+      header: "구분",
+      render: (r) => <Tag tone={r.kind === "PUBLIC" ? "danger" : "accent"}>{HOLIDAY_KIND_LABEL[r.kind]}</Tag>,
+    },
+    ...(multiCenter ? [{ key: "center", header: "센터", render: (r: HolidayRow) => r.centerName }] : []),
+    {
+      key: "source",
+      header: "출처",
+      render: (r) => (
+        <>
+          {SOURCE_LABEL[r.source]}
+          <CellSub>
+            {fmtShortDateTime(r.createdAt)} · {r.createdBy}
+          </CellSub>
+        </>
+      ),
+    },
+    ...(canEdit
+      ? [
+          {
+            key: "act",
+            header: <span className="sr-only">삭제</span>,
+            align: "right" as const,
+            render: (r: HolidayRow) => (
+              <Button size="sm" variant="danger" onClick={() => setToDelete(r)} aria-label={`${r.date} ${r.name} 삭제`}>
+                삭제
+              </Button>
+            ),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <>
       <MasterHeader title="휴무일" count={rows.filter((r) => r.date >= today).length} rules={RULES.holidays} />
       <FilterBar>
+        <FilterField label="연도" htmlFor="f-year">
+          <Select id="f-year" value={year} onChange={(e) => setYear(e.target.value)}>
+            <option value="">전체</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </Select>
+        </FilterField>
         {multiCenter && (
           <FilterField label="센터" htmlFor="f-center">
             <Select id="f-center" value={centerId} onChange={(e) => setCenterId(e.target.value)}>
@@ -110,161 +154,81 @@ export function HolidaysScreen({
             ]}
           />
         </FilterField>
+        <FilterField label="출처">
+          <ChipGroup
+            value={source}
+            onChange={setSource}
+            options={[
+              { value: "all", label: "전체" },
+              { value: "API", label: "공공데이터" },
+              { value: "MANUAL", label: "직접 등록" },
+            ]}
+          />
+        </FilterField>
+        <SearchInput value={q} onChange={setQ} placeholder="휴무일 이름, 날짜 검색" />
       </FilterBar>
-      <NoteBox tone="info">설날·추석·부처님오신날과 대체공휴일은 해마다 날짜가 달라 직접 등록해야 합니다. 달력에서 날짜를 누르면 바로 등록할 수 있습니다.</NoteBox>
-      <SplitView
-        list={
-          <section className={styles.calendar} aria-label={`${monthLabel(month)} 휴무일 달력`}>
-            <div className={styles.toolbar}>
-              <div className={styles.nav}>
-                <Button size="sm" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="이전 달">
-                  ‹
-                </Button>
-                <h2 className={styles.month} aria-live="polite">
-                  {monthLabel(month)}
-                </h2>
-                <Button size="sm" onClick={() => setMonth(shiftMonth(month, 1))} aria-label="다음 달">
-                  ›
-                </Button>
-                <Button size="sm" onClick={() => setMonth(today.slice(0, 7))} disabled={month === today.slice(0, 7)}>
-                  오늘
-                </Button>
-              </div>
-              <span className={styles.count}>
-                이 달 <strong className="mono">{monthRows.length}</strong>건
-              </span>
-              <Button variant="primary" size="sm" onClick={() => openNew(month === today.slice(0, 7) ? today : `${month}-01`)}>
+
+      {canEdit && year && !rows.some((r) => r.date.startsWith(year) && r.source === "API") && (
+        <NoteBox tone="info">
+          {year}년 공휴일을 아직 불러오지 않았습니다. [공공데이터 불러오기]로 설날·추석·대체공휴일까지 한 번에 넣은 뒤, 센터 휴무만 직접 추가하세요.
+        </NoteBox>
+      )}
+
+      <div className={styles.listcol}>
+        <ListToolbar total={list.length}>
+          {canEdit && (
+            <>
+              <Button size="sm" onClick={() => setImporting(true)}>
+                공공데이터 불러오기
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => setAdding((n) => n + 1)}>
                 + 등록
               </Button>
-            </div>
+            </>
+          )}
+        </ListToolbar>
+        <DataTable
+          caption="휴무일 목록"
+          columns={columns}
+          rows={list}
+          rowKey={(r) => String(r.id)}
+          empty="조건에 맞는 휴무일이 없습니다. 연도나 조회조건을 바꿔 보세요."
+        />
+      </div>
 
-            <div className={styles.grid}>
-              <div className={styles.week}>
-                {WEEKDAY.map((w, i) => (
-                  <div key={w} className={`${styles.wd} ${i === 0 ? styles.sun : i === 6 ? styles.sat : ""}`}>
-                    {w}
-                  </div>
-                ))}
-              </div>
-              {Array.from({ length: cells.length / 7 }, (_, wi) => (
-                <div key={wi} className={styles.week}>
-                  {cells.slice(wi * 7, wi * 7 + 7).map((d, di) => {
-                    const inMonth = d.startsWith(month);
-                    const hs = byDate.get(d) ?? [];
-                    const cls = [
-                      styles.cell,
-                      !inMonth && styles.out,
-                      d === today && styles.today,
-                      d < today && styles.past,
-                      hs.length > 0 && styles.off,
-                      di === 0 && styles.sun,
-                      di === 6 && styles.sat,
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
-                    return (
-                      <div key={d} className={cls}>
-                        <button
-                          type="button"
-                          className={styles.day}
-                          onClick={() => (inMonth ? openNew(d) : setMonth(d.slice(0, 7)))}
-                          aria-label={inMonth ? `${dateLabel(d)} 휴무일 등록` : `${monthLabel(d.slice(0, 7))}로 이동`}
-                          title={inMonth ? "이 날짜를 휴무일로 등록" : undefined}
-                        >
-                          {Number(d.slice(8, 10))}
-                        </button>
-                        {inMonth &&
-                          hs.map((h) => (
-                            <button
-                              key={h.id}
-                              type="button"
-                              className={`${styles.chip} ${h.kind === "PUBLIC" ? styles.public : styles.center} ${selected === h.id ? styles.active : ""}`}
-                              onClick={() => setSelected(h.id)}
-                              aria-pressed={selected === h.id}
-                              title={`${h.name} · ${HOLIDAY_KIND_LABEL[h.kind]}${multiCenter ? ` · ${h.centerName}` : ""}`}
-                            >
-                              {h.name}
-                            </button>
-                          ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-            <div className={styles.legend}>
-              <span className={`${styles.chip} ${styles.public}`}>공휴일</span>
-              <span className={`${styles.chip} ${styles.center}`}>센터 휴무</span>
-              <span className="muted">날짜 숫자를 누르면 등록, 휴무일 이름을 누르면 상세가 열립니다.</span>
-            </div>
-          </section>
-        }
-        panel={
-          current ? (
-            <HolidayDetail key={current.id} row={current} onBack={() => setSelected(null)} onDeleted={() => setSelected(null)} />
-          ) : (
-            <MonthSummary month={month} rows={monthRows} today={today} multiCenter={multiCenter} onSelect={setSelected} />
-          )
-        }
-      />
-      {newDate && (
-        <HolidayEditModal
-          key={nonce}
+      {adding > 0 && (
+        <HolidayAddModal
+          key={adding}
           centers={centers}
           defaultCenterId={centerId}
-          defaultDate={newDate}
-          onClose={() => setNewDate(null)}
-          onCreated={(id, date) => {
-            setNewDate(null);
-            setMonth(date.slice(0, 7));
-            setSelected(id);
+          defaultDate={year && year !== String(thisYear) ? `${year}-01-01` : today}
+          onClose={() => setAdding(0)}
+          onCreated={(date) => {
+            setAdding(0);
+            setYear(date.slice(0, 4));
           }}
         />
       )}
-    </>
-  );
-}
-
-/** 선택한 휴무일이 없을 때: 보고 있는 달의 휴무일 목록 */
-function MonthSummary({
-  month,
-  rows,
-  today,
-  multiCenter,
-  onSelect,
-}: {
-  month: string;
-  rows: HolidayRow[];
-  today: string;
-  multiCenter: boolean;
-  onSelect: (id: number) => void;
-}) {
-  return (
-    <SidePanel label="이 달 휴무일" title={<PanelTitle>{monthLabel(month)} 휴무일</PanelTitle>} sub={`${rows.length}건`}>
-      {rows.length === 0 ? (
-        <p className="muted">이 달에 등록된 휴무일이 없습니다. 달력에서 날짜를 눌러 등록하세요.</p>
-      ) : (
-        <ul className={styles.list}>
-          {rows.map((r) => (
-            <li key={r.id}>
-              <button type="button" className={`${styles.listItem} ${r.date < today ? styles.past : ""}`} onClick={() => onSelect(r.id)}>
-                <span className="mono">{r.date.slice(5)}</span>
-                <span className="muted">({weekday(r.date)})</span>
-                <span className={styles.listName}>{r.name}</span>
-                <span className={`${styles.chip} ${r.kind === "PUBLIC" ? styles.public : styles.center}`}>{HOLIDAY_KIND_LABEL[r.kind]}</span>
-                {multiCenter && <span className="muted">{r.centerName}</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {importing && (
+        <ImportModal
+          centers={centers}
+          defaultYear={year ? Number(year) : thisYear}
+          thisYear={thisYear}
+          onClose={() => setImporting(false)}
+          onDone={(y) => {
+            setImporting(false);
+            setYear(String(y));
+          }}
+        />
       )}
-    </SidePanel>
+      {toDelete && <DeleteModal row={toDelete} onClose={() => setToDelete(null)} />}
+    </>
   );
 }
 
 type Form = { centerId: string; date: string; name: string; kind: HolidayKind };
 
-function HolidayEditModal({
+function HolidayAddModal({
   centers,
   defaultCenterId,
   defaultDate,
@@ -275,13 +239,13 @@ function HolidayEditModal({
   defaultCenterId: string;
   defaultDate: string;
   onClose: () => void;
-  onCreated: (id: number, date: string) => void;
+  onCreated: (date: string) => void;
 }) {
   const initial: Form = {
     centerId: defaultCenterId || (centers.length === 1 ? String(centers[0].id) : ""),
     date: defaultDate,
     name: "",
-    kind: "PUBLIC",
+    kind: "CENTER",
   };
   const [f, setF] = useState<Form>(initial);
   const act = useAction();
@@ -290,7 +254,7 @@ function HolidayEditModal({
   function submit() {
     act.run(
       () => addHoliday({ centerId: Number(f.centerId) || 0, date: f.date, name: f.name, kind: f.kind }),
-      (d) => d && onCreated(d.id, f.date),
+      () => onCreated(f.date),
     );
   }
 
@@ -310,13 +274,13 @@ function HolidayEditModal({
             ))}
           </Select>
         </FormField>
-        <FormField label="이름" htmlFor="h-name" required hint="예: 추석, 대체공휴일, 센터 재고조사" error={act.fieldErrors.name}>
+        <FormField label="이름" htmlFor="h-name" required hint="예: 센터 재고조사, 임시공휴일" error={act.fieldErrors.name}>
           <Input id="h-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} maxLength={100} data-autofocus />
         </FormField>
         <FormField label="구분" htmlFor="h-kind" required error={act.fieldErrors.kind}>
           <Select id="h-kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value as HolidayKind })}>
-            <option value="PUBLIC">공휴일</option>
             <option value="CENTER">센터 휴무</option>
+            <option value="PUBLIC">공휴일</option>
           </Select>
         </FormField>
       </FormSection>
@@ -324,68 +288,101 @@ function HolidayEditModal({
   );
 }
 
-function HolidayDetail({ row, onBack, onDeleted }: { row: HolidayRow; onBack: () => void; onDeleted: () => void }) {
-  const [confirm, setConfirm] = useState(false);
+/** 공공데이터 불러오기 — 연도·센터를 골라 공휴일을 넣는다 */
+function ImportModal({
+  centers,
+  defaultYear,
+  thisYear,
+  onClose,
+  onDone,
+}: {
+  centers: CenterOption[];
+  defaultYear: number;
+  thisYear: number;
+  onClose: () => void;
+  onDone: (year: number) => void;
+}) {
+  const [year, setYear] = useState(String(defaultYear));
+  const [centerId, setCenterId] = useState("");
   const act = useAction();
 
   return (
-    <SidePanel
-      label="휴무일 상세"
-      title={
-        <PanelTitle mono>
-          {row.date} ({weekday(row.date)})
-        </PanelTitle>
-      }
-      sub={`${row.name} · ${HOLIDAY_KIND_LABEL[row.kind]}`}
+    <Modal
+      open
+      onClose={onClose}
+      title="공공데이터에서 공휴일 불러오기"
+      description="공공데이터포털(한국천문연구원 특일 정보)의 공휴일·대체공휴일을 휴무일로 넣습니다."
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!act.pending) act.run(() => importPublicHolidays({ year: Number(year), centerId: centerId ? Number(centerId) : null }), () => onDone(Number(year)));
+      }}
       footer={
         <>
-          <Button onClick={onBack}>이 달 목록</Button>
-          <Button variant="danger" onClick={() => setConfirm(true)} disabled={act.pending}>
+          <Button onClick={onClose} disabled={act.pending}>
+            취소
+          </Button>
+          <Button type="submit" variant="primary" disabled={act.pending}>
+            {act.pending ? "불러오는 중…" : "불러오기"}
+          </Button>
+        </>
+      }
+    >
+      {act.error && <NoteBox tone="error">{act.error}</NoteBox>}
+      <div className={styles.importForm}>
+        <FormField label="연도" htmlFor="i-year" required error={act.fieldErrors.year}>
+          <Select id="i-year" value={year} onChange={(e) => setYear(e.target.value)} data-autofocus>
+            {[thisYear - 1, thisYear, thisYear + 1, thisYear + 2].map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </Select>
+        </FormField>
+        <FormField label="센터" htmlFor="i-center" error={act.fieldErrors.centerId}>
+          <Select id="i-center" value={centerId} onChange={(e) => setCenterId(e.target.value)}>
+            <option value="">사용 중인 모든 센터</option>
+            {centers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+      </div>
+      <ul className={styles.notes}>
+        <li>이미 휴무일이 있는 날짜(직접 등록 포함)는 건너뜁니다.</li>
+        <li>전에 삭제한 공휴일도 다시 들어갑니다. 필요 없으면 불러온 뒤 다시 삭제하세요.</li>
+        <li>다음 해 공휴일은 보통 전년도 하반기에 공개됩니다.</li>
+      </ul>
+    </Modal>
+  );
+}
+
+function DeleteModal({ row, onClose }: { row: HolidayRow; onClose: () => void }) {
+  const act = useAction();
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="휴무일 삭제"
+      description="삭제하면 이 날짜가 영업일로 계산됩니다. 삭제 내역은 변경 이력에 남습니다."
+      footer={
+        <>
+          <Button onClick={onClose} data-autofocus>
+            취소
+          </Button>
+          <Button variant="danger" disabled={act.pending} onClick={() => act.run(() => deleteHoliday({ id: row.id }), onClose)}>
             삭제
           </Button>
         </>
       }
     >
       {act.error && <NoteBox tone="error">{act.error}</NoteBox>}
-      <KeyValue
-        items={[
-          ["센터", row.centerName],
-          ["구분", HOLIDAY_KIND_LABEL[row.kind]],
-          ["등록", `${fmtDateTime(row.createdAt)} · ${row.createdBy}`],
-        ]}
-      />
-      <Modal
-        open={confirm}
-        onClose={() => setConfirm(false)}
-        title="휴무일 삭제"
-        description="삭제하면 이 날짜가 영업일로 계산됩니다. 삭제 내역은 변경 이력에 남습니다."
-        footer={
-          <>
-            <Button onClick={() => setConfirm(false)} data-autofocus>
-              취소
-            </Button>
-            <Button
-              variant="primary"
-              disabled={act.pending}
-              onClick={() =>
-                act.run(
-                  () => deleteHoliday({ id: row.id }),
-                  () => {
-                    setConfirm(false);
-                    onDeleted();
-                  },
-                )
-              }
-            >
-              삭제
-            </Button>
-          </>
-        }
-      >
-        <p>
-          <span className="mono">{row.date}</span> {row.name}
-        </p>
-      </Modal>
-    </SidePanel>
+      <p>
+        <span className="mono">{row.date}</span> ({weekday(row.date)}) {row.name} · {HOLIDAY_KIND_LABEL[row.kind]} · {SOURCE_LABEL[row.source]}
+        {row.centerName ? ` · ${row.centerName}` : ""}
+      </p>
+      {row.source === "API" && <p className="muted">공공데이터에서 불러온 공휴일입니다. 같은 연도를 다시 불러오면 다시 들어갑니다.</p>}
+    </Modal>
   );
 }

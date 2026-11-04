@@ -9,7 +9,7 @@ import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui
 import { NoteBox } from "@/components/ui/NoteBox";
 import { Modal } from "@/components/ui/Overlay";
 import { KeyValue, ListToolbar, PanelSection, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
-import { ORG_LABEL, ROLE_META, USER_ROLES, type UserRole } from "@/domain/master";
+import { ORG_LABEL, ROLE_META, USER_ROLES, rolesLabel, sortRoles, type UserRole } from "@/domain/master";
 import { fmtDateTime, fmtShortDateTime, includesText } from "@/lib/format";
 import { resetUserPassword, saveUser, unlockUser } from "@/server/master/actions";
 import { loadUser } from "@/server/master/loaders";
@@ -20,19 +20,23 @@ import { RULES } from "./rules";
 import type { CenterOption, ClientOption, UserRow } from "./types";
 import styles from "./UsersScreen.module.css";
 
-const LABELS = { loginId: "아이디", name: "이름", role: "역할", clientId: "화주사", centerId: "센터", isActive: "사용 여부", locked: "잠금", password: "비밀번호" };
+const LABELS = { loginId: "아이디", name: "이름", role: "역할", roles: "역할", clientId: "화주사", centerId: "센터", isActive: "사용 여부", locked: "잠금", password: "비밀번호" };
 
 /** 화면을 보는 사람이 고를 수 있는 역할 — 3PL 관리자 역할은 3PL 관리자만, 화주사 계정은 화주사 역할만 */
-function assignableRoles(viewerRole: UserRole): readonly UserRole[] {
-  if (ROLE_META[viewerRole].org === "SHIPPER") return USER_ROLES.filter((r) => ROLE_META[r].org === "SHIPPER");
-  return USER_ROLES.filter((r) => r !== "TPL_ADMIN" || viewerRole === "TPL_ADMIN");
+function assignableRoles(viewerRoles: readonly UserRole[]): readonly UserRole[] {
+  if (viewerRoles.some((r) => ROLE_META[r].org === "SHIPPER")) return USER_ROLES.filter((r) => ROLE_META[r].org === "SHIPPER");
+  return USER_ROLES.filter((r) => r !== "TPL_ADMIN" || viewerRoles.includes("TPL_ADMIN"));
 }
+
+/** 역할 소속 (한 사용자의 역할은 같은 소속끼리만) */
+const orgOf = (roles: readonly UserRole[]) => (roles.length ? ROLE_META[roles[0]].org : null);
+const channelsOf = (roles: readonly UserRole[]) => [...new Set(sortRoles(roles).map((r) => ROLE_META[r].channel))].join(" · ");
 
 export function UsersScreen({
   rows,
   clients,
   centers,
-  viewerRole,
+  viewerRoles,
   canEdit,
   canManageAccounts,
   initialClientId,
@@ -40,7 +44,7 @@ export function UsersScreen({
   rows: UserRow[];
   clients: ClientOption[];
   centers: CenterOption[];
-  viewerRole: UserRole;
+  viewerRoles: UserRole[];
   /** 등록·수정 (3PL 관리자) */
   canEdit: boolean;
   /** 잠금 해제·비밀번호 초기화 (3PL 관리자) */
@@ -59,8 +63,8 @@ export function UsersScreen({
     () =>
       rows.filter(
         (r) =>
-          (org === "all" || ROLE_META[r.role].org === org) &&
-          (!role || r.role === role) &&
+          (org === "all" || orgOf(r.roles) === org) &&
+          (!role || r.roles.includes(role as UserRole)) &&
           (!clientId || r.clientId === Number(clientId)) &&
           matchActive(active, r.isActive) &&
           includesText([r.loginId, r.name], q),
@@ -80,8 +84,8 @@ export function UsersScreen({
       header: "역할",
       render: (r) => (
         <>
-          {ROLE_META[r.role].label}
-          <CellSub>{ROLE_META[r.role].channel}</CellSub>
+          {rolesLabel(r.roles)}
+          <CellSub>{channelsOf(r.roles)}</CellSub>
         </>
       ),
     },
@@ -91,7 +95,7 @@ export function UsersScreen({
       render: (r) => (
         <>
           {r.clientName ?? r.centerName}
-          <CellSub>{ORG_LABEL[ROLE_META[r.role].org]}</CellSub>
+          <CellSub>{ORG_LABEL[orgOf(r.roles) ?? "TPL"]}</CellSub>
         </>
       ),
     },
@@ -124,6 +128,7 @@ export function UsersScreen({
 
   const fmt = (k: string, v: unknown) => {
     if (k === "role") return ROLE_META[v as UserRole]?.label ?? String(v);
+    if (k === "roles") return typeof v === "string" && v ? rolesLabel(v.split(",") as UserRole[]) : "없음";
     if (k === "clientId") return clients.find((c) => c.id === v)?.name ?? "없음";
     if (k === "centerId") return centers.find((c) => c.id === v)?.name ?? "없음";
     if (k === "isActive") return v ? "사용" : "사용 안 함";
@@ -220,7 +225,7 @@ export function UsersScreen({
                   )}
                 </>
               }
-              sub={`${current.loginId} · ${ROLE_META[current.role].label}`}
+              sub={`${current.loginId} · ${rolesLabel(current.roles)}`}
               footer={
                 <LastChanged
                   by={current.updatedBy}
@@ -238,8 +243,17 @@ export function UsersScreen({
                 items={[
                   ["아이디", <span key="l" className="mono">{current.loginId}</span>],
                   ["이름", current.name],
-                  ["역할", `${ROLE_META[current.role].label} (${ROLE_META[current.role].channel})`],
-                  [ROLE_META[current.role].org === "SHIPPER" ? "소속 화주사" : "소속 센터", current.clientName ?? current.centerName],
+                  [
+                    "역할",
+                    <span key="r" className="cell-tags">
+                      {current.roles.map((r) => (
+                        <Tag key={r} tone="neutral">
+                          {ROLE_META[r].label} ({ROLE_META[r].channel})
+                        </Tag>
+                      ))}
+                    </span>,
+                  ],
+                  [orgOf(current.roles) === "SHIPPER" ? "소속 화주사" : "소속 센터", current.clientName ?? current.centerName],
                   ["사용 여부", current.isActive ? "사용" : "사용 안 함"],
                 ]}
               />
@@ -258,7 +272,7 @@ export function UsersScreen({
           row={edit.target === "new" ? null : edit.target}
           clients={clients}
           centers={centers}
-          roles={assignableRoles(viewerRole)}
+          roles={assignableRoles(viewerRoles)}
           onClose={edit.close}
           onSaved={(id) => {
             edit.close();
@@ -290,20 +304,24 @@ function UserEditModal({
 }) {
   const [loginId, setLoginId] = useState(row?.loginId ?? "");
   const [name, setName] = useState(row?.name ?? "");
-  const [role, setRole] = useState<UserRole | "">(row?.role ?? "");
+  const [picked, setPicked] = useState<UserRole[]>(row?.roles ?? []);
   const [clientId, setClientId] = useState(row?.clientId ? String(row.clientId) : "");
   const [centerId, setCenterId] = useState(row?.centerId ? String(row.centerId) : centers.length === 1 ? String(centers[0].id) : "");
   const [isActive, setIsActive] = useState(row?.isActive ?? true);
   const act = useAction();
 
-  const org = role ? ROLE_META[role].org : null;
+  const org = orgOf(picked);
   const dirty = row
     ? name !== row.name ||
-      role !== row.role ||
+      sortRoles(picked).join() !== sortRoles(row.roles).join() ||
       isActive !== row.isActive ||
       (org === "SHIPPER" && Number(clientId) !== row.clientId) ||
       (org === "TPL" && Number(centerId) !== row.centerId)
-    : !!(loginId || name || role || clientId || !isActive);
+    : !!(loginId || name || picked.length || clientId || !isActive);
+
+  function toggleRole(r: UserRole, on: boolean) {
+    setPicked((prev) => sortRoles(on ? [...prev, r] : prev.filter((x) => x !== r)));
+  }
 
   function submit() {
     act.run(
@@ -313,7 +331,7 @@ function UserEditModal({
           version: row?.version,
           loginId,
           name,
-          role: role as UserRole,
+          roles: picked,
           clientId: org === "SHIPPER" && clientId ? Number(clientId) : null,
           centerId: org === "TPL" && centerId ? Number(centerId) : null,
           isActive,
@@ -347,16 +365,34 @@ function UserEditModal({
         <FormField label="이름" htmlFor="u-name" required error={act.fieldErrors.name}>
           <Input id="u-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} autoComplete="off" {...(row ? { "data-autofocus": true } : {})} />
         </FormField>
-        <FormField label="역할" htmlFor="u-role" required error={act.fieldErrors.role}>
-          <Select id="u-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-            <option value="">역할을 선택하세요</option>
-            {USER_ROLES.filter((r) => roles.includes(r) || r === row?.role).map((r) => (
-              <option key={r} value={r} disabled={!roles.includes(r)}>
-                {ROLE_META[r].label} ({ROLE_META[r].channel})
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        <Full>
+          <fieldset className={styles.roles} data-invalid={act.fieldErrors.roles ? "" : undefined}>
+            <legend>
+              역할 <span className={styles.req}>*</span> <span className="muted">여러 개 고를 수 있습니다. 3PL 역할과 화주사 역할은 함께 줄 수 없습니다.</span>
+            </legend>
+            {(["TPL", "SHIPPER"] as const).map((o) => {
+              const options = USER_ROLES.filter((r) => ROLE_META[r].org === o && (roles.includes(r) || row?.roles.includes(r)));
+              if (!options.length) return null;
+              return (
+                <div key={o} className={styles.roleGroup}>
+                  <span className={styles.roleOrg}>{ORG_LABEL[o]}</span>
+                  {options.map((r) => (
+                    <FormCheck
+                      key={r}
+                      id={`u-role-${r}`}
+                      label={`${ROLE_META[r].label} (${ROLE_META[r].channel})`}
+                      checked={picked.includes(r)}
+                      // 다른 소속 역할을 이미 골랐거나, 이 사람이 줄 수 없는 역할(3PL 관리자)은 바꿀 수 없다
+                      disabled={(org !== null && org !== o) || !roles.includes(r)}
+                      onChange={(on) => toggleRole(r, on)}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+            {act.fieldErrors.roles && <p className={styles.err}>{act.fieldErrors.roles}</p>}
+          </fieldset>
+        </Full>
         {org === "SHIPPER" && (
           <FormField label="소속 화주사" htmlFor="u-client" required error={act.fieldErrors.clientId}>
             <Select id="u-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
@@ -397,7 +433,8 @@ function AccountSection({ row, canManage }: { row: UserRow; canManage: boolean }
   const act = useAction();
   const [confirmReset, setConfirmReset] = useState(false);
   const [temp, setTemp] = useState<string | null>(null);
-  const pda = ROLE_META[row.role].channel === "PDA";
+  // PDA 역할만 있는 계정은 Web에 로그인할 수 없다
+  const pda = row.roles.every((r) => ROLE_META[r].channel === "PDA");
 
   return (
     <PanelSection title="로그인 계정">

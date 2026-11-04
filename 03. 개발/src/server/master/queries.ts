@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/server/db";
-import { ITEM_REQ_REJECT_GROUP, ROLE_META } from "@/domain/master";
+import { ITEM_REQ_REJECT_GROUP, rolesLabel, sortRoles } from "@/domain/master";
 import { isShipperRole } from "@/domain/permissions";
 import { getSessionUser } from "@/server/session";
 import { countUnclosed } from "@/server/master/unclosed";
@@ -19,6 +19,7 @@ import type {
   ManagerCandidate,
   CenterPick,
   ItemKey,
+  ItemRequestQueue,
   ItemRequestRow,
   ItemRow,
   SettingRow,
@@ -34,7 +35,7 @@ const iso = (d: Date) => d.toISOString();
 async function clientScope(): Promise<number | undefined> {
   const me = await getSessionUser();
   if (!me) return -1;
-  return isShipperRole(me.role) ? (me.clientId ?? -1) : undefined;
+  return isShipperRole(me.roles) ? (me.clientId ?? -1) : undefined;
 }
 
 function audit(r: { version: number; createdAt: Date; createdBy: string; updatedAt: Date; updatedBy: string }) {
@@ -161,8 +162,8 @@ export async function listItems(id?: number): Promise<ItemRow[]> {
   }));
 }
 
-export async function listItemKeys(): Promise<ItemKey[]> {
-  const cid = await clientScope();
+export async function listItemKeys(clientId?: number): Promise<ItemKey[]> {
+  const cid = (await clientScope()) ?? clientId;
   const rows = await db.item.findMany({
     where: { clientId: cid },
     select: {
@@ -186,17 +187,18 @@ export async function listCodeOptions(groupCode: string): Promise<CodeOption[]> 
   });
 }
 
-export async function listItemRequests(): Promise<ItemRequestRow[]> {
+/** id를 주면 그 요청 하나만 (상세 화면) — 화주사는 자기 요청만 */
+export async function listItemRequests(id?: number): Promise<ItemRequestRow[]> {
   const cid = await clientScope();
   const me = await getSessionUser();
   const { start } = kstDayRange(todayKst());
   const [rows, codes] = await Promise.all([
     db.itemRequest.findMany({
-      where: { clientId: cid },
-      orderBy: { requestedAt: "asc" },
+      where: { clientId: cid, ...(id ? { id } : {}) },
+      orderBy: [{ requestedAt: "asc" }, { requestNo: "asc" }],
       include: {
         client: { select: { name: true } },
-        item: { select: { code: true } },
+        item: { select: { id: true, code: true } },
         histories: { orderBy: { at: "desc" } },
       },
     }),
@@ -228,6 +230,7 @@ export async function listItemRequests(): Promise<ItemRequestRow[]> {
     rejectReasonName: r.rejectReasonCode ? (codeName.get(r.rejectReasonCode) ?? r.rejectReasonCode) : null,
     rejectReasonText: r.rejectReasonText,
     registeredItemCode: r.item?.code ?? null,
+    registeredItemId: r.item?.id ?? null,
     // 오늘 내가 등록·반려한 마지막 처리 ("오늘 처리" 탭)
     doneByMeToday: (() => {
       const h = r.histories.find((x) => me && x.actorId === me.id && (x.action === "REGISTER" || x.action === "REJECT") && x.at >= start);
@@ -244,6 +247,30 @@ export async function listItemRequests(): Promise<ItemRequestRow[]> {
       memo: h.memo,
     })),
   }));
+}
+
+/** 같은 화주사의 등록대기 요청 순서 — 목록의 등록대기 탭과 같은 순서(오래된 요청부터) */
+export async function itemRequestQueue(row: { id: number; clientId: number }): Promise<ItemRequestQueue> {
+  const ids = (
+    await db.itemRequest.findMany({
+      where: { clientId: row.clientId, status: "WAITING" },
+      orderBy: [{ requestedAt: "asc" }, { requestNo: "asc" }],
+      select: { id: true },
+    })
+  ).map((r) => r.id);
+  const i = ids.indexOf(row.id);
+  return {
+    position: i >= 0 ? i + 1 : null,
+    total: ids.length,
+    prevId: i > 0 ? ids[i - 1] : null,
+    nextId: i >= 0 ? (ids[i + 1] ?? null) : null,
+    afterId: (i >= 0 ? ids[i + 1] : undefined) ?? ids.find((x) => x !== row.id) ?? null,
+  };
+}
+
+/** 검토 중(등록대기·반려)인 요청 건수 — 화주사 품목 목록 안내용 */
+export async function countOpenItemRequests() {
+  return db.itemRequest.count({ where: { status: { in: ["WAITING", "REJECTED"] }, clientId: await clientScope() } });
 }
 
 export async function countWaitingItemRequests() {
@@ -280,7 +307,7 @@ export async function listUsers(id?: number): Promise<UserRow[]> {
   const [rows, hist] = await Promise.all([
     db.user.findMany({
       where: { clientId: cid, id },
-      orderBy: [{ role: "asc" }, { loginId: "asc" }],
+      orderBy: { loginId: "asc" },
       include: { client: { select: { name: true } }, center: { select: { name: true } } },
     }),
     historyByKey("tb_user"),
@@ -289,7 +316,7 @@ export async function listUsers(id?: number): Promise<UserRow[]> {
     id: r.id,
     loginId: r.loginId,
     name: r.name,
-    role: r.role,
+    roles: sortRoles(r.roles),
     clientId: r.clientId,
     clientName: r.client?.name ?? null,
     centerId: r.centerId,
@@ -364,11 +391,20 @@ export async function listCenterRows(id?: number): Promise<CenterRow[]> {
 /** 센터 담당자 후보: 그 센터 소속 · 사용 중 · 3PL 관리자 또는 3PL 운영담당 (입고검수자 제외) */
 export async function listManagerCandidates(): Promise<ManagerCandidate[]> {
   const rows = await db.user.findMany({
-    where: { isActive: true, role: { in: ["TPL_ADMIN", "TPL_OPERATOR"] }, centerId: { not: null } },
-    orderBy: [{ role: "asc" }, { name: "asc" }],
-    select: { id: true, centerId: true, name: true, role: true, center: { select: { code: true } } },
+    where: { isActive: true, roles: { hasSome: ["TPL_ADMIN", "TPL_OPERATOR"] }, centerId: { not: null } },
+    orderBy: { name: "asc" },
+    select: { id: true, centerId: true, name: true, roles: true, center: { select: { code: true } } },
   });
-  return rows.map((r) => ({ id: r.id, centerId: r.centerId!, centerCode: r.center!.code, name: r.name, roleLabel: ROLE_META[r.role].label }));
+  // 3PL 관리자 먼저, 그다음 이름 순
+  return rows
+    .sort((a, b) => Number(b.roles.includes("TPL_ADMIN")) - Number(a.roles.includes("TPL_ADMIN")) || a.name.localeCompare(b.name, "ko"))
+    .map((r) => ({
+      id: r.id,
+      centerId: r.centerId!,
+      centerCode: r.center!.code,
+      name: r.name,
+      roleLabel: rolesLabel(r.roles.filter((x) => x === "TPL_ADMIN" || x === "TPL_OPERATOR")),
+    }));
 }
 
 export async function listHolidays(): Promise<HolidayRow[]> {
@@ -380,6 +416,7 @@ export async function listHolidays(): Promise<HolidayRow[]> {
     date: r.date.toISOString().slice(0, 10),
     name: r.name,
     kind: r.kind,
+    source: r.source,
     createdAt: iso(r.createdAt),
     createdBy: r.createdBy,
   }));
