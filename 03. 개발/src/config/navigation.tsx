@@ -58,6 +58,8 @@ export const NAV_GROUPS: NavGroup[] = [
       // 화주사: 입고예정 등록(승인 전 건 관리, 건수 = 반려되어 고칠 건) / 3PL: 승인 대기 — 권한에 따라 하나만 보인다
       { label: "입고예정 등록", href: "/plans/entry", icon: <IconPlus />, countKey: "planRejected" },
       { label: "승인 대기", href: "/plans/approval", icon: <IconCheck />, countKey: "approvalWaiting" },
+      // 화주사: 승인된 입고예정을 차량에 나눠 담고 상차지시서 발행 (정의서 ③)
+      { label: "ASN 등록", href: "/plans/asn", icon: <IconTruck /> },
       { label: "입고예정 조회", icon: <IconDoc /> },
       { label: "ASN·상차 현황", icon: <IconTruck /> },
     ],

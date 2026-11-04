@@ -1,0 +1,188 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+  min-width: 0;
+}
+
+/* ① 차량·출고 정보 — 센터·출고일·차량번호 / 기사·연락처 / 메모 */
+.headGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 240px));
+  gap: 12px 16px;
+  align-items: start;
+}
+
+.memo {
+  grid-column: 1 / -1;
+  max-width: 752px;
+}
+
+@media (max-width: 900px) {
+  .headGrid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .headGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.static {
+  display: inline-block;
+  font-size: var(--fs-13);
+  padding: 8px 0;
+  font-weight: 500;
+}
+
+.search {
+  width: 200px;
+}
+
+.empty {
+  margin: 0;
+  padding: 16px 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+/* ② 입고예정별 품목 표 */
+.tableWrap {
+  overflow-x: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.table thead th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  background: var(--surface);
+  padding: 8px 6px;
+  white-space: nowrap;
+}
+
+.table thead th:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.table thead th:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.table .num {
+  text-align: right;
+}
+
+.planRow th {
+  text-align: left;
+  font-weight: 500;
+  padding: 14px 6px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.planHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.planHead > .mono:first-child {
+  font-weight: 600;
+}
+
+.planMeta {
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.planMemo {
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--text-2, var(--muted));
+}
+
+.planActs {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.row td {
+  padding: 8px 6px;
+  vertical-align: top;
+  border-top: 1px solid var(--line-row);
+}
+
+.row td:not(:last-child) {
+  padding-top: 15px;
+}
+
+.planRow + .row td {
+  border-top: 0;
+}
+
+.doneRow td {
+  color: var(--muted);
+}
+
+.remain {
+  font-weight: 600;
+}
+
+.qtyInput {
+  width: 110px;
+  text-align: right;
+}
+
+.err {
+  margin: 4px 0 0;
+  font-size: var(--fs-12);
+  color: var(--st-rej-fg);
+  text-align: right;
+  white-space: normal;
+}
+
+.row[data-invalid] td {
+  background: color-mix(in srgb, var(--st-rej-bg, #fdecec) 45%, transparent);
+}
+
+/* 저장 줄 — 화면 아래에 붙어 있다 */
+.foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.total {
+  margin-right: auto;
+  font-size: var(--fs-13);
+}
+
+.bad {
+  color: var(--st-rej-fg);
+  font-weight: 500;
+}

@@ -1,0 +1,12 @@
+.over {
+  color: var(--st-rej-fg);
+  font-weight: 500;
+}
+
+.q {
+  width: 220px;
+}
+
+.item {
+  width: 200px;
+}

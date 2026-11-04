@@ -1,4 +1,5 @@
 import { PLAN_STATUS_META, type PlanStatus, type StatusTone } from "@/domain/plan-status";
+import { ASN_STATUS_META, type AsnStatus } from "@/domain/asn-rules";
 import styles from "./Badges.module.css";
 
 /** 상태 배지 — 상태는 반드시 이 색으로만 표시한다 (바이올렛 금지) */
@@ -9,6 +10,12 @@ export function Badge({ tone, children }: { tone: StatusTone; children: React.Re
 /** 입고예정 상태 배지 */
 export function StatusBadge({ status }: { status: PlanStatus }) {
   const meta = PLAN_STATUS_META[status];
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
+}
+
+/** ASN 상태 배지 */
+export function AsnStatusBadge({ status }: { status: AsnStatus }) {
+  const meta = ASN_STATUS_META[status];
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }
 

@@ -205,7 +205,7 @@ async function main() {
 
   // 모든 기준정보 테이블을 비우고 번호를 1부터 다시 시작한다 (로그인 세션·이력 포함)
   await db.$executeRawUnsafe(
-    'TRUNCATE tb_inb_plan_his, tb_inb_plan_rej_d, tb_inb_plan_rej_h, tb_inb_plan_d, tb_inb_plan_h, tb_session, tb_login_log, tb_change_log, tb_item_req_his, tb_item_req, tb_item_alias, tb_item_barcode, tb_item_uom, tb_item, tb_user, tb_holiday, tb_client_center, tb_client, tb_common_code, tb_code_group, tb_setting, tb_company, tb_center RESTART IDENTITY CASCADE',
+    'TRUNCATE tb_asn_his, tb_load_order, tb_asn_d, tb_asn_h, tb_inb_plan_his, tb_inb_plan_rej_d, tb_inb_plan_rej_h, tb_inb_plan_d, tb_inb_plan_h, tb_session, tb_login_log, tb_change_log, tb_item_req_his, tb_item_req, tb_item_alias, tb_item_barcode, tb_item_uom, tb_item, tb_user, tb_holiday, tb_client_center, tb_client, tb_common_code, tb_code_group, tb_setting, tb_company, tb_center RESTART IDENTITY CASCADE',
   );
 
   // 회사 정보 (3PL 운영 법인, 가상) — 시스템명 LogiLink와 운영사명을 분리한다
@@ -497,7 +497,7 @@ async function main() {
   const actorIdOf: Record<string, number> = { 김하늘: userId["kim.haneul"], 박민지: userId["hb.minji"], 이도윤: userId["gm.doyun"], 정서준: userId["of.seojun"], 최유나: userId["do.yuna"] };
   const plans: {
     client: string; date: number; status: "WAITING" | "REJECTED" | "APPROVED"; method: "DIRECT" | "EXCEL" | "AI_IMAGE";
-    by: string; rev: number; ver: number; lines: L[]; hist: H[]; rejectLines?: L[]; memo?: string;
+    by: string; rev: number; ver: number; lines: L[]; hist: H[]; rejectLines?: L[]; memo?: string; center?: "IC2";
   }[] = [
     { client: "HB", date: 1, status: "WAITING", method: "EXCEL", by: "박민지", rev: 1, ver: 2,
       lines: [["HB-1001", "BOX", 120], ["HB-1004", "BOX", 80], ["HB-2210", "PLT", 4], ["HB-3105", "BOX", 45]],
@@ -531,6 +531,19 @@ async function main() {
     { client: "HB", date: 0, status: "APPROVED", method: "DIRECT", by: "박민지", rev: 1, ver: 1,
       lines: [["HB-2210", "PLT", 6]],
       hist: [{ action: "CREATE", by: "박민지", h: 18 }, { action: "APPROVE", by: "김하늘", h: 0.5 }] },
+    // ASN 등록용 승인 건 (2026-11-04) — 한빛식품: 용인1센터 3건(어제 잔량 1건 포함)·이천2센터 1건, 그린마켓 1건
+    { client: "HB", date: 1, status: "APPROVED", method: "EXCEL", by: "박민지", rev: 1, ver: 1,
+      lines: [["HB-1001", "BOX", 100], ["HB-1004", "BOX", 60], ["HB-3105", "BOX", 30]],
+      hist: [{ action: "CREATE", by: "박민지", h: 30 }, { action: "APPROVE", by: "김하늘", h: 20 }] },
+    { client: "HB", date: -1, status: "APPROVED", method: "DIRECT", by: "박민지", rev: 1, ver: 1, memo: "어제 다 못 보낸 물량",
+      lines: [["HB-4402", "BOX", 40], ["HB-1004", "BOX", 24]],
+      hist: [{ action: "CREATE", by: "박민지", h: 50 }, { action: "APPROVE", by: "김하늘", h: 44 }] },
+    { client: "HB", date: 2, status: "APPROVED", method: "DIRECT", by: "박민지", rev: 1, ver: 1, center: "IC2",
+      lines: [["HB-2210", "PLT", 3], ["HB-1001", "BOX", 50]],
+      hist: [{ action: "CREATE", by: "박민지", h: 26 }, { action: "APPROVE", by: "김하늘", h: 22 }] },
+    { client: "GM", date: 1, status: "APPROVED", method: "DIRECT", by: "이도윤", rev: 1, ver: 1,
+      lines: [["GM-0501", "BOX", 40], ["GM-0730", "BOX", 20]],
+      hist: [{ action: "CREATE", by: "이도윤", h: 28 }, { action: "APPROVE", by: "김하늘", h: 21 }] },
   ];
   for (const p of plans) {
     const firstAt = hoursAgo(p.hist[0].h);
@@ -539,7 +552,7 @@ async function main() {
     const approve = p.hist.find((h) => h.action === "APPROVE");
     const plan = await db.inboundPlan.create({
       data: {
-        planNo: planNo(firstAt), clientId: clientId[p.client], centerId: center.id,
+        planNo: planNo(firstAt), clientId: clientId[p.client], centerId: p.center ? centerIdOf[p.center] : center.id,
         planDate: new Date(`${day(p.date)}T00:00:00Z`), status: p.status, inputMethod: p.method, memo: p.memo ?? null,
         version: p.ver, revisionNo: p.rev,
         approvedRevisionNo: approve ? p.rev : null, approvedAt: approve ? hoursAgo(approve.h) : null, approvedBy: approve?.by ?? null,
@@ -570,12 +583,43 @@ async function main() {
     }
   }
 
+  /* ASN 예시 — 한빛식품 승인 건(생수 6PLT)을 오늘 차량 2대에: 1대는 등록, 1대는 취소 (2026-11-04) */
+  {
+    const p = await db.inboundPlan.findFirstOrThrow({
+      where: { clientId: clientId.HB, status: "APPROVED", centerId: center.id, lines: { some: { itemId: itemId["HB-2210"] } } },
+      include: { lines: true },
+    });
+    const line = p.lines.find((l) => l.itemId === itemId["HB-2210"])!;
+    const ymd = kstToday.replaceAll("-", "");
+    const asn = (n: number, vehicleNo: string, driverName: string, qty: number, h: number, canceled?: boolean) =>
+      db.asn.create({
+        data: {
+          asnNo: `ASN-${ymd}-000${n}`, clientId: clientId.HB, centerId: center.id, shipDate: new Date(`${kstToday}T00:00:00Z`),
+          vehicleNo, driverName, driverTel: "010-5512-3344", status: canceled ? "CANCELED" : "REGISTERED", version: canceled ? 2 : 1,
+          cancelReasonCode: canceled ? "X03" : null, canceledAt: canceled ? hoursAgo(h - 0.2) : null, canceledBy: canceled ? "박민지" : null,
+          createdAt: hoursAgo(h), createdBy: "박민지", updatedBy: "박민지",
+          lines: { create: [{ lineNo: 1, planId: p.id, planLineId: line.id, itemId: line.itemId, unit: line.unit, qty, baseQty: qty * uomQty("HB-2210", "PLT") }] },
+          loadOrder: { create: { orderNo: `LO-${ymd}-000${n}`, status: canceled ? "CANCELED" : "ISSUED", issuedAt: hoursAgo(h), issuedBy: "박민지" } },
+          histories: {
+            create: [
+              { action: "CREATE", version: 1, actor: "박민지", actorId: userId["hb.minji"], at: hoursAgo(h) },
+              ...(canceled
+                ? [{ action: "CANCEL" as const, version: 2, actor: "박민지", actorId: userId["hb.minji"], at: hoursAgo(h - 0.2), reasonCode: "X03", reasonName: "입고 일정 변경" }]
+                : []),
+            ],
+          },
+        },
+      });
+    await asn(1, "82가1234", "오정훈", 4, 0.4, true);
+    await asn(2, "82가1234", "오정훈", 4, 0.3);
+  }
+
   await db.changeLog.createMany({ data: createLogs });
 
   const counts = await Promise.all([
-    db.client.count(), db.item.count(), db.itemRequest.count(), db.commonCode.count(), db.user.count(), db.setting.count(), db.inboundPlan.count(),
+    db.client.count(), db.item.count(), db.itemRequest.count(), db.commonCode.count(), db.user.count(), db.setting.count(), db.inboundPlan.count(), db.asn.count(),
   ]);
-  console.log("seed 완료 — 화주사 %d, 품목 %d, 품목 등록 요청 %d, 사유 코드 %d, 사용자 %d, 설정 %d, 입고예정 %d", ...counts);
+  console.log("seed 완료 — 화주사 %d, 품목 %d, 품목 등록 요청 %d, 사유 코드 %d, 사용자 %d, 설정 %d, 입고예정 %d, ASN %d", ...counts);
 }
 
 main()

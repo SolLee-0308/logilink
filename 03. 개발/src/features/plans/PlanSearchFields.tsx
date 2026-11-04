@@ -37,14 +37,26 @@ export const matchPlanNo = (planNo: string, q: string) => {
   return !t || planNo.toUpperCase().replace(/-/g, "").includes(t);
 };
 
-/** 입고예정일 기간 — 달력 두 칸 (시작 ~ 끝), 한쪽만 넣어도 된다 */
-export function DateRangeField({ from, to, onFrom, onTo }: { from: string; to: string; onFrom: (v: string) => void; onTo: (v: string) => void }) {
+/** 날짜 기간(기본: 입고예정일) — 달력 두 칸 (시작 ~ 끝), 한쪽만 넣어도 된다 */
+export function DateRangeField({
+  from,
+  to,
+  onFrom,
+  onTo,
+  label = "입고예정일",
+}: {
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+  label?: string;
+}) {
   return (
-    <FilterField label="입고예정일" htmlFor="f-from">
+    <FilterField label={label} htmlFor="f-from">
       <span className={styles.range}>
-        <Input id="f-from" type="date" aria-label="입고예정일 시작" value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} />
+        <Input id="f-from" type="date" aria-label={`${label} 시작`} value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} />
         <span aria-hidden>~</span>
-        <Input type="date" aria-label="입고예정일 끝" value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} />
+        <Input type="date" aria-label={`${label} 끝`} value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} />
         {(from || to) && (
           <button
             type="button"

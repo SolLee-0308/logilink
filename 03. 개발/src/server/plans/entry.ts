@@ -126,29 +126,33 @@ export async function findExactItem(clientId: number, text: string): Promise<{ i
   return { item, unit: item.barcodes.find((b) => b.barcode === t)?.unit ?? null };
 }
 
+/**
+ * 화주사 사용자가 고를 수 있는 센터 — 이 화주사가 이용하는 사용 중 센터.
+ * 기본값: 사용자 기본 센터(이용 중인 센터일 때) → 이용 센터가 1곳이면 그 센터 → ""(전체). 입고예정 등록·ASN 등록이 같이 쓴다
+ */
+export async function centerChoices(me: PlanActor): Promise<{ centers: { id: number; name: string }[]; defaultCenterId: string }> {
+  if (!me.clientId) return { centers: [], defaultCenterId: "" };
+  const links = await db.clientCenter.findMany({ where: { clientId: me.clientId }, select: { centerCode: true } });
+  const [centers, user] = await Promise.all([
+    db.center.findMany({ where: { code: { in: links.map((l) => l.centerCode) }, isActive: true }, orderBy: { code: "asc" }, select: { id: true, name: true } }),
+    db.user.findUnique({ where: { id: me.id }, select: { defaultCenterId: true } }),
+  ]);
+  const defaultCenterId =
+    user?.defaultCenterId && centers.some((c) => c.id === user.defaultCenterId) ? String(user.defaultCenterId) : centers.length === 1 ? String(centers[0].id) : "";
+  return { centers, defaultCenterId };
+}
+
 /** 등록·수정 화면 기준정보 — 이 화주사가 이용하는 사용 중 센터, 품목, 앞으로 1년 휴무일 */
 export async function entryOptions(me: PlanActor): Promise<EntryOptions | null> {
   if (!canEntry(me)) return null;
-  const clientId = me.clientId!;
   const today = todayKst();
-  const links = await db.clientCenter.findMany({ where: { clientId }, select: { centerCode: true } });
-  const centers = await db.center.findMany({
-    where: { code: { in: links.map((l) => l.centerCode) }, isActive: true },
-    orderBy: { code: "asc" },
-    select: { id: true, name: true },
-  });
+  const { centers, defaultCenterId } = await centerChoices(me);
   const until = new Date(`${today}T00:00:00Z`);
   until.setUTCFullYear(until.getUTCFullYear() + 1);
-  const [holidays] = await Promise.all([
-    db.holiday.findMany({
-      where: { centerId: { in: centers.map((c) => c.id) }, date: { gte: new Date(`${today}T00:00:00Z`), lte: until } },
-      select: { centerId: true, date: true, name: true },
-    }),
-  ]);
-  // 센터 기본값: 사용자 기본 센터(이용 중인 센터일 때) → 이용 센터가 1곳이면 그 센터 → 없음(전체)
-  const user = await db.user.findUnique({ where: { id: me.id }, select: { defaultCenterId: true } });
-  const defaultCenterId =
-    user?.defaultCenterId && centers.some((c) => c.id === user.defaultCenterId) ? String(user.defaultCenterId) : centers.length === 1 ? String(centers[0].id) : "";
+  const holidays = await db.holiday.findMany({
+    where: { centerId: { in: centers.map((c) => c.id) }, date: { gte: new Date(`${today}T00:00:00Z`), lte: until } },
+    select: { centerId: true, date: true, name: true },
+  });
   // 품목은 화면에서 찾을 때마다 서버에서 가져온다 (수정 화면은 기존 줄 품목만 따로 넣는다)
   return { centers, defaultCenterId, items: [], holidays: holidays.map((h) => ({ centerId: h.centerId, date: ymd(h.date), name: h.name })), today };
 }

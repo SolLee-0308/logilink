@@ -103,13 +103,14 @@ model Center {
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   updatedBy      String   @map("updated_by") @db.VarChar(50)
 
-  company     Company        @relation(fields: [companyId], references: [id])
-  manager     User?          @relation("CenterManager", fields: [managerUserId], references: [id])
-  users       User[]         @relation("CenterUsers")
-  defaultUsers   User[]   @relation("UserDefaultCenter")
-  holidays    Holiday[]
-  plans       InboundPlan[]
-  clientLinks ClientCenter[]
+  company      Company        @relation(fields: [companyId], references: [id])
+  manager      User?          @relation("CenterManager", fields: [managerUserId], references: [id])
+  users        User[]         @relation("CenterUsers")
+  defaultUsers User[]         @relation("UserDefaultCenter")
+  holidays     Holiday[]
+  plans        InboundPlan[]
+  asns         Asn[]
+  clientLinks  ClientCenter[]
 
   @@map("tb_center")
 }
@@ -149,6 +150,7 @@ model Client {
   itemRequests ItemRequest[]
   plans        InboundPlan[]
   planAiReads  PlanAiRead[]
+  asns         Asn[]
   users        User[]
 
   @@map("tb_client")
@@ -196,6 +198,7 @@ model Item {
   aliases     ItemAlias[]
   fromRequest ItemRequest?
   planLines   InboundPlanLine[]
+  asnLines    AsnLine[]
 
   @@unique([clientId, code])
   @@map("tb_item")
@@ -345,20 +348,20 @@ model CommonCode {
 /// 사용자 — 화주사 역할은 화주사, 3PL 역할은 센터에 소속 (DB 체크 제약으로도 보장)
 /// 한 사람이 역할을 여러 개 가질 수 있다(작은 화주사·센터). 단 3PL 역할과 화주사 역할은 섞지 않는다
 model User {
-  id        Int        @id @default(autoincrement())
-  loginId   String     @unique @map("login_id") @db.VarChar(50)
-  name      String     @db.VarChar(50)
-  roles     UserRole[]
-  clientId  Int?     @map("client_id")
-  centerId  Int?     @map("center_id")
+  id              Int        @id @default(autoincrement())
+  loginId         String     @unique @map("login_id") @db.VarChar(50)
+  name            String     @db.VarChar(50)
+  roles           UserRole[]
+  clientId        Int?       @map("client_id")
+  centerId        Int?       @map("center_id")
   /// 화주사 사용자의 기본 센터 — 입고예정 등록에서 처음 고른 센터 (그 화주사의 이용 센터 중 하나, 2026-11-04 Sol)
-  defaultCenterId Int? @map("default_center_id")
-  isActive  Boolean  @default(true) @map("is_active")
-  version   Int      @default(1)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  createdBy String   @map("created_by") @db.VarChar(50)
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  updatedBy String   @map("updated_by") @db.VarChar(50)
+  defaultCenterId Int?       @map("default_center_id")
+  isActive        Boolean    @default(true) @map("is_active")
+  version         Int        @default(1)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy       String     @map("created_by") @db.VarChar(50)
+  updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy       String     @map("updated_by") @db.VarChar(50)
 
   /// 로그인 — 비밀번호 해시(scrypt), 초기화 후 첫 로그인 변경 강제, 연속 실패·잠금
   passwordHash String?   @map("password_hash") @db.VarChar(200)
@@ -451,14 +454,14 @@ model Company {
 
 /// 휴무일 — 입고예정일 D-day·기한 지남·기한경과 계산 때 영업일에서 뺀다
 model Holiday {
-  id        Int         @id @default(autoincrement())
-  centerId  Int         @map("center_id")
-  date      DateTime    @db.Date
-  name      String      @db.VarChar(100)
+  id        Int           @id @default(autoincrement())
+  centerId  Int           @map("center_id")
+  date      DateTime      @db.Date
+  name      String        @db.VarChar(100)
   kind      HolidayKind
   source    HolidaySource @default(MANUAL)
-  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  createdBy String      @map("created_by") @db.VarChar(50)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String        @map("created_by") @db.VarChar(50)
 
   center Center @relation(fields: [centerId], references: [id])
 
@@ -558,6 +561,7 @@ model InboundPlan {
   rejects   InboundPlanReject[]
   histories InboundPlanHistory[]
   aiReads   PlanAiRead[]
+  asnLines  AsnLine[]
 
   @@index([status, centerId])
   @@index([clientId, status])
@@ -584,8 +588,9 @@ model InboundPlanLine {
   diffQty    Int       @default(0) @map("diff_qty")
   closeQty   Int       @default(0) @map("close_qty")
 
-  plan InboundPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  item Item        @relation(fields: [itemId], references: [id])
+  plan     InboundPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  item     Item        @relation(fields: [itemId], references: [id])
+  asnLines AsnLine[]
 
   @@unique([planId, lineNo])
   @@index([itemId])
@@ -680,4 +685,130 @@ model PlanAiRead {
   @@index([clientId, createdAt])
   @@index([planId])
   @@map("tb_inb_plan_ai_read")
+}
+
+/**
+ * ═════════ ASN · 상차지시서 (정의서 ③ · 4-2 · C4 · D7~D9) ═════════
+ */
+
+/// ASN 상태 — 정의서 4-2. 표시명은 src/domain/asn-status.ts
+enum AsnStatus {
+  REGISTERED // 등록 (상차지시서 발행, 상차 시작 전)
+  LOADING // 상차중
+  LOADED // 상차완료
+  RECEIVED // 입고완료
+  CANCELED // 취소 (상차 시작 전까지만)
+}
+
+/// 상차지시서 상태 — 정의서 4-2 (ASN 1:1)
+enum LoadOrderStatus {
+  ISSUED // 발행
+  LOADED // 상차완료
+  INSPECTED // 검수완료
+  CANCELED // 취소
+}
+
+/// ASN 처리 이력 행위
+enum AsnAction {
+  CREATE // 등록 (상차지시서 발행)
+  CANCEL // 화주사 취소
+}
+
+/// ASN 헤더 (TB_ASN_H) — 차량 1대 단위. 입고예정번호를 두지 않고 라인이 입고예정 라인을 가리킨다 (D9)
+/// 차량 기준정보는 두지 않고 차량번호를 직접 적는다 (2026-11-04 Sol, H1). 한 화주사·한 센터의 입고예정만 담는다
+model Asn {
+  id               Int       @id @default(autoincrement())
+  /// ASN-YYYYMMDD-NNNN (등록일 기준 일련번호)
+  asnNo            String    @unique @map("asn_no") @db.VarChar(20)
+  clientId         Int       @map("client_id")
+  centerId         Int       @map("center_id")
+  /// 출고일 (상차하는 날) — 입고예정일과 달라도 된다 (D8). 상차 입력의 "당일 ASN" 기준
+  shipDate         DateTime  @map("ship_dt") @db.Date
+  /// 공백을 뺀 차량번호 (예: 12가3456)
+  vehicleNo        String    @map("vehicle_no") @db.VarChar(20)
+  driverName       String?   @map("driver_nm") @db.VarChar(20)
+  driverTel        String?   @map("driver_tel") @db.VarChar(15)
+  memo             String?   @db.VarChar(500)
+  status           AsnStatus @default(REGISTERED)
+  version          Int       @default(1)
+  cancelReasonCode String?   @map("cancel_reason_cd") @db.VarChar(20)
+  cancelReasonText String?   @map("cancel_reason_text") @db.VarChar(500)
+  canceledAt       DateTime? @map("canceled_at") @db.Timestamptz(3)
+  canceledBy       String?   @map("canceled_by") @db.VarChar(50)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy        String    @map("created_by") @db.VarChar(50)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy        String    @map("updated_by") @db.VarChar(50)
+
+  client    Client       @relation(fields: [clientId], references: [id])
+  center    Center       @relation(fields: [centerId], references: [id])
+  lines     AsnLine[]
+  loadOrder LoadOrder?
+  histories AsnHistory[]
+
+  @@index([clientId, status])
+  @@index([centerId, shipDate])
+  @@index([vehicleNo])
+  @@map("tb_asn_h")
+}
+
+/// ASN 라인 (TB_ASN_D) — 입고예정 라인 하나에서 이 차량에 싣는 지시수량 (C4: 라인별 분배 합계 ≤ 승인 잔량)
+model AsnLine {
+  id         Int      @id @default(autoincrement())
+  asnId      Int      @map("asn_id")
+  lineNo     Int      @map("line_no")
+  planId     Int      @map("plan_id")
+  planLineId Int      @map("plan_line_id")
+  itemId     Int      @map("item_id")
+  /// 입고예정 라인의 단위로 지시한다
+  unit       ItemUnit
+  qty        Int
+  /// 기준 단위 환산 지시수량 — 분배 잔량 계산 기준
+  baseQty    Int      @map("base_qty")
+
+  asn      Asn             @relation(fields: [asnId], references: [id], onDelete: Cascade)
+  plan     InboundPlan     @relation(fields: [planId], references: [id])
+  planLine InboundPlanLine @relation(fields: [planLineId], references: [id])
+  item     Item            @relation(fields: [itemId], references: [id])
+
+  @@unique([asnId, lineNo])
+  @@index([planLineId])
+  @@index([planId])
+  @@index([itemId])
+  @@map("tb_asn_d")
+}
+
+/// 상차지시서 (TB_LOAD_ORDER) — ASN 저장과 동시에 발행 (ASN 1:1). 바코드 = 지시서 번호
+model LoadOrder {
+  id        Int             @id @default(autoincrement())
+  /// LO-YYYYMMDD-NNNN
+  orderNo   String          @unique @map("order_no") @db.VarChar(20)
+  asnId     Int             @unique @map("asn_id")
+  status    LoadOrderStatus @default(ISSUED)
+  issuedAt  DateTime        @default(now()) @map("issued_at") @db.Timestamptz(3)
+  issuedBy  String          @map("issued_by") @db.VarChar(50)
+  updatedAt DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  asn Asn @relation(fields: [asnId], references: [id], onDelete: Cascade)
+
+  @@map("tb_load_order")
+}
+
+/// ASN 처리 이력 (TB_ASN_HIS)
+model AsnHistory {
+  id         Int       @id @default(autoincrement())
+  asnId      Int       @map("asn_id")
+  action     AsnAction
+  version    Int
+  actor      String    @db.VarChar(50)
+  actorId    Int?      @map("actor_id")
+  at         DateTime  @default(now()) @db.Timestamptz(3)
+  reasonCode String?   @map("reason_cd") @db.VarChar(20)
+  reasonName String?   @map("reason_nm") @db.VarChar(100)
+  reasonText String?   @map("reason_text") @db.VarChar(500)
+
+  asn Asn @relation(fields: [asnId], references: [id])
+
+  @@index([asnId])
+  @@map("tb_asn_his")
 }
