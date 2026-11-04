@@ -18,7 +18,8 @@ export type Resource =
   | "master"
   | "approval"
   | "planEntry"
-  | "asn";
+  | "asn"
+  | "asnStatus";
 export type Op = "view" | "edit";
 
 /** 3PL 관리자는 3PL 운영담당 권한을 모두 포함한다 */
@@ -42,6 +43,8 @@ const MATRIX: Record<Resource, Record<Op, readonly UserRole[]>> = {
   planEntry: { view: ["SHIPPER_STAFF"], edit: ["SHIPPER_STAFF"] },
   // ASN 등록·취소, 상차지시서 인쇄: 화주사 담당자 (정의서 ③). 3PL은 ASN·상차 현황(추후)에서 조회
   asn: { view: ["SHIPPER_STAFF"], edit: ["SHIPPER_STAFF"] },
+  // ASN·상차 현황: 3PL 조회 전용 (소속 센터 ASN만, 센터가 없는 계정은 전체)
+  asnStatus: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: [] },
   // 그 외 기준정보 — 기존 유지 (매트릭스 확정 전)
   master: { view: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"], edit: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"] },
 };
@@ -77,6 +80,7 @@ export function resourceOfPath(href: string): Resource {
   if (href.startsWith("/master/holidays")) return "holidays";
   if (href.startsWith("/plans/approval")) return "approval";
   if (href.startsWith("/plans/entry")) return "planEntry";
+  if (href.startsWith("/plans/asn-status")) return "asnStatus";
   if (href.startsWith("/plans/asn")) return "asn";
   return "master";
 }

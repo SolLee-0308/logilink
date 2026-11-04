@@ -612,6 +612,26 @@ async function main() {
       });
     await asn(1, "82가1234", "오정훈", 4, 0.4, true);
     await asn(2, "82가1234", "오정훈", 4, 0.3);
+
+    // 3PL ASN·상차 현황 예시 — 출고일이 어제인데 상차하지 않은 한빛식품 1건, 내일 출고 그린마켓 1건
+    const extra = async (client: "HB" | "GM", itemCode: string, no: string, ship: string, vehicleNo: string, driverName: string, qty: number, by: string, h: number) => {
+      const pl = await db.inboundPlanLine.findFirstOrThrow({
+        where: { itemId: itemId[itemCode], plan: { clientId: clientId[client], status: "APPROVED", centerId: center.id } },
+        orderBy: { id: "asc" },
+      });
+      await db.asn.create({
+        data: {
+          asnNo: no, clientId: clientId[client], centerId: center.id, shipDate: new Date(`${ship}T00:00:00Z`), vehicleNo, driverName, driverTel: "010-7788-1200",
+          createdAt: hoursAgo(h), createdBy: by, updatedBy: by,
+          lines: { create: [{ lineNo: 1, planId: pl.planId, planLineId: pl.id, itemId: pl.itemId, unit: pl.unit, qty, baseQty: qty * uomQty(itemCode, pl.unit) }] },
+          loadOrder: { create: { orderNo: no.replace("ASN-", "LO-"), issuedAt: hoursAgo(h), issuedBy: by } },
+          histories: { create: [{ action: "CREATE", version: 1, actor: by, actorId: actorIdOf[by] ?? null, at: hoursAgo(h) }] },
+        },
+      });
+    };
+    const ymdOf = (at: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(at);
+    await extra("HB", "HB-1004", `ASN-${ymdOf(hoursAgo(30)).replaceAll("-", "")}-0001`, day(-1), "91다4521", "한상우", 12, "박민지", 30);
+    await extra("GM", "GM-0501", `ASN-${ymd}-0003`, day(1), "77라3090", "문지호", 20, "이도윤", 0.2);
   }
 
   await db.changeLog.createMany({ data: createLogs });

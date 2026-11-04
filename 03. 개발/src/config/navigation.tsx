@@ -61,7 +61,8 @@ export const NAV_GROUPS: NavGroup[] = [
       // 화주사: 승인된 입고예정을 차량에 나눠 담고 상차지시서 발행 (정의서 ③)
       { label: "ASN 등록", href: "/plans/asn", icon: <IconTruck /> },
       { label: "입고예정 조회", icon: <IconDoc /> },
-      { label: "ASN·상차 현황", icon: <IconTruck /> },
+      // 3PL: 들어올 차량(ASN)과 상차 진행 조회 — 조회 전용
+      { label: "ASN·상차 현황", href: "/plans/asn-status", icon: <IconTruck /> },
     ],
   },
   {

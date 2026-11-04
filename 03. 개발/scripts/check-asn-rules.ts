@@ -6,7 +6,7 @@ import "dotenv/config";
 import { db } from "@/server/db";
 import type { PlanActor } from "@/server/plans/service";
 import { cancelAsn, createAsn, lineErrorKey } from "@/server/asn/service";
-import { distributablePlans, getAsnDetail, getLoadOrderPrint, listMyAsns } from "@/server/asn/queries";
+import { distributablePlans, getAsnDetail, getAsnStatusDetail, getLoadOrderPrint, listAsnStatus, listMyAsns } from "@/server/asn/queries";
 import { countUnclosed } from "@/server/master/unclosed";
 import { DISTRIBUTE_CONFLICT_MSG } from "@/domain/asn-rules";
 import { todayKst } from "@/lib/format";
@@ -94,7 +94,7 @@ async function main() {
     ],
   });
   const ymd = today.replaceAll("-", "");
-  ok(created.ok && created.data?.asnNo === `ASN-${ymd}-0003` && created.data.orderNo === `LO-${ymd}-0003`, "등록: 오늘 3번째 ASN·상차지시서 번호", created);
+  ok(created.ok && created.data?.asnNo === `ASN-${ymd}-0004` && created.data.orderNo === `LO-${ymd}-0004`, "등록: 오늘 4번째 ASN·상차지시서 번호 (다른 화주사 번호와 이어서)", created);
   if (!created.ok || !created.data) throw new Error("등록 실패 — 이후 점검 중단");
   const a = await db.asn.findUniqueOrThrow({ where: { id: created.data.id }, include: { lines: true, loadOrder: true, histories: true } });
   ok(a.vehicleNo === "82가5678" && a.status === "REGISTERED" && a.version === 1, "차량번호 공백 제거, 상태 등록", a.vehicleNo);
@@ -114,7 +114,7 @@ async function main() {
   ok(print?.sender.bizNo === "214-86-50011" && print.receiver.name.length > 0 && print.lines.every((l) => l.planNo.startsWith("IP-")), "상차지시서: 발송인(화주사 법인)·센터·입고예정번호", print?.sender);
   ok(!!print?.lines.find((l) => l.itemCode === "HB-1001")?.barcode, "상차지시서 품목 바코드");
   ok((await listMyAsns(hb)).some((x) => x.id === a.id && x.tab === "wait"), "목록 상차 대기 탭");
-  ok((await countUnclosed([hb.clientId!])).get(hb.clientId!)!.asn === 2, "미종결 ASN 2건(등록) — 취소 건 제외");
+  ok((await countUnclosed([hb.clientId!])).get(hb.clientId!)!.asn === 3, "미종결 ASN 3건(등록) — 취소 건 제외");
 
   /* 동시 저장 — 같은 라인의 남은 수량(두부 60)을 두 차량이 동시에 전부 담으면 하나만 성공 */
   const [c1, c2] = await Promise.all([
@@ -145,6 +145,18 @@ async function main() {
   await db.asn.update({ where: { id: won.data.id }, data: { status: "LOADING" } });
   r = await cancelAsn(hb, { id: won.data.id, version: 1, reasonCode: "X03" });
   ok(!r.ok && r.code === "STATE" && /상차 시작 전/.test(r.error), "상차중 ASN은 취소 못 함 (4-2)", r);
+
+  /* 3PL ASN·상차 현황 — 소속 센터 ASN만, 조회 전용 */
+  const jung = await actor("jung.minseo");
+  const han = await actor("han.soyul");
+  const kimRows = await listAsnStatus(kim);
+  ok(kimRows.length > 0 && kimRows.every((x) => x.centerId === yi1) && new Set(kimRows.map((x) => x.clientId)).size >= 2, "용인1센터 3PL: 소속 센터의 여러 화주사 ASN", kimRows.length);
+  ok((await listAsnStatus(jung)).every((x) => x.centerId === ic2) && (await getAsnStatusDetail(jung, a.id)) === null, "이천2센터 3PL은 용인1센터 ASN을 못 본다");
+  ok((await getAsnStatusDetail(kim, a.id))?.clientName === "한빛식품", "3PL 상세: 화주사 표시");
+  ok((await listAsnStatus(hb)).length === 0 && (await getAsnStatusDetail(hb, a.id)) === null, "화주사 계정은 3PL 현황을 못 본다");
+  const hanRows = await listAsnStatus(han);
+  ok(hanRows.length === kimRows.length && hanRows.every((x) => x.centerId === yi1), "3PL 관리자도 소속 센터(용인1센터) 기준");
+  ok(kimRows.some((x) => x.status === "REGISTERED" && x.shipDate < today), "출고일 지난 상차 대기 ASN이 현황에 남아 있다");
 
   /* RLS */
   const rls = await db.$queryRawUnsafe<{ relname: string; relrowsecurity: boolean }[]>(

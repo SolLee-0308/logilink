@@ -6,8 +6,13 @@ import type { CenterOption } from "@/features/plans/types";
 /** ASN 목록 탭 — 상차 대기(등록) / 상차 진행(상차중·상차완료) / 최근 입고완료 / 최근 취소 */
 export type AsnTab = "wait" | "loading" | "done" | "canceled";
 
+/** 3PL ASN·상차 현황 탭 — 상차 대기 / 상차중 / 검수 대기(상차완료) / 최근 입고완료 / 최근 취소 */
+export type AsnStatusTab = "wait" | "loading" | "loaded" | "done" | "canceled";
+
 export interface AsnRow {
   id: number;
+  clientId: number;
+  clientName: string;
   asnNo: string;
   loadOrderNo: string | null;
   tab: AsnTab;
@@ -18,6 +23,7 @@ export interface AsnRow {
   shipDate: string;
   vehicleNo: string;
   driverName: string | null;
+  driverTel: string | null;
   lineCount: number;
   planNos: string[];
   qtyByUnit: [ItemUnit, number][];

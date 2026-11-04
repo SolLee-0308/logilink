@@ -16,9 +16,10 @@ import { cancelAsn } from "@/server/asn/actions";
 import { RejectModal, type ReasonOption } from "@/features/shared/RejectModal";
 import { SubHeader, useAction } from "@/features/master/shared";
 import { ViewSection } from "@/features/master/record";
-import { ASN_RULES } from "./rules";
+import { ASN_RULES, ASN_STATUS_RULES } from "./rules";
 import type { AsnDetail, AsnLineView } from "./types";
 import { ASN_LIST_KEY, asnListUrl } from "./asn-list";
+import { ASN_STATUS_LIST_KEY } from "./asn-status-list";
 import styles from "./AsnDetailScreen.module.css";
 
 function historyEntries(d: AsnDetail): TimelineEntry[] {
@@ -37,15 +38,29 @@ function historyEntries(d: AsnDetail): TimelineEntry[] {
 }
 
 /**
- * ASN 상세 (화주사, /plans/asn/[id]) — [상차지시서 인쇄], 상차 시작 전(등록)이면 [취소].
+ * ASN 상세 — 화주사(/plans/asn/[id]): [상차지시서 인쇄], 상차 시작 전(등록)이면 [취소].
  * ASN은 고치지 않는다. 바뀌면 취소하고 새로 등록한다 (정의서 4-2).
+ * 3PL(/plans/asn-status/[id], view="tpl"): 같은 내용을 조회만 하고 화주사를 함께 보여 준다.
  */
-export function AsnDetailScreen({ detail: d, cancelReasons, today, issued }: { detail: AsnDetail; cancelReasons: ReasonOption[]; today: string; issued: boolean }) {
+export function AsnDetailScreen({
+  detail: d,
+  cancelReasons = [],
+  today,
+  issued = false,
+  view = "shipper",
+}: {
+  detail: AsnDetail;
+  cancelReasons?: ReasonOption[];
+  today: string;
+  issued?: boolean;
+  view?: "shipper" | "tpl";
+}) {
+  const tpl = view === "tpl";
   const router = useRouter();
   const act = useAction();
   const [canceling, setCanceling] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const cancelable = canCancelAsn(d.status);
+  const cancelable = !tpl && canCancelAsn(d.status);
   const printHref = `/print/load-order/${d.id}`;
   const n = dday(d.shipDate, today);
 
@@ -72,13 +87,14 @@ export function AsnDetailScreen({ detail: d, cancelReasons, today, issued }: { d
     <>
       <SubHeader
         group={["입고 계획"]}
-        section="ASN 등록"
+        section={tpl ? "ASN·상차 현황" : "ASN 등록"}
         title={d.asnNo}
-        backHref="/plans/asn"
-        storageKey={ASN_LIST_KEY}
-        rules={ASN_RULES}
+        backHref={tpl ? "/plans/asn-status" : "/plans/asn"}
+        storageKey={tpl ? ASN_STATUS_LIST_KEY : ASN_LIST_KEY}
+        rules={tpl ? ASN_STATUS_RULES : ASN_RULES}
         badges={<AsnStatusBadge status={d.status} />}
         actions={
+          tpl ? undefined : (
           <div className={styles.actions}>
             {cancelable && (
               <Button variant="danger" onClick={() => setCanceling(true)} disabled={act.pending}>
@@ -91,6 +107,7 @@ export function AsnDetailScreen({ detail: d, cancelReasons, today, issued }: { d
               </Button>
             )}
           </div>
+          )
         }
       />
 
@@ -106,14 +123,22 @@ export function AsnDetailScreen({ detail: d, cancelReasons, today, issued }: { d
           <strong>상차지시서 {d.loadOrder.orderNo}을(를) 발행했습니다.</strong> 인쇄해 차량 기사·상차담당에게 전달하세요. 상차담당이 PDA로 바코드를 스캔해 상차를 시작합니다.
         </NoteBox>
       )}
-      {d.status === "REGISTERED" && !issued && <NoteBox tone="info">상차를 기다리고 있습니다. 상차를 시작하기 전까지는 취소할 수 있습니다. 내용이 바뀌면 취소하고 새로 등록하세요.</NoteBox>}
-      {d.status === "REGISTERED" && n < 0 && <NoteBox tone="warn">출고일이 지났습니다. 이 차량이 오지 않으면 ASN을 취소하고, 다른 날 보낼 물량은 새 ASN에 담으세요.</NoteBox>}
+      {tpl && d.status === "REGISTERED" && (
+        <NoteBox tone={n < 0 ? "warn" : "info"}>
+          {n < 0
+            ? "출고일이 지났는데 아직 상차를 시작하지 않았습니다. 화주사에 차량이 오는지 확인하세요."
+            : "화주사 상차 전입니다. 상차를 시작하기 전까지는 화주사가 취소하거나 다시 등록할 수 있습니다."}
+        </NoteBox>
+      )}
+      {tpl && d.status === "LOADED" && <NoteBox tone="info">상차를 마친 차량입니다. 차량이 도착하면 입고검수를 시작할 수 있습니다.</NoteBox>}
+      {!tpl && d.status === "REGISTERED" && !issued && <NoteBox tone="info">상차를 기다리고 있습니다. 상차를 시작하기 전까지는 취소할 수 있습니다. 내용이 바뀌면 취소하고 새로 등록하세요.</NoteBox>}
+      {!tpl && d.status === "REGISTERED" && n < 0 && <NoteBox tone="warn">출고일이 지났습니다. 이 차량이 오지 않으면 ASN을 취소하고, 다른 날 보낼 물량은 새 ASN에 담으세요.</NoteBox>}
       {d.status === "CANCELED" && (
         <NoteBox tone="warn">
           <strong>취소된 ASN입니다{d.cancelReasonName ? ` · ${d.cancelReasonName}` : ""}</strong>
           {d.cancelReasonText ? ` — "${d.cancelReasonText}"` : ""}
           <br />
-          {d.canceledBy} · {fmtDateTime(d.canceledAt)}. 상차지시서도 함께 취소되었고, 담았던 수량은 다른 ASN에 다시 담을 수 있습니다.
+          {d.canceledBy} · {fmtDateTime(d.canceledAt)}. 상차지시서도 함께 취소되었{tpl ? "습니다." : "고, 담았던 수량은 다른 ASN에 다시 담을 수 있습니다."}
         </NoteBox>
       )}
       {act.error && <NoteBox tone="error">{act.error}</NoteBox>}
@@ -122,6 +147,7 @@ export function AsnDetailScreen({ detail: d, cancelReasons, today, issued }: { d
         <div className={styles.infoGrid}>
           <ViewSection
             items={[
+              ...(tpl ? ([["화주사", d.clientName]] as [string, React.ReactNode][]) : []),
               ["ASN번호", <span key="n" className="mono">{d.asnNo}</span>],
               ["상차지시서", d.loadOrder ? <span key="o" className="mono">{d.loadOrder.orderNo}</span> : null],
               ["센터", d.centerName],

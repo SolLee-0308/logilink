@@ -5,6 +5,7 @@ import "server-only";
  */
 import { db } from "@/server/db";
 import type { PlanActor } from "@/server/plans/service";
+import type { Prisma } from "@/generated/prisma/client";
 import { centerChoices } from "@/server/plans/entry";
 import { can } from "@/domain/permissions";
 import { ASN_COUNTED, DISTRIBUTABLE_PLAN, remainingBase, toLineUnitQty, type AsnStatus } from "@/domain/asn-rules";
@@ -39,21 +40,41 @@ export async function distributedByLine(planLineIds: number[], tx: Pick<typeof d
   return new Map(rows.map((r) => [r.planLineId, r._sum.baseQty ?? 0]));
 }
 
-/** ASN 목록 — 상차 전·진행 건 전부 + 최근 30일 입고완료·취소 */
+/** 목록에 남기는 ASN — 상차 전·진행 건 전부 + 최근 30일 입고완료·취소 */
+function listWhere(scope: Prisma.AsnWhereInput): Prisma.AsnWhereInput {
+  const since = new Date(Date.now() - ASN_RECENT_DAYS * 86_400_000);
+  return {
+    ...scope,
+    OR: [
+      { status: { in: ["REGISTERED", "LOADING", "LOADED"] } },
+      { status: "RECEIVED", updatedAt: { gte: since } },
+      { status: "CANCELED", canceledAt: { gte: since } },
+    ],
+  };
+}
+
+/** ASN 목록 (화주사) — 자기 화주사 건만 */
 export async function listMyAsns(me: PlanActor): Promise<AsnRow[]> {
   if (!canAsn(me)) return [];
-  const since = new Date(Date.now() - ASN_RECENT_DAYS * 86_400_000);
+  return listAsnRows(listWhere({ clientId: me.clientId! }));
+}
+
+/** 3PL 조회 범위 — 소속 센터 ASN만 (센터가 없는 계정은 전체) */
+export const canAsnStatus = (me: PlanActor) => can(me.roles, "asnStatus", "view");
+const tplScope = (me: PlanActor): Prisma.AsnWhereInput => (me.centerId ? { centerId: me.centerId } : {});
+
+/** ASN·상차 현황 (3PL) */
+export async function listAsnStatus(me: PlanActor): Promise<AsnRow[]> {
+  if (!canAsnStatus(me)) return [];
+  return listAsnRows(listWhere(tplScope(me)));
+}
+
+async function listAsnRows(where: Prisma.AsnWhereInput): Promise<AsnRow[]> {
   const asns = await db.asn.findMany({
-    where: {
-      clientId: me.clientId!,
-      OR: [
-        { status: { in: ["REGISTERED", "LOADING", "LOADED"] } },
-        { status: "RECEIVED", updatedAt: { gte: since } },
-        { status: "CANCELED", canceledAt: { gte: since } },
-      ],
-    },
+    where,
     orderBy: [{ shipDate: "asc" }, { asnNo: "asc" }],
     include: {
+      client: { select: { name: true } },
       center: { select: { name: true } },
       loadOrder: { select: { orderNo: true } },
       lines: { select: { unit: true, qty: true, plan: { select: { planNo: true } }, item: { select: { code: true, name: true } } } },
@@ -61,6 +82,8 @@ export async function listMyAsns(me: PlanActor): Promise<AsnRow[]> {
   });
   return asns.map((a) => ({
     id: a.id,
+    clientId: a.clientId,
+    clientName: a.client.name,
     asnNo: a.asnNo,
     loadOrderNo: a.loadOrder?.orderNo ?? null,
     tab: tabOf(a.status),
@@ -70,6 +93,7 @@ export async function listMyAsns(me: PlanActor): Promise<AsnRow[]> {
     shipDate: ymd(a.shipDate),
     vehicleNo: a.vehicleNo,
     driverName: a.driverName,
+    driverTel: a.driverTel,
     lineCount: a.lines.length,
     planNos: [...new Set(a.lines.map((l) => l.plan.planNo))].sort(),
     qtyByUnit: sumByUnit(a.lines),
@@ -138,11 +162,21 @@ export async function countUndistributed(me: PlanActor) {
   return (await distributablePlans(me.clientId!)).length;
 }
 
-/** ASN 상세 — 자기 화주사 건만 */
+/** ASN 상세 (화주사) — 자기 화주사 건만 */
 export async function getAsnDetail(me: PlanActor, id: number): Promise<AsnDetail | null> {
   if (!canAsn(me)) return null;
+  return loadAsnDetail({ id, clientId: me.clientId! });
+}
+
+/** ASN 상세 (3PL) — 소속 센터 건만 */
+export async function getAsnStatusDetail(me: PlanActor, id: number): Promise<AsnDetail | null> {
+  if (!canAsnStatus(me)) return null;
+  return loadAsnDetail({ id, ...tplScope(me) });
+}
+
+async function loadAsnDetail(where: Prisma.AsnWhereInput): Promise<AsnDetail | null> {
   const a = await db.asn.findFirst({
-    where: { id, clientId: me.clientId! },
+    where,
     include: {
       client: { select: { name: true } },
       center: { select: { name: true } },

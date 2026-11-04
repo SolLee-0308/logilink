@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Tag } from "@/components/ui/Badges";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -72,6 +72,7 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
     return UNIT_ORDER.filter((u) => m.has(u)).map((u) => [u, m.get(u)!] as const);
   }, [picked]);
   const pickedPlans = new Set(picked.map((p) => p.plan.id)).size;
+  const centerLineCount = centerPlans.reduce((n, p) => n + p.lines.length, 0);
 
   const dirty = !!(vehicleNo || driverName || driverTel || memo || picked.length);
   useUnsavedChanges(dirty && !saved);
@@ -104,7 +105,6 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
       return n;
     });
   const fillVisible = () => visiblePlans.forEach((p) => fillPlan(p, true));
-  const planPicked = (p: DistPlan) => p.lines.some((l) => (qty[l.planLineId] ?? "").trim() !== "");
 
   function reload() {
     startReload(async () => {
@@ -232,7 +232,6 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
           step={2}
           stepState={picked.length && !lineIssues ? "done" : "current"}
           title="차량에 담을 품목"
-          count={centerPlans.length}
           description="승인된 입고예정에서 이 차량에 실을 수량을 입력합니다. 남은 수량까지만 담을 수 있습니다."
           aside={
             centerPlans.length > 0 && (
@@ -256,107 +255,45 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
             <p className={styles.empty}>
               {centerName}에 ASN에 담을 수 있는 승인 입고예정이 없습니다. 입고예정이 승인되면 여기에 나타납니다.
             </p>
-          ) : visiblePlans.length === 0 ? (
-            <p className={styles.empty}>찾는 입고예정·품목이 없습니다.</p>
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <caption className="sr-only">차량에 담을 입고예정 품목</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">품목코드</th>
-                    <th scope="col">품목명</th>
-                    <th scope="col">유통기한 · 로트</th>
-                    <th scope="col">단위</th>
-                    <th scope="col" className={styles.num}>
-                      승인
-                    </th>
-                    <th scope="col" className={styles.num}>
-                      다른 ASN
-                    </th>
-                    <th scope="col" className={styles.num}>
-                      남은 수량
-                    </th>
-                    <th scope="col" className={styles.num}>
-                      이번 차량
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visiblePlans.map((p) => {
-                    const n = dday(p.planDate, today);
-                    return (
-                      <Fragment key={p.id}>
-                        <tr className={styles.planRow}>
-                          <th scope="rowgroup" colSpan={8}>
-                            <div className={styles.planHead}>
-                              <span className="mono">{p.planNo}</span>
-                              <span className={styles.planMeta}>
-                                입고예정일 <span className="mono">{p.planDate}</span> · {n < 0 ? <Tag tone="warn">{`D+${-n} 잔량`}</Tag> : ddayLabel(n)}
-                              </span>
-                              {p.status !== "APPROVED" && <Tag tone="neutral">{PLAN_STATUS_META[p.status].label}</Tag>}
-                              {p.memo && <span className={styles.planMemo}>메모: {p.memo}</span>}
-                              <span className={styles.planActs}>
-                                <Button size="sm" onClick={() => fillPlan(p, true)}>
-                                  남은 수량 담기
-                                </Button>
-                                {planPicked(p) && (
-                                  <Button size="sm" onClick={() => fillPlan(p, false)}>
-                                    비우기
-                                  </Button>
-                                )}
-                              </span>
-                            </div>
-                          </th>
-                        </tr>
-                        {p.lines.map((l) => {
-                          const err = lineErr(l);
-                          const done = l.remainingQty === 0;
-                          const id = `asn-q-${l.planLineId}`;
-                          return (
-                            <tr key={l.planLineId} className={`${styles.row} ${done ? styles.doneRow : ""}`} data-invalid={err ? "" : undefined}>
-                              <td className="mono">{l.itemCode}</td>
-                              <td>{l.itemName}</td>
-                              <td className="mono">
-                                {l.expiryDate || l.lotNo ? [l.expiryDate, l.lotNo].filter(Boolean).join(" · ") : <span className="muted">–</span>}
-                              </td>
-                              <td className="mono">{l.unit}</td>
-                              <td className={`${styles.num} mono`}>{l.qty.toLocaleString()}</td>
-                              <td className={`${styles.num} mono`}>{l.distributedQty ? l.distributedQty.toLocaleString() : <span className="muted">–</span>}</td>
-                              <td className={`${styles.num} mono ${styles.remain}`}>{done ? <span className="muted">다 담음</span> : l.remainingQty.toLocaleString()}</td>
-                              <td className={styles.num}>
-                                {!done && (
-                                  <>
-                                    <label htmlFor={id} className="sr-only">
-                                      {`${l.itemName} 이번 차량 수량 (${l.unit})`}
-                                    </label>
-                                    <Input
-                                      id={id}
-                                      className={`${styles.qtyInput} mono`}
-                                      inputMode="numeric"
-                                      placeholder="0"
-                                      value={qty[l.planLineId] ?? ""}
-                                      onChange={(e) => setLine(l.planLineId, e.target.value)}
-                                      aria-invalid={!!err}
-                                      aria-describedby={err ? `${id}-err` : undefined}
-                                    />
-                                    {err && (
-                                      <p className={styles.err} id={`${id}-err`}>
-                                        {err}
-                                      </p>
-                                    )}
-                                  </>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* 건수 요약 — 담을 수 있는 입고예정·품목 / 이번 차량에 담은 것 */}
+              <div className={styles.summary} aria-live="polite">
+                <span className={styles.chip}>
+                  입고예정 <b className="mono">{centerPlans.length}</b>건
+                </span>
+                <span className={styles.chip}>
+                  품목 <b className="mono">{centerLineCount}</b>줄
+                </span>
+                {search && (
+                  <span className={styles.chip}>
+                    찾은 입고예정 <b className="mono">{visiblePlans.length}</b>건
+                  </span>
+                )}
+                <span className={`${styles.chip} ${picked.length ? styles.chipOn : ""}`}>
+                  이번 차량 · 입고예정 <b className="mono">{pickedPlans}</b>건 · 품목 <b className="mono">{picked.length}</b>줄
+                </span>
+              </div>
+              {visiblePlans.length === 0 ? (
+                <p className={styles.empty}>찾는 입고예정·품목이 없습니다.</p>
+              ) : (
+                <div className={styles.plans}>
+                  {visiblePlans.map((p) => (
+                    <PlanBlock
+                      key={p.id}
+                      plan={p}
+                      index={centerPlans.indexOf(p) + 1}
+                      total={centerPlans.length}
+                      today={today}
+                      qty={qty}
+                      lineErr={lineErr}
+                      onLine={setLine}
+                      onFill={(on) => fillPlan(p, on)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </Card>
 
@@ -380,5 +317,141 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
         </div>
       </div>
     </>
+  );
+}
+
+/* ───────── 입고예정 1건 = 테두리 상자 1개 ───────── */
+
+function PlanBlock({
+  plan: p,
+  index,
+  total,
+  today,
+  qty,
+  lineErr,
+  onLine,
+  onFill,
+}: {
+  plan: DistPlan;
+  index: number;
+  total: number;
+  today: string;
+  qty: Record<number, string>;
+  lineErr: (l: DistLine) => string | null;
+  onLine: (id: number, v: string) => void;
+  onFill: (on: boolean) => void;
+}) {
+  const n = dday(p.planDate, today);
+  const pickedLines = p.lines.filter((l) => (qty[l.planLineId] ?? "").trim() !== "").length;
+  const open = p.lines.filter((l) => l.remainingQty > 0).length;
+  const headId = `asn-plan-${p.id}`;
+  return (
+    <section className={`${styles.plan} ${pickedLines ? styles.planOn : ""}`} aria-labelledby={headId}>
+      <header className={styles.planHead}>
+        <span className={`${styles.planIdx} mono`} aria-label={`입고예정 ${total}건 중 ${index}번째`}>
+          {index}
+        </span>
+        <h3 id={headId} className="mono">
+          {p.planNo}
+        </h3>
+        <span className={styles.planMeta}>
+          입고예정일 <span className="mono">{p.planDate}</span> · {ddayLabel(n)}
+        </span>
+        {n < 0 && <Tag tone="warn">지난 입고예정 잔량</Tag>}
+        {p.status !== "APPROVED" && <Tag tone="neutral">{PLAN_STATUS_META[p.status].label}</Tag>}
+        <Tag tone="neutral">{`${p.lines.length}품목 · 남음 ${open}`}</Tag>
+        {pickedLines > 0 && <Tag tone="accent">{`담음 ${pickedLines}줄`}</Tag>}
+        <span className={styles.planActs}>
+          {open > 0 && (
+            <Button size="sm" onClick={() => onFill(true)}>
+              남은 수량 담기
+            </Button>
+          )}
+          {pickedLines > 0 && (
+            <Button size="sm" onClick={() => onFill(false)}>
+              비우기
+            </Button>
+          )}
+        </span>
+      </header>
+      {p.memo && <p className={styles.planMemo}>메모: {p.memo}</p>}
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <caption className="sr-only">{`${p.planNo} 품목`}</caption>
+          <colgroup>
+            <col className={styles.cCode} />
+            <col />
+            <col className={styles.cExp} />
+            <col className={styles.cUnit} />
+            <col className={styles.cNum} />
+            <col className={styles.cNum} />
+            <col className={styles.cNum} />
+            <col className={styles.cIn} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">품목코드</th>
+              <th scope="col">품목명</th>
+              <th scope="col">유통기한 · 로트</th>
+              <th scope="col">단위</th>
+              <th scope="col" className={styles.num}>
+                승인
+              </th>
+              <th scope="col" className={styles.num}>
+                다른 ASN
+              </th>
+              <th scope="col" className={styles.num}>
+                남은 수량
+              </th>
+              <th scope="col" className={styles.num}>
+                이번 차량
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {p.lines.map((l) => {
+              const err = lineErr(l);
+              const done = l.remainingQty === 0;
+              const id = `asn-q-${l.planLineId}`;
+              return (
+                <tr key={l.planLineId} className={`${styles.row} ${done ? styles.doneRow : ""}`} data-invalid={err ? "" : undefined}>
+                  <td className="mono">{l.itemCode}</td>
+                  <td>{l.itemName}</td>
+                  <td className={`mono ${styles.nowrap}`}>{l.expiryDate || l.lotNo ? [l.expiryDate, l.lotNo].filter(Boolean).join(" · ") : <span className="muted">–</span>}</td>
+                  <td className="mono">{l.unit}</td>
+                  <td className={`${styles.num} mono`}>{l.qty.toLocaleString()}</td>
+                  <td className={`${styles.num} mono`}>{l.distributedQty ? l.distributedQty.toLocaleString() : <span className="muted">–</span>}</td>
+                  <td className={`${styles.num} mono ${styles.remain}`}>{done ? <span className="muted">다 담음</span> : l.remainingQty.toLocaleString()}</td>
+                  <td className={styles.num}>
+                    {!done && (
+                      <>
+                        <label htmlFor={id} className="sr-only">
+                          {`${l.itemName} 이번 차량 수량 (${l.unit})`}
+                        </label>
+                        <Input
+                          id={id}
+                          className={`${styles.qtyInput} mono`}
+                          inputMode="numeric"
+                          placeholder="0"
+                          value={qty[l.planLineId] ?? ""}
+                          onChange={(e) => onLine(l.planLineId, e.target.value)}
+                          aria-invalid={!!err}
+                          aria-describedby={err ? `${id}-err` : undefined}
+                        />
+                        {err && (
+                          <p className={styles.err} id={`${id}-err`}>
+                            {err}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

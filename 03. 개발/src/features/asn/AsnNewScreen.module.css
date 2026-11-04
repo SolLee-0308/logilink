@@ -6,26 +6,51 @@
   min-width: 0;
 }
 
-/* ① 차량·출고 정보 — 센터·출고일·차량번호 / 기사·연락처 / 메모 */
+/* ① 차량·출고 정보 — 왼쪽 3×2(센터·출고일·차량번호 / 기사 이름·연락처), 오른쪽 메모(두 줄 높이) */
 .headGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(160px, 240px));
+  grid-template-columns: repeat(3, minmax(150px, 220px)) minmax(240px, 1fr);
   gap: 12px 16px;
   align-items: start;
 }
 
 .memo {
-  grid-column: 1 / -1;
-  max-width: 752px;
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  display: flex;
+  min-width: 0;
 }
 
-@media (max-width: 900px) {
+.memo > * {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.memo textarea {
+  flex: 1;
+  min-height: 96px;
+  resize: vertical;
+}
+
+@media (max-width: 1100px) {
+  .headGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .memo {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 700px) {
   .headGrid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 480px) {
   .headGrid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -49,18 +74,142 @@
   color: var(--muted);
 }
 
-/* ② 입고예정별 품목 표 */
+/* ② 건수 요약 줄 */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--card-line);
+  background: var(--surface);
+  font-size: var(--fs-13);
+}
+
+.chip b {
+  font-weight: 600;
+}
+
+.chipOn {
+  border-color: var(--violet-600);
+  background: color-mix(in srgb, var(--violet-600) 8%, var(--bg));
+  color: var(--violet-600);
+}
+
+/* 입고예정 1건 = 테두리 상자 1개 */
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plan {
+  border: 1px solid var(--card-line);
+  border-left: 4px solid var(--card-line);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.planOn {
+  border-left-color: var(--violet-600);
+}
+
+.planHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 12px;
+  background: var(--card-head, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+
+.planHead h3 {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.planIdx {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.planOn .planIdx {
+  background: var(--violet-600);
+}
+
+.planMeta {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.planMemo {
+  margin: 0;
+  padding: 6px 12px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-row);
+}
+
+.planActs {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
 .tableWrap {
   overflow-x: auto;
-  margin: 0 -4px;
-  padding: 0 4px;
+  padding: 4px 8px 6px;
 }
 
 .table {
   width: 100%;
-  min-width: 860px;
+  /* 고정 칸 합 768px + 품목명 최소 190px */
+  min-width: 960px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--fs-13);
+}
+
+.cCode {
+  width: 110px;
+}
+
+.cExp {
+  width: 210px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.cUnit {
+  width: 56px;
+}
+
+.cNum {
+  width: 84px;
+}
+
+.cIn {
+  width: 140px;
 }
 
 .table thead th {
@@ -68,57 +217,13 @@
   font-weight: 500;
   font-size: var(--fs-12);
   color: var(--muted);
-  background: var(--surface);
-  padding: 8px 6px;
+  padding: 6px;
   white-space: nowrap;
-}
-
-.table thead th:first-child {
-  border-radius: 8px 0 0 8px;
-}
-
-.table thead th:last-child {
-  border-radius: 0 8px 8px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .table .num {
   text-align: right;
-}
-
-.planRow th {
-  text-align: left;
-  font-weight: 500;
-  padding: 14px 6px 6px;
-  border-bottom: 1px solid var(--line);
-}
-
-.planHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-}
-
-.planHead > .mono:first-child {
-  font-weight: 600;
-}
-
-.planMeta {
-  font-size: var(--fs-12);
-  font-weight: 400;
-  color: var(--muted);
-}
-
-.planMemo {
-  font-size: var(--fs-12);
-  font-weight: 400;
-  color: var(--text-2, var(--muted));
-}
-
-.planActs {
-  margin-left: auto;
-  display: inline-flex;
-  gap: 6px;
 }
 
 .row td {
@@ -131,7 +236,7 @@
   padding-top: 15px;
 }
 
-.planRow + .row td {
+.row:first-child td {
   border-top: 0;
 }
 
