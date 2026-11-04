@@ -1,0 +1,133 @@
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.uomRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+  min-height: 34px;
+}
+
+.qty {
+  width: 76px;
+  text-align: right;
+}
+
+.barcodeRow {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 76px 24px;
+  gap: 6px;
+  align-items: center;
+}
+
+.primary {
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.primary input {
+  margin: 0;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--violet-600);
+}
+
+.remove {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--soft);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  margin-left: auto;
+}
+
+.remove:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--st-rej-fg);
+}
+
+.remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.aliases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.alias {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-12);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  padding: 2px 4px 2px 10px;
+}
+
+.alias button {
+  border: 0;
+  background: transparent;
+  color: var(--soft);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  padding: 0;
+  line-height: 1;
+}
+
+.alias button:hover {
+  color: var(--st-rej-fg);
+  background: var(--bg);
+}
+
+.aliasAdd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+/* 편집 모달 */
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.blockLabel {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  min-height: 20px;
+}

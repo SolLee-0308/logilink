@@ -1,0 +1,355 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>
+<title>LogiLink CI 가이드</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Sora:wght@500;600;700&display=swap">
+<style>
+/* Layout: 흰 문서 위에 섹션을 세로로 쌓고, 미리보기는 참고 UI처럼 검정 사이드바 + 흰 콘텐츠 프레임 */
+:root{
+  --violet-50:#EFEDFE; --violet-300:#A99FF8; --violet-500:#7C6CF2; --violet-600:#6C5CE7; --violet-700:#5B4BD6;
+  --ink:#161616; --ink-2:#212121; --ink-line:#2C2C2E; --ink-text:#B9B9BE;
+  --bg:#FFFFFF; --surface:#FAFAFB; --line:#ECECEF; --fg:#18181B; --muted:#6B6B73; --soft:#9A9AA2;
+  --accent-text:var(--violet-700); --accent-soft:var(--violet-50);
+  --st-wait-bg:#FFF4CC; --st-wait-fg:#7A5600;
+  --st-rej-bg:#FDE7E7; --st-rej-fg:#B42318;
+  --st-ok-bg:#DFF1FF; --st-ok-fg:#075E9E;
+  --st-part-bg:#FFE9D6; --st-part-fg:#A6430A;
+  --st-done-bg:#E1F5E8; --st-done-fg:#1C7343;
+  --st-close-bg:#EBECEF; --st-close-fg:#474B53;
+  --st-cancel-bg:#F4F4F5; --st-cancel-fg:#8E9199;
+  --f-display:"Sora","IBM Plex Sans KR",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111113; --surface:#18181B; --line:#2A2A2F; --fg:#EDEDF0; --muted:#A1A1A9; --soft:#75757D;
+  --accent-text:var(--violet-300); --accent-soft:#25213F;
+  --st-wait-bg:#3A3110; --st-wait-fg:#F4D27A; --st-rej-bg:#3B1A1A; --st-rej-fg:#F7A3A3;
+  --st-ok-bg:#0E2C42; --st-ok-fg:#8CCBF5; --st-part-bg:#3A2412; --st-part-fg:#F6B98A;
+  --st-done-bg:#12301F; --st-done-fg:#8ED9AA; --st-close-bg:#2A2B2F; --st-close-fg:#C3C5CB;
+  --st-cancel-bg:#1F1F22; --st-cancel-fg:#7D8088; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111113; --surface:#18181B; --line:#2A2A2F; --fg:#EDEDF0; --muted:#A1A1A9; --soft:#75757D;
+  --accent-text:var(--violet-300); --accent-soft:#25213F;
+  --st-wait-bg:#3A3110; --st-wait-fg:#F4D27A; --st-rej-bg:#3B1A1A; --st-rej-fg:#F7A3A3;
+  --st-ok-bg:#0E2C42; --st-ok-fg:#8CCBF5; --st-part-bg:#3A2412; --st-part-fg:#F6B98A;
+  --st-done-bg:#12301F; --st-done-fg:#8ED9AA; --st-close-bg:#2A2B2F; --st-close-fg:#C3C5CB;
+  --st-cancel-bg:#1F1F22; --st-cancel-fg:#7D8088; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:40px 72px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:34px;font-weight:700}
+h2{font-size:22px;font-weight:600}
+h3{font-size:16px;font-weight:600}
+p{margin:0}
+.lead{color:var(--muted);max-width:62ch;margin-top:10px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-text)}
+section{display:flex;flex-direction:column;gap:20px}
+.sec-head{display:flex;flex-direction:column;gap:6px}
+.sec-head p{color:var(--muted);max-width:68ch}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+/* 로고 시안 */
+.concepts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.concept{border:1px solid var(--line);border-radius:16px;background:var(--bg);display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.concept[data-picked="true"]{border-color:var(--violet-500);box-shadow:0 0 0 3px var(--accent-soft)}
+.stage{background:var(--surface);padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:22px;border-bottom:1px solid var(--line)}
+.stage.dark{background:var(--ink);border-bottom:0}
+.lockup{display:flex;align-items:center;gap:10px}
+.word{font-family:var(--f-display);font-weight:600;font-size:22px;letter-spacing:-.02em;color:var(--fg)}
+.word b{font-weight:600;color:var(--violet-600)}
+.stage.dark .word{color:#FFFFFF}
+.stage.dark .word b{color:var(--violet-300)}
+.sizes{display:flex;align-items:flex-end;gap:14px}
+.sizes span{font-family:var(--f-mono);font-size:11px;color:var(--soft);display:flex;flex-direction:column;align-items:center;gap:4px}
+.concept-body{padding:18px 20px 20px;display:flex;flex-direction:column;gap:10px;flex:1}
+.concept-body .tag{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.concept-body p{color:var(--muted);font-size:14px}
+.rec{font-size:12px;font-weight:600;color:var(--accent-text);background:var(--accent-soft);padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pick{margin-top:auto;align-self:flex-start;font:inherit;font-size:14px;font-weight:500;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:10px;padding:7px 14px;cursor:pointer}
+.pick:hover{border-color:var(--violet-500)}
+.pick:focus-visible,.seg button:focus-visible{outline:2px solid var(--violet-500);outline-offset:2px}
+.concept[data-picked="true"] .pick{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+/* 적용 미리보기 */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;background:var(--surface);align-self:flex-start}
+.seg button{font:inherit;font-size:14px;border:0;background:transparent;color:var(--muted);padding:6px 14px;border-radius:8px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.frame-scroll{overflow-x:auto;border-radius:22px}
+.frame{min-width:820px;background:var(--ink);border-radius:22px;padding:10px;display:grid;grid-template-columns:230px 1fr;gap:10px}
+.side{color:var(--ink-text);display:flex;flex-direction:column;gap:6px;padding:6px}
+.side .brand{background:var(--ink-2);border-radius:14px;padding:12px;display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.side .brand .word{font-size:17px;color:#fff}
+.side .brand .word b{color:var(--violet-300)}
+.side .brand small{display:block;font-size:11px;color:#8A8A90;font-family:var(--f-body);font-weight:400;letter-spacing:0}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;font-size:14px}
+.nav svg{flex:none}
+.nav.on{background:var(--ink-2);color:var(--violet-300)}
+.nav .cnt{margin-left:auto;background:var(--violet-500);color:#fff;font-size:11px;font-weight:600;border-radius:6px;padding:0 6px;font-family:var(--f-mono)}
+.side hr{border:0;border-top:1px solid var(--ink-line);margin:8px 4px}
+.main{background:#FFFFFF;color:#18181B;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.main .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.main h3{font-size:20px;color:#18181B}
+.count{background:var(--violet-50);color:var(--violet-700);font-family:var(--f-mono);font-size:12px;font-weight:500;border-radius:6px;padding:1px 7px}
+.btns{margin-left:auto;display:flex;gap:8px}
+.btn{font:inherit;font-size:13px;font-weight:500;border-radius:10px;padding:8px 14px;border:1px solid #E4E4E8;background:#fff;color:#18181B}
+.btn.primary{background:#161616;border-color:#161616;color:#fff}
+.tabs{display:inline-flex;border:1px solid #ECECEF;border-radius:12px;padding:4px;gap:4px;align-self:flex-start}
+.tabs span{font-size:13px;padding:5px 14px;border-radius:8px;color:#6B6B73}
+.tabs span.on{background:var(--violet-600);color:#fff;font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;color:#8E8E96;background:#FAFAFB;padding:9px 10px}
+th:first-child{border-radius:10px 0 0 10px} th:last-child{border-radius:0 10px 10px 0}
+td{padding:11px 10px;border-bottom:1px solid #F0F0F2;color:#27272A}
+tr.sel td{background:var(--violet-50)}
+.chk{width:15px;height:15px;border:1.5px solid #C9C9CF;border-radius:4px;display:inline-block;vertical-align:middle}
+.chk.on{background:var(--violet-600);border-color:var(--violet-600)}
+
+/* 배지 (미리보기 안은 항상 라이트) */
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;border-radius:999px;padding:2px 10px;white-space:nowrap}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.main .b-wait{background:#FFF4CC;color:#7A5600} .main .b-ok{background:#DFF1FF;color:#075E9E} .main .b-rej{background:#FDE7E7;color:#B42318}
+
+/* 컬러 */
+.swatches{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.sw{border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.sw .chip{height:76px}
+.sw .meta{padding:10px 12px;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.sw .meta .mono{font-size:12px;color:var(--muted)}
+.sw .meta em{font-style:normal;color:var(--muted);font-size:12px}
+.grp-label{font-size:13px;font-weight:600;color:var(--muted);margin-top:6px}
+
+.states{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.st{border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.st p{font-size:13px;color:var(--muted)}
+.s-wait{background:var(--st-wait-bg);color:var(--st-wait-fg)} .s-rej{background:var(--st-rej-bg);color:var(--st-rej-fg)}
+.s-ok{background:var(--st-ok-bg);color:var(--st-ok-fg)} .s-part{background:var(--st-part-bg);color:var(--st-part-fg)}
+.s-done{background:var(--st-done-bg);color:var(--st-done-fg)} .s-close{background:var(--st-close-bg);color:var(--st-close-fg)}
+.s-cancel{background:var(--st-cancel-bg);color:var(--st-cancel-fg)}
+.final{font-family:var(--f-mono);font-size:11px;color:var(--soft)}
+
+/* 타이포 */
+.type{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.type-row{display:grid;grid-template-columns:150px 1fr;gap:16px;padding:14px 18px;border-bottom:1px solid var(--line);align-items:baseline}
+.type-row:last-child{border-bottom:0}
+.type-row .mono{font-size:12px;color:var(--muted)}
+
+.rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rule{border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:6px}
+.rule p{color:var(--muted);font-size:14px}
+.rule .do{font-size:12px;font-weight:600;color:var(--st-done-fg)} .rule .dont{font-size:12px;font-weight:600;color:var(--st-rej-fg)}
+
+@media (max-width:860px){.concepts{grid-template-columns:1fr}.swatches{grid-template-columns:repeat(2,minmax(0,1fr))}.rules{grid-template-columns:1fr}.type-row{grid-template-columns:1fr;gap:4px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- A 링크: 맞물린 두 고리 -->
+    <symbol id="sym-a" viewBox="0 0 40 40">
+      <rect width="40" height="40" rx="11" fill="#7C6CF2"/>
+      <rect x="6.5" y="13" width="17" height="14" rx="7" fill="none" stroke="#FFFFFF" stroke-width="3.4"/>
+      <rect x="16.5" y="13" width="17" height="14" rx="7" fill="none" stroke="#D9D4FD" stroke-width="3.4"/>
+      <path d="M20 13.1a7 7 0 0 1 3.4 3" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round"/>
+    </symbol>
+    <!-- B 박스: 아이소메트릭 상자 -->
+    <symbol id="sym-b" viewBox="0 0 40 40">
+      <rect width="40" height="40" rx="11" fill="#7C6CF2"/>
+      <path d="M20 8.5 31 14.5 20 20.5 9 14.5Z" fill="#FFFFFF"/>
+      <path d="M9 16.8 18.9 22.2V32.5L9 27.1Z" fill="#D9D4FD"/>
+      <path d="M31 16.8 21.1 22.2V32.5L31 27.1Z" fill="#FFFFFF" fill-opacity=".72"/>
+      <path d="M14.5 11.5 25.5 17.5" stroke="#7C6CF2" stroke-width="2"/>
+    </symbol>
+    <!-- C 경로: 시작점(빈 원)에서 끝점(채운 원)으로 꺾이는 L 경로 -->
+    <symbol id="sym-c" viewBox="0 0 40 40">
+      <rect width="40" height="40" rx="11" fill="#7C6CF2"/>
+      <path d="M13 14.5V27H24.5" fill="none" stroke="#FFFFFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="13" cy="10.5" r="3.3" fill="none" stroke="#D9D4FD" stroke-width="2.6"/>
+      <circle cx="29" cy="27" r="3.9" fill="#FFFFFF"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Brand identity · v1.0 · 2026-11-02</div>
+    <h1 style="margin-top:8px">LogiLink CI 가이드</h1>
+    <p class="lead">바이올렛 포인트, 검정 사이드바, 흰 콘텐츠 영역으로 구성한 LogiLink의 새 아이덴티티입니다. 로고는 B. 박스로 확정했고(2026-11-02), 아래 컬러·상태 배지·타이포 규칙과 함께 입고 모듈 화면 설계의 기준이 됩니다.</p>
+  </header>
+
+  <section aria-labelledby="h-logo">
+    <div class="sec-head">
+      <h2 id="h-logo">로고</h2>
+      <p>검토한 세 시안 중 B. 박스를 LogiLink 로고로 확정했습니다. A·C는 검토 기록으로 남겨 둡니다.</p>
+    </div>
+    <div class="concepts">
+      <article class="concept" data-key="a">
+        <div class="stage">
+          <div class="lockup"><svg width="40" height="40"><use href="#sym-a"/></svg><span class="word">Logi<b>Link</b></span></div>
+          <div class="sizes"><span><svg width="32" height="32"><use href="#sym-a"/></svg>32</span><span><svg width="24" height="24"><use href="#sym-a"/></svg>24</span><span><svg width="16" height="16"><use href="#sym-a"/></svg>16</span></div>
+        </div>
+        <div class="stage dark"><div class="lockup"><svg width="34" height="34"><use href="#sym-a"/></svg><span class="word">Logi<b>Link</b></span></div></div>
+        <div class="concept-body">
+          <div class="tag"><h3>A. 링크</h3></div>
+          <p>맞물린 두 고리로 화주사와 3PL의 연결을 표현합니다. 이름과 바로 이어져 직관적이지만, 연결을 뜻하는 흔한 모양이라 개성은 약한 편입니다.</p>
+          <button class="pick" type="button" id="pick-a">이 시안 선택</button>
+        </div>
+      </article>
+      <article class="concept" data-key="b">
+        <div class="stage">
+          <div class="lockup"><svg width="40" height="40"><use href="#sym-b"/></svg><span class="word">Logi<b>Link</b></span></div>
+          <div class="sizes"><span><svg width="32" height="32"><use href="#sym-b"/></svg>32</span><span><svg width="24" height="24"><use href="#sym-b"/></svg>24</span><span><svg width="16" height="16"><use href="#sym-b"/></svg>16</span></div>
+        </div>
+        <div class="stage dark"><div class="lockup"><svg width="34" height="34"><use href="#sym-b"/></svg><span class="word">Logi<b>Link</b></span></div></div>
+        <div class="concept-body">
+          <div class="tag"><h3>B. 박스</h3><span class="rec">확정</span></div>
+          <p>테이프를 붙인 상자를 위에서 본 모양입니다. 물류 서비스라는 점은 한눈에 전달되지만, 입고·출고를 가리지 않는 일반적인 인상입니다.</p>
+          <button class="pick" type="button" id="pick-b">이 시안 선택</button>
+        </div>
+      </article>
+      <article class="concept" data-key="c">
+        <div class="stage">
+          <div class="lockup"><svg width="40" height="40"><use href="#sym-c"/></svg><span class="word">Logi<b>Link</b></span></div>
+          <div class="sizes"><span><svg width="32" height="32"><use href="#sym-c"/></svg>32</span><span><svg width="24" height="24"><use href="#sym-c"/></svg>24</span><span><svg width="16" height="16"><use href="#sym-c"/></svg>16</span></div>
+        </div>
+        <div class="stage dark"><div class="lockup"><svg width="34" height="34"><use href="#sym-c"/></svg><span class="word">Logi<b>Link</b></span></div></div>
+        <div class="concept-body">
+          <div class="tag"><h3>C. 경로</h3></div>
+          <p>빈 원(시작)에서 꺾여 채운 원(종료)에 닿는 L자 경로입니다. "모든 단계는 시작과 종료가 명확하다"는 LogiLink 설계 원칙과 이름의 L을 함께 담았습니다.</p>
+          <button class="pick" type="button" id="pick-c">이 시안 선택</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-preview">
+    <div class="sec-head">
+      <h2 id="h-preview">화면 적용 미리보기</h2>
+      <p>3PL Web 승인 대기 목록에 넣었을 때의 모습입니다. 버튼으로 로고 시안을 바꿔 볼 수 있습니다.</p>
+    </div>
+    <div class="seg" role="group" aria-label="미리보기 로고 시안">
+      <button type="button" id="seg-a" data-k="a" aria-pressed="false">A. 링크</button>
+      <button type="button" id="seg-b" data-k="b" aria-pressed="true">B. 박스</button>
+      <button type="button" id="seg-c" data-k="c" aria-pressed="false">C. 경로</button>
+    </div>
+    <div class="frame-scroll">
+      <div class="frame">
+        <aside class="side">
+          <div class="brand"><svg width="34" height="34" id="pv-logo"><use href="#sym-b"/></svg><div><div class="word">Logi<b>Link</b></div><small>3PL 운영 · 한빛물류</small></div></div>
+          <div class="nav"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5 6h6M5 9h4"/></svg>입고예정 조회</div>
+          <div class="nav on"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8.5 6.5 12 13 4.5"/></svg>승인 대기<span class="cnt">12</span></div>
+          <div class="nav"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 5h8v6h-8zM9.5 7h3l2 2v2h-5"/><circle cx="4" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg>ASN·상차 현황</div>
+          <div class="nav"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 6h5M5.5 9h3"/></svg>입고검수 실적</div>
+          <div class="nav"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>잔량 종결·일마감</div>
+          <hr>
+          <div class="nav"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg>기준정보</div>
+        </aside>
+        <div class="main">
+          <div class="top">
+            <h3>승인 대기</h3><span class="count">12</span>
+            <div class="btns"><button class="btn" type="button" tabindex="-1">선택 반려</button><button class="btn primary" type="button" tabindex="-1">선택 승인 (2)</button></div>
+          </div>
+          <div class="tabs"><span class="on">승인대기 12</span><span>반려 3</span><span>오늘 승인 8</span></div>
+          <table>
+            <thead><tr><th style="width:34px"><span class="chk"></span></th><th>입고예정번호</th><th>화주사</th><th>입고예정일</th><th>품목 수</th><th>차수</th><th>상태</th></tr></thead>
+            <tbody>
+              <tr class="sel"><td><span class="chk on"></span></td><td class="mono">IP-20261103-0007</td><td>한빛식품</td><td class="mono">2026-11-03</td><td class="mono">14</td><td class="mono">1</td><td><span class="badge b-wait">승인대기</span></td></tr>
+              <tr class="sel"><td><span class="chk on"></span></td><td class="mono">IP-20261103-0005</td><td>그린마켓</td><td class="mono">2026-11-03</td><td class="mono">6</td><td class="mono">2</td><td><span class="badge b-wait">승인대기</span></td></tr>
+              <tr><td><span class="chk"></span></td><td class="mono">IP-20261102-0021</td><td>한빛식품</td><td class="mono">2026-11-02</td><td class="mono">9</td><td class="mono">1</td><td><span class="badge b-ok">승인</span></td></tr>
+              <tr><td><span class="chk"></span></td><td class="mono">IP-20261102-0018</td><td>오션푸드</td><td class="mono">2026-11-04</td><td class="mono">3</td><td class="mono">1</td><td><span class="badge b-rej">반려</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-color">
+    <div class="sec-head">
+      <h2 id="h-color">컬러</h2>
+      <p>포인트는 바이올렛 하나만 씁니다. 주 버튼은 검정, 바이올렛은 선택·활성·건수처럼 "지금 보고 있는 것"을 가리킬 때만 씁니다.</p>
+    </div>
+    <div class="grp-label">브랜드 바이올렛</div>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#EFEDFE"></div><div class="meta"><strong>Violet 50</strong><span class="mono">#EFEDFE</span><em>선택 행, 건수 배지 바탕</em></div></div>
+      <div class="sw"><div class="chip" style="background:#A99FF8"></div><div class="meta"><strong>Violet 300</strong><span class="mono">#A99FF8</span><em>검정 바탕 위 활성 글자</em></div></div>
+      <div class="sw"><div class="chip" style="background:#7C6CF2"></div><div class="meta"><strong>Violet 500</strong><span class="mono">#7C6CF2</span><em>대표색, 로고 타일</em></div></div>
+      <div class="sw"><div class="chip" style="background:#6C5CE7"></div><div class="meta"><strong>Violet 600</strong><span class="mono">#6C5CE7</span><em>활성 탭, 체크박스 (흰 글자 4.9:1)</em></div></div>
+      <div class="sw"><div class="chip" style="background:#5B4BD6"></div><div class="meta"><strong>Violet 700</strong><span class="mono">#5B4BD6</span><em>흰 바탕 위 링크·강조 글자</em></div></div>
+    </div>
+    <div class="grp-label">뉴트럴</div>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#161616"></div><div class="meta"><strong>Ink</strong><span class="mono">#161616</span><em>사이드바, 주 버튼</em></div></div>
+      <div class="sw"><div class="chip" style="background:#212121"></div><div class="meta"><strong>Ink 2</strong><span class="mono">#212121</span><em>사이드바 선택 메뉴</em></div></div>
+      <div class="sw"><div class="chip" style="background:#6B6B73"></div><div class="meta"><strong>Muted</strong><span class="mono">#6B6B73</span><em>보조 글자, 라벨</em></div></div>
+      <div class="sw"><div class="chip" style="background:#ECECEF"></div><div class="meta"><strong>Line</strong><span class="mono">#ECECEF</span><em>표 구분선, 테두리</em></div></div>
+      <div class="sw"><div class="chip" style="background:#FAFAFB"></div><div class="meta"><strong>Surface</strong><span class="mono">#FAFAFB</span><em>표 머리, 카드 바탕</em></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-state">
+    <div class="sec-head">
+      <h2 id="h-state">입고예정 상태 배지</h2>
+      <p>정의서 v1.4의 7개 상태입니다. 상태 색은 바이올렛과 겹치지 않는 계열로만 정했고, 최종 상태 3개는 따로 표시했습니다.</p>
+    </div>
+    <div class="states">
+      <div class="st"><span class="badge s-wait">승인대기</span><p>화주사 수정·취소 가능, 저장마다 version +1</p></div>
+      <div class="st"><span class="badge s-rej">반려</span><p>사유코드 필수, 반려본 스냅샷 보관 후 재저장</p></div>
+      <div class="st"><span class="badge s-ok">승인</span><p>수정 잠금, ASN 분배 대상</p></div>
+      <div class="st"><span class="badge s-part">부분입고</span><p>잔량이 남아 날짜를 넘겨 유지</p></div>
+      <div class="st"><span class="badge s-done">입고완료</span><p>잔량 0이면 자동 종료</p><span class="final">최종 상태</span></div>
+      <div class="st"><span class="badge s-close">종결</span><p>3PL 잔량 종결, 사유코드 필수</p><span class="final">최종 상태</span></div>
+      <div class="st"><span class="badge s-cancel">취소</span><p>화주사 취소, 3PL 승인 건 취소, 기한경과</p><span class="final">최종 상태</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-type">
+    <div class="sec-head">
+      <h2 id="h-type">타이포그래피</h2>
+      <p>워드마크와 영문 제목은 Sora, 한글 본문은 IBM Plex Sans KR, 번호·수량·날짜는 IBM Plex Mono로 자릿수를 맞춥니다. 실제 화면 개발에서는 한글 본문을 Pretendard로 바꿔도 톤이 유지됩니다.</p>
+    </div>
+    <div class="type">
+      <div class="type-row"><span class="mono">Display · Sora 600</span><span style="font-family:var(--f-display);font-size:28px;font-weight:600;letter-spacing:-.02em">Logi<span style="color:var(--accent-text)">Link</span></span></div>
+      <div class="type-row"><span class="mono">화면 제목 · 20 / 600</span><span style="font-size:20px;font-weight:600">승인 대기</span></div>
+      <div class="type-row"><span class="mono">본문 · 14 / 400</span><span style="font-size:14px">승인·반려 시점에 조회한 version과 현재 version이 다르면 처리를 막습니다.</span></div>
+      <div class="type-row"><span class="mono">라벨 · 13 / 500</span><span style="font-size:13px;font-weight:500;color:var(--muted)">입고예정일 · 화주사 · 차수</span></div>
+      <div class="type-row"><span class="mono">데이터 · Mono 13</span><span class="mono" style="font-size:13px">IP-20261103-0007 · 2026-11-03 · 1,240 EA</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-rule">
+    <div class="sec-head"><h2 id="h-rule">사용 규칙</h2></div>
+    <div class="rules">
+      <div class="rule"><span class="do">이렇게</span><h3>주 버튼은 검정</h3><p>승인, 저장, 확정처럼 화면에서 가장 중요한 행위 하나만 검정 버튼으로 둡니다. 보조 행위는 흰 바탕 테두리 버튼입니다.</p></div>
+      <div class="rule"><span class="do">이렇게</span><h3>바이올렛은 위치 표시</h3><p>선택 메뉴, 활성 탭, 선택 행, 건수 배지에만 씁니다. 사용자가 지금 어디에 있는지 알려 주는 색입니다.</p></div>
+      <div class="rule"><span class="dont">이렇게 하지 않기</span><h3>상태를 바이올렛으로 칠하지 않기</h3><p>상태는 반드시 상태 배지 색을 씁니다. 바이올렛이 상태처럼 보이면 활성 탭과 헷갈립니다.</p></div>
+      <div class="rule"><span class="dont">이렇게 하지 않기</span><h3>Violet 500 위 작은 흰 글자</h3><p>대비가 4:1에 못 미칩니다. 흰 글자를 올릴 때는 Violet 600 이상을 씁니다.</p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  var cards=document.querySelectorAll('.concept');
+  var segs=document.querySelectorAll('.seg button');
+  var logo=document.getElementById('pv-logo');
+  function show(k){
+    logo.innerHTML='<use href="#sym-'+k+'"/>';
+    segs.forEach(function(b){b.setAttribute('aria-pressed',b.dataset.k===k?'true':'false')});
+  }
+  function pick(k){
+    cards.forEach(function(c){c.dataset.picked=c.dataset.key===k?'true':'false';
+      c.querySelector('.pick').textContent=c.dataset.key===k?'선택됨':'이 시안 선택'});
+    show(k);
+    try{localStorage.setItem('ll-ci-pick',k)}catch(e){}
+  }
+  cards.forEach(function(c){c.querySelector('.pick').addEventListener('click',function(){pick(c.dataset.key)})});
+  segs.forEach(function(b){b.addEventListener('click',function(){show(b.dataset.k)})});
+  cards.forEach(function(c){var b=c.querySelector('.pick');if(c.dataset.key==='b'){c.dataset.picked='true';b.textContent='확정된 로고';b.disabled=true}else{b.hidden=true}});
+})();
+</script>
+</body></html>

@@ -1,0 +1,31 @@
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  gap: var(--gap-shell);
+  min-height: 100vh;
+  padding: var(--gap-shell);
+  padding-left: max(var(--gap-shell), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gap-shell), env(safe-area-inset-right, 0px));
+}
+
+.main {
+  background: var(--bg);
+  border-radius: var(--r-card);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app > aside {
+    display: none;
+  }
+  .main {
+    padding: 16px;
+  }
+}

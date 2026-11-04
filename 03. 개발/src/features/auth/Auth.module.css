@@ -1,0 +1,67 @@
+/* 로그인·비밀번호 변경 — 앱 틀과 같은 검정 바탕 위 흰 카드, 바이올렛은 로고·포커스에만 */
+.page {
+  min-height: 100vh;
+  background: var(--ink);
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg);
+  border-radius: var(--r-card);
+  padding: 32px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.logo {
+  display: block;
+  height: 36px;
+  width: auto;
+}
+
+.head h1 {
+  font-size: var(--fs-21);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.alert {
+  background: var(--st-rej-bg);
+  color: var(--err-text);
+  border-radius: var(--r-group);
+  padding: 10px 12px;
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
+.submit {
+  width: 100%;
+  justify-content: center;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.foot {
+  color: var(--soft);
+  font-size: var(--fs-12);
+  text-align: center;
+}

@@ -1,0 +1,244 @@
+.side {
+  color: var(--ink-text);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  position: sticky;
+  top: var(--gap-shell);
+  height: calc(100vh - var(--gap-shell) * 2);
+  /* 메뉴는 한 화면에 들어가게 간격을 잡는다. 아주 낮은 화면에서만 스크롤바 없이 휠로 이동 */
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.side::-webkit-scrollbar {
+  display: none;
+}
+
+.brand {
+  background: var(--ink-2);
+  border-radius: var(--r-box);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.brand img {
+  flex: none;
+}
+
+.word {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: var(--fs-17);
+  letter-spacing: -0.02em;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.word b {
+  font-weight: 600;
+  color: var(--violet-300);
+}
+
+.brandSub {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--ink-text-dim);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.groupLabel {
+  font-size: var(--fs-11);
+  letter-spacing: 0.06em;
+  color: var(--ink-group);
+  padding: 8px 12px 2px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: var(--r-control);
+  font-size: var(--fs-14);
+  color: var(--ink-text);
+  text-decoration: none;
+}
+
+.item svg {
+  flex: none;
+}
+
+a.item:hover {
+  background: var(--ink-hover);
+}
+
+.on,
+a.on:hover {
+  background: var(--ink-2);
+  color: var(--violet-300);
+}
+
+.pending {
+  cursor: default;
+}
+
+.navLabel {
+  min-width: 0;
+}
+
+/* 건수 배지: CI 규칙상 작은 흰 글자는 violet-600 이상 위에만 */
+.cnt {
+  margin-left: auto;
+  background: var(--violet-600);
+  color: #fff;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  border-radius: var(--r-tag);
+  padding: 0 6px;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.user {
+  margin-top: auto;
+  background: var(--ink-2);
+  border-radius: var(--r-box);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-13);
+  color: #e4e4e7;
+}
+
+.user small {
+  display: block;
+  color: var(--ink-text-dim);
+  font-size: var(--fs-11);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--violet-600);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  flex: none;
+}
+
+/* 하위 메뉴가 있는 메뉴 */
+.parent {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+}
+
+.parent:hover {
+  background: var(--ink-hover);
+}
+
+/* 하위 화면에 있을 때 부모는 글자만 밝게 (선택 바탕은 하위 메뉴에) */
+.parentOn {
+  color: #e4e4e7;
+}
+
+.chev {
+  margin-left: auto;
+  flex: none;
+  transition: transform 0.15s;
+}
+
+.parent .cnt + .chev {
+  margin-left: 6px;
+}
+
+.parent[aria-expanded="true"] .chev {
+  transform: rotate(180deg);
+}
+
+.sub {
+  list-style: none;
+  margin: 0 0 2px 19px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--ink-line);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.subItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: var(--fs-13);
+  color: var(--ink-text);
+  text-decoration: none;
+}
+
+.subItem:hover {
+  background: var(--ink-hover);
+}
+
+.userText {
+  flex: 1;
+  min-width: 0;
+}
+.logout {
+  flex: none;
+  background: none;
+  border: 1px solid var(--ink-line);
+  color: var(--ink-text);
+  border-radius: var(--r-chip);
+  font-size: var(--fs-11);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.logout:hover {
+  background: var(--ink-hover);
+  color: #fff;
+}
+.logout:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+/* 낮은 화면(노트북 등): 한 단계 더 촘촘하게 */
+@media (max-height: 720px) {
+  .brand {
+    padding: 8px 10px;
+    margin-bottom: 2px;
+  }
+  .groupLabel {
+    padding: 6px 12px 1px;
+  }
+  .item {
+    padding: 5px 12px;
+  }
+  .subItem {
+    padding: 3px 10px;
+  }
+}

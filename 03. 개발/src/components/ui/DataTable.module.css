@@ -1,0 +1,92 @@
+.wrap {
+  min-width: 0;
+}
+
+.scroll {
+  overflow-x: auto;
+  border-radius: var(--r-group);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--th-fg);
+  background: var(--surface);
+  padding: 9px 10px;
+  white-space: nowrap;
+}
+
+.table th:first-child {
+  border-radius: var(--r-control) 0 0 var(--r-control);
+}
+
+.table th:last-child {
+  border-radius: 0 var(--r-control) var(--r-control) 0;
+}
+
+.table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--line-row);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.compact th,
+.compact td {
+  padding: 7px 8px;
+}
+
+.table .num {
+  text-align: right;
+}
+
+.table td.wrapCell {
+  white-space: normal;
+  min-width: 160px;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline-offset: -2px;
+}
+
+.clickable:hover td {
+  background: var(--row-hover);
+}
+
+.conflict td,
+.conflict:hover td {
+  background: #fff7f7;
+}
+
+.active td,
+.active:hover td {
+  background: var(--violet-50);
+}
+
+.active td:first-child {
+  box-shadow: inset 3px 0 0 var(--violet-600);
+}
+
+.sub {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--soft);
+}
+
+.empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-group);
+}

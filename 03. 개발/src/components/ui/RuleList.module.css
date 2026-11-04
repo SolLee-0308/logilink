@@ -1,0 +1,34 @@
+.source {
+  font-size: var(--fs-12);
+  color: var(--soft);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rule {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 10px;
+}
+
+.rule p {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.id {
+  font-size: var(--fs-12);
+  color: var(--violet-700);
+  background: var(--violet-50);
+  border-radius: var(--r-tag);
+  text-align: center;
+  height: 22px;
+  line-height: 22px;
+}

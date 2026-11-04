@@ -1,0 +1,78 @@
+.bar {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-box);
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 3px;
+}
+
+.chips button {
+  border: 0;
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: var(--r-chip);
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.chips button:hover {
+  color: var(--fg);
+}
+
+.chips button[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+}
+
+.chk {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--violet-600);
+  cursor: pointer;
+}
+
+.search {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+
+.search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--soft);
+  pointer-events: none;
+}
+
+.search input {
+  width: 100%;
+  font-size: var(--fs-13);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 7px 10px 7px 32px;
+  background: var(--bg);
+}

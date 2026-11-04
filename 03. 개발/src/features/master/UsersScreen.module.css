@@ -1,0 +1,21 @@
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.temp {
+  font-size: var(--fs-21);
+  letter-spacing: 0.06em;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-group);
+  padding: 12px 14px;
+  text-align: center;
+  user-select: all;
+}
+
+.headAction {
+  margin-left: auto;
+}

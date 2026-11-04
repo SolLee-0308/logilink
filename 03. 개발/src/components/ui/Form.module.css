@@ -1,0 +1,81 @@
+.control {
+  font-size: var(--fs-13);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 7px 10px;
+  background: var(--bg);
+  color: var(--fg);
+  min-width: 0;
+}
+
+.control:disabled,
+.control:read-only:not(select) {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field .control {
+  width: 100%;
+}
+
+.invalid .control {
+  border-color: var(--st-rej-fg);
+}
+
+.label {
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+
+.req {
+  color: var(--st-rej-fg);
+}
+
+.opt {
+  color: var(--soft);
+  font-weight: 400;
+}
+
+.hint {
+  color: var(--soft);
+  font-size: var(--fs-12);
+}
+
+.error {
+  color: var(--st-rej-fg);
+  font-size: var(--fs-12);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--violet-600);
+}
+
+.static {
+  font-size: var(--fs-13);
+  padding: 7px 0;
+}

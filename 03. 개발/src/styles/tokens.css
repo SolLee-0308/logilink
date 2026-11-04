@@ -1,0 +1,94 @@
+/*
+ * LogiLink 디자인 토큰 — 색·글꼴·모서리·간격은 이 파일에서만 정의한다.
+ * 근거: 02. IA/시안/logilink-ci.html (CI v1.0, 2026-11-02), approval-list.html
+ * 업무 화면은 단일 라이트 테마.
+ */
+:root {
+  color-scheme: light;
+
+  /* 브랜드 바이올렛 — "지금 보고 있는 위치"(선택 메뉴·활성 탭·선택 행·건수)에만 사용 */
+  --violet-50: #efedfe;
+  --violet-100: #e2defd;
+  --violet-300: #a99ff8;
+  --violet-500: #7c6cf2; /* 로고 타일·포커스 링. 작은 흰 글자를 올리지 않는다 */
+  --violet-600: #6c5ce7; /* 흰 글자를 올릴 수 있는 최소 단계 */
+  --violet-700: #5b4bd6;
+
+  /* 뉴트럴 */
+  --ink: #161616;
+  --ink-2: #212121;
+  --ink-hover: #1c1c1e;
+  --ink-line: #2c2c2e;
+  --ink-text: #b9b9be;
+  --ink-text-dim: #8a8a90;
+  --ink-group: #6e6e75;
+  --bg: #ffffff;
+  --surface: #fafafb;
+  --line: #ececef;
+  --line-2: #e2e2e7;
+  --line-row: #f0f0f2;
+  --line-hover: #c9c9d0;
+  --fg: #18181b;
+  --muted: #6b6b73;
+  --soft: #9a9aa2;
+  --th-fg: #8e8e96;
+  --row-hover: #fbfbfc;
+  --primary-hover: #2a2a2a;
+
+  /* 입고예정 상태 배지 (정의서 v1.4 4-1의 7개 상태) */
+  --st-wait-bg: #fff4cc;   --st-wait-fg: #7a5600;   /* 승인대기 */
+  --st-rej-bg: #fde7e7;    --st-rej-fg: #b42318;    /* 반려 */
+  --st-ok-bg: #dff1ff;     --st-ok-fg: #075e9e;     /* 승인 */
+  --st-part-bg: #ffe9d6;   --st-part-fg: #a6430a;   /* 부분입고 */
+  --st-done-bg: #e1f5e8;   --st-done-fg: #1c7343;   /* 입고완료 */
+  --st-close-bg: #ebecef;  --st-close-fg: #474b53;  /* 종결 */
+  --st-cancel-bg: #f4f4f5; --st-cancel-fg: #8e9199; /* 취소 */
+
+  /* 주의(기한 지남 태그·안내 박스) — 시안 값 */
+  --warn-bg: #fff1e6;
+  --warn-fg: #a6430a;
+  --warn-text: #7a3507;
+
+  /* 안내 박스 글자 */
+  --err-text: #7a1a12;
+  --info-text: #3f3399;
+
+  /* 증감 표시: 증가는 초록(승인 배지의 파랑과 구분), 감소는 빨강 */
+  --diff-up: var(--st-done-fg);
+  --diff-down: var(--st-rej-fg);
+  --diff-new: var(--violet-700);
+
+  /* 글꼴 — next/font가 --font-* 변수를 html에 넣는다 */
+  --f-display: var(--font-sora), "IBM Plex Sans KR", system-ui, sans-serif;
+  --f-body: var(--font-pretendard), "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-mono: var(--font-plex-mono), ui-monospace, Consolas, monospace;
+
+  /* 글자 크기 */
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-17: 17px;
+  --fs-21: 21px;
+
+  /* 모서리 */
+  --r-card: 18px;   /* 메인 카드·모달 */
+  --r-panel: 16px;  /* 상세 패널 */
+  --r-box: 14px;    /* 조회조건 바·사이드바 카드 */
+  --r-group: 12px;  /* 탭 묶음·표 감싸개·안내 박스 */
+  --r-control: 10px;/* 입력·버튼 */
+  --r-chip: 7px;
+  --r-tag: 6px;
+  --r-pill: 999px;  /* 상태 배지 */
+
+  /* 레이아웃 */
+  --gap-shell: 10px;
+  --sidebar-w: 228px;
+  --detail-w: 370px;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --shadow-sheet: -12px 0 32px rgba(0, 0, 0, 0.12);
+  --scrim: rgba(22, 22, 22, 0.45);
+  --scrim-light: rgba(22, 22, 22, 0.25);
+}

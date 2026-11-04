@@ -1,0 +1,39 @@
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: var(--fs-13);
+}
+
+.tl {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 10px;
+}
+
+.tl small {
+  color: var(--soft);
+  display: block;
+  font-size: var(--fs-12);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 5px;
+  background: var(--line-2);
+}
+
+.save { background: var(--violet-500); }
+.reject { background: var(--st-rej-fg); }
+.ok { background: var(--st-ok-fg); }
+.neutral { background: var(--soft); }
+
+.empty {
+  color: var(--soft);
+  font-size: var(--fs-13);
+}

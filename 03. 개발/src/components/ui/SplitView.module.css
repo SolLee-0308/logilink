@@ -1,0 +1,152 @@
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--detail-w);
+  gap: 14px;
+  align-items: start;
+}
+
+.listcol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+}
+
+/* 2분할 안의 패널만 따라 내려온다 */
+.body > .panel {
+  position: sticky;
+  top: var(--gap-shell);
+  max-height: calc(100vh - var(--gap-shell) * 4);
+}
+
+.head {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+
+.title:global(.mono) {
+  font-weight: 500;
+}
+
+.sub {
+  font-size: var(--fs-12);
+  color: var(--soft);
+}
+
+.pbody {
+  padding: 14px 18px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.foot {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.ver {
+  margin-right: auto;
+  font-size: var(--fs-12);
+  color: var(--soft);
+}
+
+.sect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sect h3 {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  min-height: 32px;
+}
+
+.toolbar strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.toolbarRight {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.kv {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: var(--fs-13);
+}
+
+.kvRow {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+}
+
+.kvRow dt {
+  color: var(--muted);
+}
+
+.kvRow dd {
+  margin: 0;
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1240px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .body > .panel {
+    position: static;
+    max-height: none;
+  }
+}

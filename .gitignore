@@ -1,0 +1,22 @@
+# 비밀값·환경 설정 (DB 접속 정보, API 키 등)
+.env
+.env.*
+!.env.example
+
+# 의존성·빌드 산출물
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma 자동 생성 코드 (npx prisma generate로 다시 생성)
+03. 개발/src/generated/
+
+# 로그·OS·에디터
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

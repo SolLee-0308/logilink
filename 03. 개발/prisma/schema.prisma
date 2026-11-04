@@ -1,0 +1,641 @@
+// LogiLink 입고 — 기준정보 스키마
+// 근거: 01. 프로세스/01-입고 업무프로세스 정의서_v1.4.md (9장 ERD 반영 필요, D2·D7·D19, O2)
+// 테이블명은 정의서 ERD 명명(TB_*)을 소문자로 따른다.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// 업무 주체 역할 (정의서 1·2장)
+enum UserRole {
+  SHIPPER_STAFF // 화주사 담당자 (Web)
+  SHIPPER_LOADER // 화주사 상차담당 (PDA)
+  TPL_ADMIN // 3PL 관리자 (Web)
+  TPL_OPERATOR // 3PL 운영담당 (Web)
+  TPL_INSPECTOR // 3PL 입고검수자 (PDA)
+}
+
+/// 로그인 시도 결과 (로그인 이력)
+enum LoginResult {
+  SUCCESS // 성공
+  FAIL // 실패 (아이디 없음·비밀번호 불일치)
+  LOCKED // 잠금 (이번 실패로 잠김 또는 잠긴 계정 시도)
+  BLOCKED_INACTIVE // 차단: 사용 안 함 계정
+  BLOCKED_PDA // 차단: PDA 전용 계정의 Web 로그인
+}
+
+enum ItemUnit {
+  EA
+  BOX
+  PLT
+}
+
+/// 보관 온도대
+enum StorageTemp {
+  ROOM // 상온
+  CHILLED // 냉장
+  FROZEN // 냉동
+}
+
+/// 품목 별칭 출처
+enum AliasSource {
+  MANUAL // 3PL 직접 등록
+  REQUEST // 품목 등록 요청의 원래 품목명
+  MATCH // AI·엑셀 판독 라인을 사용자가 매칭
+}
+
+enum HolidayKind {
+  PUBLIC // 공휴일
+  CENTER // 센터 휴무
+}
+
+/// 품목 등록 요청 상태
+enum ItemRequestStatus {
+  WAITING // 등록대기
+  REJECTED // 반려 (화주사 수정 중)
+  REGISTERED // 등록완료
+}
+
+/// 요청 원본
+enum ItemRequestSource {
+  DIRECT // 직접 입력
+  EXCEL // 엑셀 업로드 미매칭
+  AI // 이미지 AI 판독 미매칭
+}
+
+enum ItemRequestAction {
+  REQUEST // 최초 요청
+  RESUBMIT // 반려 후 재요청
+  REGISTER // 3PL 등록
+  REJECT // 3PL 반려
+}
+
+/// 센터 — 회사(3PL 운영 법인) 1곳에 속하고 N개를 관리한다. 삭제하지 않고 사용 안 함으로 둔다
+model Center {
+  id             Int      @id @default(autoincrement())
+  companyId      Int      @default(1) @map("company_id")
+  /// 영문 대문자·숫자 3~5자, 등록 후 수정 불가
+  code           String   @unique @map("center_cd") @db.VarChar(5)
+  name           String   @unique @map("center_nm") @db.VarChar(100)
+  zipCode        String   @map("zip_code") @db.VarChar(5)
+  addr1          String   @db.VarChar(200)
+  addr2          String   @db.VarChar(100)
+  inboundTel     String   @map("inbound_tel") @db.VarChar(15)
+  managerUserId  Int?     @map("manager_user_id")
+  /// 일마감 예정 시각 HH:mm (센터마다 다름)
+  dailyCloseTime String   @map("daily_close_time") @db.VarChar(5)
+  isActive       Boolean  @default(true) @map("use_yn")
+  version        Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy      String   @map("created_by") @db.VarChar(50)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy      String   @map("updated_by") @db.VarChar(50)
+
+  company     Company        @relation(fields: [companyId], references: [id])
+  manager     User?          @relation("CenterManager", fields: [managerUserId], references: [id])
+  users       User[]         @relation("CenterUsers")
+  holidays    Holiday[]
+  plans       InboundPlan[]
+  clientLinks ClientCenter[]
+
+  @@map("tb_center")
+}
+
+/// 화주사 — ASN·상차 사용 여부 같은 선택 설정은 두지 않는다 (D7)
+model Client {
+  id              Int       @id @default(autoincrement())
+  /// 영문 대문자 2자 + 순번 2자 (예: DO01). 다른 데이터의 프리픽스로 쓰므로 등록 후 수정 불가, 한 번 쓴 코드는 재사용하지 않는다
+  code            String    @unique @db.VarChar(4)
+  name            String    @db.VarChar(50)
+  /// 상차지시서·상차확인서 발송인 정보 (법인)
+  bizNo           String    @map("biz_no") @db.VarChar(12)
+  ceoName         String    @map("ceo_nm") @db.VarChar(20)
+  zipCode         String    @map("zip_code") @db.VarChar(5)
+  addr1           String    @db.VarChar(200)
+  addr2           String    @db.VarChar(100)
+  tel             String?   @db.VarChar(15)
+  email           String?   @db.VarChar(100)
+  /// 화주사 담당자 — 시스템 사용자와 별도 입력
+  contactName     String    @map("contact_nm") @db.VarChar(20)
+  contactTel      String    @map("contact_tel") @db.VarChar(15)
+  contactEmail    String?   @map("contact_email") @db.VarChar(100)
+  /// 3PL 담당 운영자 (이용 센터 소속 3PL 관리자·운영담당)
+  managerUserId   Int       @map("manager_user_id")
+  contractStartDt DateTime  @map("contract_start_dt") @db.Date
+  contractEndDt   DateTime? @map("contract_end_dt") @db.Date
+  isActive        Boolean   @default(true) @map("is_active")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy       String    @map("created_by") @db.VarChar(50)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy       String    @map("updated_by") @db.VarChar(50)
+
+  manager      User           @relation("ClientManager", fields: [managerUserId], references: [id])
+  centers      ClientCenter[]
+  items        Item[]
+  itemRequests ItemRequest[]
+  plans        InboundPlan[]
+  users        User[]
+
+  @@map("tb_client")
+}
+
+/// 화주사 이용 센터 (화주사 : 센터 = N : M)
+model ClientCenter {
+  id         Int      @id @default(autoincrement())
+  clientId   Int      @map("client_id")
+  centerCode String   @map("center_cd") @db.VarChar(5)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy  String   @map("created_by") @db.VarChar(50)
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  center Center @relation(fields: [centerCode], references: [code])
+
+  @@unique([clientId, centerCode])
+  @@index([centerCode])
+  @@map("tb_client_center")
+}
+
+/// 품목 마스터 — AI·엑셀 매칭과 PDA 바코드 스캔의 기준 (D2)
+/// 수량의 기준은 baseUnit(가장 작은 단위)이고, 다른 단위는 tb_item_uom의 환산 수량으로 바꾼다.
+model Item {
+  id            Int         @id @default(autoincrement())
+  clientId      Int         @map("client_id")
+  code          String      @db.VarChar(40)
+  name          String      @db.VarChar(200)
+  baseUnit      ItemUnit    @map("base_unit")
+  storageTemp   StorageTemp @map("storage_temp")
+  /// 유통기한 관리 품목이면 입고예정에 유통기한 입력 필수, 검수 시 실물과 다르면 현장 입력
+  expiryManaged Boolean     @default(false) @map("expiry_managed")
+  /// 로트 관리 품목이면 입고예정에 로트 입력 필수, 검수 시 실물과 다르면 현장 입력
+  lotManaged    Boolean     @default(false) @map("lot_managed")
+  isActive      Boolean     @default(true) @map("is_active")
+  version       Int         @default(1)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy     String      @map("created_by") @db.VarChar(50)
+  updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy     String      @map("updated_by") @db.VarChar(50)
+
+  client      Client            @relation(fields: [clientId], references: [id])
+  uoms        ItemUom[]
+  barcodes    ItemBarcode[]
+  aliases     ItemAlias[]
+  fromRequest ItemRequest?
+  planLines   InboundPlanLine[]
+
+  @@unique([clientId, code])
+  @@map("tb_item")
+}
+
+/// 품목 단위 환산 — 기준 단위 행은 qty = 1
+model ItemUom {
+  id     Int      @id @default(autoincrement())
+  itemId Int      @map("item_id")
+  unit   ItemUnit
+  /// 이 단위 1개 = 기준 단위 qty개
+  qty    Int
+
+  item     Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  barcodes ItemBarcode[]
+
+  @@unique([itemId, unit])
+  @@map("tb_item_uom")
+}
+
+/// 품목 바코드 — 단위별로 여러 개. 같은 화주사 안에서 바코드는 하나의 품목·단위만 가리킨다
+model ItemBarcode {
+  id        Int      @id @default(autoincrement())
+  itemId    Int      @map("item_id")
+  clientId  Int      @map("client_id")
+  unit      ItemUnit
+  barcode   String   @db.VarChar(40)
+  /// 대표 바코드 (품목당 1개)
+  isPrimary Boolean  @default(false) @map("is_primary")
+
+  item Item    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  uom  ItemUom @relation(fields: [itemId, unit], references: [itemId, unit])
+
+  @@unique([clientId, barcode])
+  @@index([itemId])
+  @@map("tb_item_barcode")
+}
+
+/// 품목 별칭 — AI 판독·엑셀 품목명을 마스터 품목에 자동 매칭하는 데 쓴다 (D2)
+model ItemAlias {
+  id         Int         @id @default(autoincrement())
+  itemId     Int         @map("item_id")
+  clientId   Int         @map("client_id")
+  alias      String      @db.VarChar(200)
+  /// 공백 제거·소문자로 맞춘 비교용 값
+  normalized String      @db.VarChar(200)
+  source     AliasSource @default(MANUAL)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy  String      @map("created_by") @db.VarChar(50)
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, normalized])
+  @@map("tb_item_alias")
+}
+
+/// 품목 등록 요청 — 화주사 요청 → 3PL 검토 후 등록/반려. 3PL은 값을 고쳐 등록할 수 있다.
+model ItemRequest {
+  id               Int               @id @default(autoincrement())
+  requestNo        String            @unique @map("request_no") @db.VarChar(20)
+  clientId         Int               @map("client_id")
+  itemCode         String            @map("item_code") @db.VarChar(40)
+  itemName         String            @map("item_name") @db.VarChar(200)
+  unit             ItemUnit
+  barcode          String            @db.VarChar(40)
+  source           ItemRequestSource
+  /// 화주사가 함께 보낸 보관 온도대·유통기한·로트 관리 여부 (없으면 3PL이 등록 시 정함)
+  storageTemp      StorageTemp?      @map("storage_temp")
+  expiryManaged    Boolean?          @map("expiry_managed")
+  lotManaged       Boolean?          @map("lot_managed")
+  /// 원본 판독값·엑셀 원문 등 참고 내용
+  sourceNote       String?           @map("source_note") @db.VarChar(500)
+  status           ItemRequestStatus @default(WAITING)
+  version          Int               @default(1)
+  resubmitCount    Int               @default(0) @map("resubmit_count")
+  requestedBy      String            @map("requested_by") @db.VarChar(50)
+  requestedAt      DateTime          @default(now()) @map("requested_at") @db.Timestamptz(3)
+  processedBy      String?           @map("processed_by") @db.VarChar(50)
+  processedAt      DateTime?         @map("processed_at") @db.Timestamptz(3)
+  rejectReasonCode String?           @map("reject_reason_cd") @db.VarChar(20)
+  rejectReasonText String?           @map("reject_reason_text") @db.VarChar(500)
+  itemId           Int?              @unique @map("item_id")
+
+  client    Client               @relation(fields: [clientId], references: [id])
+  item      Item?                @relation(fields: [itemId], references: [id])
+  histories ItemRequestHistory[]
+
+  @@index([status])
+  @@map("tb_item_req")
+}
+
+/// 품목 등록 요청 처리 이력 (Append-only)
+model ItemRequestHistory {
+  id         Int               @id @default(autoincrement())
+  requestId  Int               @map("request_id")
+  action     ItemRequestAction
+  actor      String            @db.VarChar(50)
+  /// "오늘 내가 처리한 건" 조회용
+  actorId    Int?              @map("actor_id")
+  at         DateTime          @default(now()) @db.Timestamptz(3)
+  reasonCode String?           @map("reason_cd") @db.VarChar(20)
+  reasonText String?           @map("reason_text") @db.VarChar(500)
+  memo       String?           @db.VarChar(500)
+
+  request ItemRequest @relation(fields: [requestId], references: [id])
+
+  @@index([requestId])
+  @@index([actorId, action, at])
+  @@map("tb_item_req_his")
+}
+
+/// 공통코드 그룹 — 사유 코드 그룹 (D19, ERD TB_COMMON_CODE)
+model CodeGroup {
+  code        String  @id @db.VarChar(30)
+  name        String  @db.VarChar(100)
+  description String? @db.VarChar(300)
+  /// 정의서에서 값까지 확정된 그룹이면 true, 임시안이면 false(미확정)
+  confirmed   Boolean @default(false)
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  codes CommonCode[]
+
+  @@map("tb_code_group")
+}
+
+model CommonCode {
+  id           Int      @id @default(autoincrement())
+  groupCode    String   @map("group_code") @db.VarChar(30)
+  code         String   @db.VarChar(20)
+  name         String   @db.VarChar(100)
+  sortOrder    Int      @default(0) @map("sort_order")
+  /// "기타"처럼 고르면 상세 내용 입력이 필수인 코드
+  requiresText Boolean  @default(false) @map("requires_text")
+  isActive     Boolean  @default(true) @map("is_active")
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy    String   @map("created_by") @db.VarChar(50)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy    String   @map("updated_by") @db.VarChar(50)
+
+  group CodeGroup @relation(fields: [groupCode], references: [code])
+
+  @@unique([groupCode, code])
+  @@map("tb_common_code")
+}
+
+/// 사용자 — 화주사 역할은 화주사, 3PL 역할은 센터에 소속 (DB 체크 제약으로도 보장)
+model User {
+  id        Int      @id @default(autoincrement())
+  loginId   String   @unique @map("login_id") @db.VarChar(50)
+  name      String   @db.VarChar(50)
+  role      UserRole
+  clientId  Int?     @map("client_id")
+  centerId  Int?     @map("center_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String   @map("created_by") @db.VarChar(50)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String   @map("updated_by") @db.VarChar(50)
+
+  /// 로그인 — 비밀번호 해시(scrypt), 초기화 후 첫 로그인 변경 강제, 연속 실패·잠금
+  passwordHash String?   @map("password_hash") @db.VarChar(200)
+  mustChangePw Boolean   @default(false) @map("must_change_pw")
+  failCount    Int       @default(0) @map("fail_count")
+  lockedAt     DateTime? @map("locked_at") @db.Timestamptz(3)
+  pwChangedAt  DateTime? @map("pw_changed_at") @db.Timestamptz(3)
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+
+  client         Client?   @relation(fields: [clientId], references: [id])
+  center         Center?   @relation("CenterUsers", fields: [centerId], references: [id])
+  managedCenters Center[]  @relation("CenterManager")
+  managedClients Client[]  @relation("ClientManager")
+  sessions       Session[]
+
+  @@map("tb_user")
+}
+
+/// 로그인 세션 — id는 쿠키 토큰의 HMAC(AUTH_SECRET). 행을 지우면 즉시 로그아웃된다
+model Session {
+  id        String   @id @db.VarChar(64)
+  userId    Int      @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  ip        String?  @db.VarChar(64)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("tb_session")
+}
+
+/// 로그인 이력 (Append-only) — 조회 화면은 추후
+model LoginLog {
+  id         BigInt      @id @default(autoincrement())
+  at         DateTime    @default(now()) @db.Timestamptz(3)
+  /// 입력한 아이디 그대로
+  loginInput String      @map("login_input") @db.VarChar(100)
+  /// 입력한 아이디가 사용자와 맞으면 연결
+  userId     Int?        @map("user_id")
+  ip         String?     @db.VarChar(64)
+  result     LoginResult
+  /// 상세 사유 (비밀번호 불일치, 5회 실패로 잠금 등)
+  reason     String?     @db.VarChar(100)
+
+  @@index([at])
+  @@index([userId])
+  @@map("tb_login_log")
+}
+
+/// 운영 설정 (O2 미종결 알림 기준 경과일 등)
+model Setting {
+  key         String   @id @db.VarChar(50)
+  label       String   @db.VarChar(100)
+  value       String   @db.VarChar(200)
+  /// INT: 정수(min~max) / TIME: HH:MM
+  valueType   String   @default("INT") @map("value_type") @db.VarChar(10)
+  /// 값 단위 표시 (예: 일)
+  unit        String?  @db.VarChar(20)
+  minValue    Int?     @map("min_value")
+  maxValue    Int?     @map("max_value")
+  description String?  @db.VarChar(300)
+  version     Int      @default(1)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy   String   @map("updated_by") @db.VarChar(50)
+
+  @@map("tb_setting")
+}
+
+/// 회사 정보 (3PL 운영 법인, 1건) — 3PL이 발행하는 출력물 머리글에 쓴다
+model Company {
+  id        Int      @id @default(1)
+  name      String   @db.VarChar(50)
+  bizNo     String   @map("biz_no") @db.VarChar(12)
+  ceoName   String   @map("ceo_name") @db.VarChar(20)
+  zipCode   String   @map("zip_code") @db.VarChar(5)
+  addr1     String   @db.VarChar(200)
+  addr2     String   @db.VarChar(100)
+  phone     String?  @db.VarChar(15)
+  email     String?  @db.VarChar(100)
+  version   Int      @default(1)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String   @map("updated_by") @db.VarChar(50)
+
+  centers Center[]
+
+  @@map("tb_company")
+}
+
+/// 휴무일 — 입고예정일 D-day·기한 지남·기한경과 계산 때 영업일에서 뺀다
+model Holiday {
+  id        Int         @id @default(autoincrement())
+  centerId  Int         @map("center_id")
+  date      DateTime    @db.Date
+  name      String      @db.VarChar(100)
+  kind      HolidayKind
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String      @map("created_by") @db.VarChar(50)
+
+  center Center @relation(fields: [centerId], references: [id])
+
+  @@unique([centerId, date])
+  @@map("tb_holiday")
+}
+
+/// 변경 이력 — 정의서 "모든 원본 테이블에 _HIS 이력" 요구를 기준정보에서는 공통 이력 한 테이블로 처리
+model ChangeLog {
+  id        BigInt   @id @default(autoincrement())
+  tableName String   @map("table_name") @db.VarChar(40)
+  recordKey String   @map("record_key") @db.VarChar(60)
+  action    String   @db.VarChar(20)
+  before    Json?
+  after     Json?
+  actor     String   @db.VarChar(50)
+  at        DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([tableName, recordKey])
+  @@map("tb_change_log")
+}
+
+/**
+ * ═══════════════ 입고예정 (정의서 ①② · 4-1 · 9장 TB_INB_PLAN_*) ═══════════════
+ */
+
+/// 입고예정 상태 — 정의서 4-1. 표시명은 src/domain/plan-status.ts
+enum PlanStatus {
+  WAITING // 승인대기
+  REJECTED // 반려
+  APPROVED // 승인
+  PARTIAL // 부분입고
+  COMPLETED // 입고완료
+  CLOSED // 종결
+  CANCELED // 취소
+}
+
+/// 입고예정 등록 방식 (정의서 ①)
+enum PlanInputMethod {
+  DIRECT // 직접 입력
+  EXCEL // 엑셀 업로드
+  AI_IMAGE // 이미지 AI 판독
+}
+
+/// 입고예정 처리 이력 행위
+enum PlanAction {
+  CREATE // 최초 저장
+  UPDATE // 수정 저장 (승인대기)
+  RESUBMIT // 반려 후 재저장 (차수 +1)
+  APPROVE // 3PL 승인
+  REJECT // 3PL 반려
+  CANCEL // 화주사 취소
+  CANCEL_APPROVED // 3PL 승인 건 취소
+  EXPIRE_CANCEL // 일마감 기한경과 취소
+  CLOSE // 3PL 잔량 종결
+}
+
+/// 입고예정 헤더 (TB_INB_PLAN_H) — 화주사·센터·입고예정일 1건 단위
+model InboundPlan {
+  id                 Int             @id @default(autoincrement())
+  /// IP-YYYYMMDD-NNNN (첫 저장일 기준 일련번호)
+  planNo             String          @unique @map("plan_no") @db.VarChar(20)
+  clientId           Int             @map("client_id")
+  centerId           Int             @map("center_id")
+  planDate           DateTime        @map("plan_dt") @db.Date
+  status             PlanStatus      @default(WAITING)
+  inputMethod        PlanInputMethod @map("input_method")
+  memo               String?         @db.VarChar(500)
+  /// 동시성 제어용 — 저장할 때마다 +1 (승인·반려 시점 비교, D1)
+  version            Int             @default(1)
+  /// 업무 회차 — 반려 후 재저장할 때만 +1 (D6)
+  revisionNo         Int             @default(1) @map("revision_no")
+  approvedRevisionNo Int?            @map("approved_revision_no")
+  approvedAt         DateTime?       @map("approved_at") @db.Timestamptz(3)
+  approvedBy         String?         @map("approved_by") @db.VarChar(50)
+  cancelReasonCode   String?         @map("cancel_reason_cd") @db.VarChar(20)
+  cancelReasonText   String?         @map("cancel_reason_text") @db.VarChar(500)
+  canceledAt         DateTime?       @map("canceled_at") @db.Timestamptz(3)
+  canceledBy         String?         @map("canceled_by") @db.VarChar(50)
+  closeReasonCode    String?         @map("close_reason_cd") @db.VarChar(20)
+  closeReasonText    String?         @map("close_reason_text") @db.VarChar(500)
+  closedAt           DateTime?       @map("close_dt") @db.Timestamptz(3)
+  closedBy           String?         @map("close_user") @db.VarChar(50)
+  /// 화주사 "잔량 종결 요청" 메모 (종결은 3PL만)
+  closeReqMemo       String?         @map("close_req_memo") @db.VarChar(500)
+  /// 화주사 최종 저장 (목록의 "최종 저장")
+  savedAt            DateTime        @default(now()) @map("saved_at") @db.Timestamptz(3)
+  savedBy            String          @map("saved_by") @db.VarChar(50)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy          String          @map("created_by") @db.VarChar(50)
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy          String          @map("updated_by") @db.VarChar(50)
+
+  client    Client               @relation(fields: [clientId], references: [id])
+  center    Center               @relation(fields: [centerId], references: [id])
+  lines     InboundPlanLine[]
+  rejects   InboundPlanReject[]
+  histories InboundPlanHistory[]
+
+  @@index([status, centerId])
+  @@index([clientId, status])
+  @@map("tb_inb_plan_h")
+}
+
+/// 입고예정 라인 (TB_INB_PLAN_D) — 승인 전에는 화주사 저장 때 통째로 다시 쓴다
+model InboundPlanLine {
+  id         Int       @id @default(autoincrement())
+  planId     Int       @map("plan_id")
+  lineNo     Int       @map("line_no")
+  itemId     Int       @map("item_id")
+  /// 입력 단위 (품목에 등록된 단위 중 하나)
+  unit       ItemUnit
+  qty        Int
+  /// 기준 단위 환산 수량 — 검수·배분·잔량 계산 기준
+  baseQty    Int       @map("base_qty")
+  /// 유통기한·로트 관리 품목만 (U10)
+  expiryDate DateTime? @map("expiry_dt") @db.Date
+  lotNo      String?   @map("lot_no") @db.VarChar(40)
+  /// 이하 기준 단위 누계 (검수·배분 단계에서 채움)
+  rcvQty     Int       @default(0) @map("rcv_qty")
+  returnQty  Int       @default(0) @map("return_qty")
+  diffQty    Int       @default(0) @map("diff_qty")
+  closeQty   Int       @default(0) @map("close_qty")
+
+  plan InboundPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  item Item        @relation(fields: [itemId], references: [id])
+
+  @@unique([planId, lineNo])
+  @@index([itemId])
+  @@map("tb_inb_plan_d")
+}
+
+/// 반려본 스냅샷 헤더 (TB_INB_PLAN_REJ_H) — Append-only (DB 트리거로 수정·삭제 차단)
+model InboundPlanReject {
+  id         Int      @id @default(autoincrement())
+  planId     Int      @map("plan_id")
+  revisionNo Int      @map("revision_no")
+  version    Int
+  planDate   DateTime @map("plan_dt") @db.Date
+  memo       String?  @db.VarChar(500)
+  reasonCode String   @map("reason_cd") @db.VarChar(20)
+  reasonName String   @map("reason_nm") @db.VarChar(100)
+  reasonText String?  @map("reason_text") @db.VarChar(500)
+  rejectedBy String   @map("rejected_by") @db.VarChar(50)
+  rejectedAt DateTime @default(now()) @map("rejected_at") @db.Timestamptz(3)
+
+  plan  InboundPlan             @relation(fields: [planId], references: [id])
+  lines InboundPlanRejectLine[]
+
+  @@unique([planId, revisionNo])
+  @@map("tb_inb_plan_rej_h")
+}
+
+/// 반려본 스냅샷 라인 (TB_INB_PLAN_REJ_D) — 품목코드·이름도 당시 값으로 보관
+model InboundPlanRejectLine {
+  id         Int       @id @default(autoincrement())
+  rejectId   Int       @map("reject_id")
+  lineNo     Int       @map("line_no")
+  itemId     Int       @map("item_id")
+  itemCode   String    @map("item_code") @db.VarChar(40)
+  itemName   String    @map("item_name") @db.VarChar(200)
+  unit       ItemUnit
+  qty        Int
+  baseQty    Int       @map("base_qty")
+  expiryDate DateTime? @map("expiry_dt") @db.Date
+  lotNo      String?   @map("lot_no") @db.VarChar(40)
+
+  reject InboundPlanReject @relation(fields: [rejectId], references: [id])
+
+  @@unique([rejectId, lineNo])
+  @@map("tb_inb_plan_rej_d")
+}
+
+/// 입고예정 처리 이력 (전표 이력 — 기준정보의 tb_change_log와 별도)
+model InboundPlanHistory {
+  id         BigInt     @id @default(autoincrement())
+  planId     Int        @map("plan_id")
+  action     PlanAction
+  version    Int
+  revisionNo Int        @map("revision_no")
+  actor      String     @db.VarChar(50)
+  /// "오늘 내가 처리한 건" 조회용
+  actorId    Int?       @map("actor_id")
+  at         DateTime   @default(now()) @db.Timestamptz(3)
+  reasonCode String?    @map("reason_cd") @db.VarChar(20)
+  reasonName String?    @map("reason_nm") @db.VarChar(100)
+  reasonText String?    @map("reason_text") @db.VarChar(500)
+
+  plan InboundPlan @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+  @@index([actorId, action, at])
+  @@map("tb_inb_plan_his")
+}

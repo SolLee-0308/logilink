@@ -1,0 +1,1283 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogiLink 입고 시뮬레이터</title>
+<style>
+  :root {
+    --deep: #20343B;
+    --mint: #73B8AE;
+    --bg: #F4F7F7;
+    --panel: #FFFFFF;
+    --line: #D5DFE0;
+    --muted: #5B6F75;
+    --chip: #EAF1F1;
+    --scene: #2B3F45;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--deep);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    font-size: 14px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 100vh;
+  }
+  button { font: inherit; color: inherit; }
+
+  /* 헤더 */
+  .app-header {
+    background: var(--deep); color: #FFFFFF;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 12px 20px;
+  }
+  .brand { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+  .brand small { font-weight: 400; opacity: .75; margin-left: 6px; font-size: 12px; }
+  .drawer-toggle {
+    display: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid #4A5F66; background: #2C434B; color: #FFFFFF;
+  }
+  .center-select { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .center-select select {
+    font: inherit; padding: 5px 8px; border-radius: 6px; border: 1px solid #4A5F66;
+    background: #2C434B; color: #C9D6D8;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    background: var(--mint); color: var(--deep);
+  }
+  .snapshot-time { font-size: 12px; opacity: .8; }
+  .tag-example {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+    border: 1px dashed currentColor;
+  }
+  .controls { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .controls button {
+    font-size: 13px; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid #4A5F66; background: #2C434B; color: #9FB1B5; cursor: not-allowed;
+  }
+  .controls .hint { font-size: 11px; opacity: .7; }
+
+  /* 본문 3단 */
+  .app-main {
+    display: grid;
+    grid-template-columns: 290px minmax(0, 1fr) 350px;
+    gap: 14px;
+    padding: 14px 20px;
+    min-height: 0;
+    height: calc(100vh - 140px);
+    min-height: 560px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  }
+
+  /* 좌측 입차 건 목록 */
+  .arrival-panel { display: flex; flex-direction: column; min-height: 0; }
+  .arrival-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  .arrival-head h2 { margin: 0; font-size: 15px; display: flex; align-items: center; justify-content: space-between; }
+  .arrival-head p { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .drawer-close { display: none; border: 0; background: none; font-size: 18px; cursor: pointer; padding: 0 4px; }
+  .arrival-list { list-style: none; margin: 0; padding: 10px; overflow: auto; display: grid; gap: 8px; }
+  .arrival-item {
+    width: 100%; text-align: left; cursor: pointer;
+    border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px;
+    background: #FFFFFF; padding: 10px 12px; display: grid; gap: 3px;
+  }
+  .arrival-item:hover { background: #F7FAFA; }
+  .arrival-item:focus-visible { outline: 2px solid var(--deep); outline-offset: 2px; }
+  .arrival-item[aria-pressed="true"] { border-color: var(--deep); border-left-color: var(--mint); background: #EEF6F5; }
+  .arrival-item .aid { font-weight: 700; font-family: ui-monospace, Consolas, monospace; font-size: 13px; display: flex; justify-content: space-between; }
+  .arrival-item .aid em { font-style: normal; font-family: inherit; font-size: 11px; font-weight: 700; background: var(--mint); color: var(--deep); padding: 1px 6px; border-radius: 4px; display: none; }
+  .arrival-item[aria-pressed="true"] .aid em { display: inline-block; }
+  .arrival-item .meta { font-size: 12px; color: var(--muted); }
+  .arrival-item .meta b { color: var(--deep); font-weight: 600; }
+
+  /* 장면 */
+  .stage { position: relative; overflow: hidden; background: #1E2E33; border-color: #1C2C31; min-height: 420px; }
+  .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .stage-note {
+    position: absolute; left: 10px; bottom: 10px; z-index: 1; max-width: calc(100% - 20px);
+    font-size: 12px; color: #FFFFFF; background: rgba(32,52,59,.88);
+    padding: 5px 9px; border-radius: 6px; line-height: 1.5;
+  }
+
+  /* 우측 패널 */
+  .side-panel { display: flex; flex-direction: column; min-height: 0; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); padding: 0 8px; }
+  .tab {
+    flex: 1; border: 0; background: none; cursor: pointer; padding: 12px 6px 10px;
+    font-size: 13px; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent;
+  }
+  .tab[aria-selected="true"] { color: var(--deep); border-bottom-color: var(--mint); }
+  .tab:focus-visible { outline: 2px solid var(--deep); outline-offset: -2px; }
+  .tab-panel { padding: 16px 18px; overflow: auto; flex: 1; }
+  .tab-panel[hidden] { display: none; }
+  .tab-panel h2 { margin: 0 0 4px; font-size: 17px; }
+  .tab-panel h3 { margin: 18px 0 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+  .tab-panel p { margin: 0 0 8px; line-height: 1.6; }
+  .tab-panel ul { margin: 0; padding-left: 18px; line-height: 1.7; }
+  .info-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
+  .sel-flag {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+    background: var(--mint); color: var(--deep); border: 1.5px solid var(--deep); margin-bottom: 8px;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+    padding: 2px 7px; border-radius: 4px; background: var(--chip); border: 1px solid var(--line);
+  }
+  .chip-group { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+  .chip-group > span { font-size: 11px; color: var(--muted); width: 32px; flex: none; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-weight: 600; }
+  .undecided li::marker { content: "△  "; }
+  .note-box { font-size: 12px; background: #F4F7F7; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; line-height: 1.55; margin-top: 12px; }
+  .link-btn {
+    border: 1px solid var(--line); background: #FFFFFF; border-radius: 6px; padding: 4px 10px;
+    cursor: pointer; font-size: 12px; margin: 2px 6px 2px 0;
+  }
+  .link-btn:focus-visible { outline: 2px solid var(--deep); }
+  .people, .logs { list-style: none; padding: 0 !important; margin: 0; display: grid; gap: 10px; }
+  .people li, .logs li { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; line-height: 1.55; }
+  .people .role { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .vest { width: 10px; height: 10px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0,0,0,.25); }
+  .people .where, .logs .who { font-size: 12px; color: var(--muted); }
+  .people .web { font-size: 11px; font-weight: 700; border: 1px solid var(--deep); border-radius: 4px; padding: 0 5px; }
+  .logs .time { font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 700; }
+  .logs .act { margin-top: 2px; }
+
+  /* 범례 */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+    padding: 4px 20px 14px; font-size: 12px;
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend svg { flex: none; }
+  .legend-title { font-weight: 700; }
+
+  /* ===== SVG 장면 ===== */
+  .zone { cursor: pointer; outline: none; }
+  .zone .outline { fill: transparent; stroke: transparent; stroke-width: 3; stroke-linejoin: round; }
+  .zone:hover .outline { stroke: rgba(255,255,255,.55); }
+  .zone:focus-visible .outline { stroke: var(--mint); stroke-dasharray: 7 4; }
+  .zone.is-selected .outline { fill: rgba(115,184,174,.24); stroke: var(--mint); stroke-dasharray: none; stroke-width: 3.5; }
+  .no-hit { pointer-events: none; }
+  .truck { cursor: pointer; }
+  .truck .hl { display: none; }
+  .truck.is-highlight .hl { display: inline; }
+  .truck.is-highlight .face { stroke: var(--mint); stroke-width: 2; }
+
+  @media (max-width: 1279px) {
+    .app-main { grid-template-columns: minmax(0, 1fr) 330px; }
+    .drawer-toggle { display: inline-block; }
+    .drawer-close { display: inline-block; }
+    .arrival-panel {
+      position: fixed; z-index: 20; top: 0; left: 0; bottom: 0; width: min(320px, 88vw);
+      border-radius: 0 10px 10px 0; transform: translateX(-105%); transition: transform .2s ease;
+      box-shadow: 4px 0 24px rgba(0,0,0,.25);
+    }
+    body.drawer-open .arrival-panel { transform: none; }
+    .backdrop { position: fixed; inset: 0; background: rgba(32,52,59,.4); z-index: 19; display: none; }
+    body.drawer-open .backdrop { display: block; }
+  }
+  @media (max-width: 959px) {
+    .app-main { grid-template-columns: 1fr; height: auto; }
+    .stage { aspect-ratio: 4 / 3; }
+    .side-panel { max-height: 70vh; }
+    .controls { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .arrival-panel { transition: none; } }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <button type="button" class="drawer-toggle" id="drawer-toggle" aria-controls="arrival-panel" aria-expanded="false">☰ 입차 건</button>
+  <div class="brand">LogiLink 입고 시뮬레이터<small>물류센터 입고 구역 전경</small></div>
+  <label class="center-select">
+    센터
+    <select id="center-select" disabled aria-label="센터 선택 (비활성)">
+      <option id="center-option"></option>
+    </select>
+    <span class="tag-example">예시값</span>
+  </label>
+  <span class="badge">● 시뮬레이션 · 예시 데이터</span>
+  <span class="snapshot-time" id="snapshot-time"></span>
+  <div class="controls" aria-label="시뮬레이션 제어 (준비 중)">
+    <button type="button" disabled aria-label="재생 (준비 중)">▶ 재생</button>
+    <button type="button" disabled aria-label="일시정지 (준비 중)">❚❚ 일시정지</button>
+    <button type="button" disabled aria-label="배속 (준비 중)">1× 배속</button>
+    <span class="hint">준비 중</span>
+  </div>
+</header>
+
+<div class="backdrop" id="backdrop"></div>
+
+<main class="app-main">
+  <aside class="arrival-panel card" id="arrival-panel" aria-label="입차 건 목록">
+    <div class="arrival-head">
+      <h2>입차 건 (예시 데이터) <button type="button" class="drawer-close" id="drawer-close" aria-label="목록 닫기">✕</button></h2>
+      <p>같은 차량이라도 화주사가 다르면 별도 입차 건입니다. 차량번호는 고유 키로 쓰지 않습니다.</p>
+    </div>
+    <ul class="arrival-list" id="arrival-list"></ul>
+  </aside>
+
+  <section class="stage card" aria-label="입고 구역 아이소메트릭 전경">
+    <svg id="scene" role="group" aria-label="입고 구역 전경. 구역을 클릭하거나 Tab 키로 이동한 뒤 Enter로 선택합니다."
+         preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <pattern id="hatch" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="9" stroke="rgba(255,255,255,.22)" stroke-width="3"/>
+        </pattern>
+      </defs>
+      <g id="layer-floor" class="no-hit"></g>
+      <g id="layer-zones"></g>
+      <g id="layer-flow" class="no-hit"></g>
+      <g id="layer-props" class="no-hit"></g>
+      <g id="layer-entities"></g>
+      <g id="layer-labels" class="no-hit"></g>
+    </svg>
+    <div class="stage-note">※ 정지 화면(스냅샷)입니다. 센터·도크 수·구역 배치와 차량·화물·인원·이력은 모두 <strong>예시값</strong>입니다. 좁은 화면에서는 동선 라벨을 숨깁니다.</div>
+  </section>
+
+  <aside class="side-panel card" aria-label="상세 정보">
+    <div class="tabs" role="tablist" aria-label="상세 정보 탭">
+      <button type="button" class="tab" role="tab" id="tab-zone" aria-controls="panel-zone" aria-selected="true">구역 정보</button>
+      <button type="button" class="tab" role="tab" id="tab-people" aria-controls="panel-people" aria-selected="false" tabindex="-1">현장 인원</button>
+      <button type="button" class="tab" role="tab" id="tab-logs" aria-controls="panel-logs" aria-selected="false" tabindex="-1">작업 이력</button>
+    </div>
+    <div class="tab-panel" role="tabpanel" id="panel-zone" aria-labelledby="tab-zone" aria-live="polite"></div>
+    <div class="tab-panel" role="tabpanel" id="panel-people" aria-labelledby="tab-people" hidden></div>
+    <div class="tab-panel" role="tabpanel" id="panel-logs" aria-labelledby="tab-logs" hidden></div>
+  </aside>
+</main>
+
+<footer class="legend" aria-label="범례" id="legend"></footer>
+
+<script>
+/* =====================================================================
+ * CONFIG — 센터·구역 정의 (데이터만 둔다. 구역 변경 시 이 구획만 수정)
+ * 좌표 단위: 바닥 격자 1칸. x = 건물 안(작은 값) → 바깥(큰 값), y = 도크가 늘어선 방향
+ * ===================================================================== */
+const ISO = { tileW: 64, tileH: 32, zUnit: 30 };
+
+const CENTER_CONFIG = {
+  name: '예시 센터 A',               // 예시값
+  floor: { cols: 25.6, rows: 13 },     // 예시값
+  building: { wallX: 11.9, wallH: 2.0, doorBottom: 0.5, doorTop: 1.6 }, // 예시값 — 건물 외벽(도크 면)
+  docks: 4,                          // 예시값 — 도크 수
+  tempZones: ['상온', '냉장', '냉동'],  // 확정: 품목 속성 보관온도대
+  // 일반 입고 보류구역 — 개수를 강제하지 않도록 배열로 둔다 (센터별 1개 / 최소 1개 강제 여부 미결정)
+  holdZones: [
+    { code: 'HOLD-A-01', tempZone: '상온', rect: { x: 0.6, y: 0.5, w: 3.4, d: 4.6 } } // 모두 예시값
+  ]
+};
+
+const SCENE_COLORS = {
+  asphalt: '#2B3F45', concrete: '#354B52', grid: 'rgba(255,255,255,.05)',
+  paint: 'rgba(255,255,255,.82)', paintSoft: 'rgba(255,255,255,.4)',
+  wall: '#566D74', platform: '#6C7F85', leveler: '#8E9EA3', rubber: '#1D2427',
+  shutter: '#A9B6B9', cargo: '#E4E9EA', cab: '#D9783A', glass: '#22343A',
+  kraft: '#CF9C63', pallet: '#A97C4F', cone: '#E2793A', fence: '#AFBBBE',
+  mint: '#73B8AE', deep: '#20343B', skin: '#E3BE9C'
+};
+
+// 온도대 배지(카테고리 표시용, UI 강조색 아님)
+const TEMP_BADGE = {
+  '상온': { fill: '#F4F7F7', text: '#20343B' },
+  '냉장': { fill: '#CFE6F5', text: '#20343B' },
+  '냉동': { fill: '#9CC4E4', text: '#20343B' }
+};
+
+const ZONES = [
+  {
+    id: 'arrival', kind: 'pad',
+    name: '입차 접수 지점', nameNote: 'UI 표현',
+    rect: { x: 19.4, y: 3.4, w: 6.0, d: 6.0 }, height: 0,
+    label: ['입차 접수 지점 (UI 표현)'], labelAt: { x: 25.0, y: 9.9, z: 0 },
+    info: {
+      sub: '문서에 물리 구역명이 따로 정의되지 않아 "입차 접수 지점(UI 표현)"으로 표시합니다.',
+      role: [
+        '차량이 도착하면 PDA로 센터·화주사를 확인하고, 실제 차량번호와 도착 시각을 입력해 입차 건(입차 ID)을 만듭니다.',
+        '승인된 입고예정과 선택적 ASN을 검색해 입차 건에 연결합니다. 검색에 실패하면 같은 입차 건을 보류하고 예외 승인 요청으로 넘어갑니다.'
+      ],
+      screens: ['P-ARR-01', 'P-ARR-02', 'P-ARR-03', 'W-ARR-01', 'W-ARR-02'],
+      steps: ['② 차량 도착·입차 ID 생성', '③ 승인된 입고예정 검색 (실패 시 예외 승인 절차로 전환)', '④ 입차 건 연결'],
+      undecided: ['물리 구역명 미정의 — 화면 표기는 UI 표현', '위치·크기는 예시값']
+    }
+  },
+  {
+    id: 'dock', kind: 'docks',
+    name: '입고 도크 / 센터 지정 하역구역',
+    rect: { x: 11.9, y: 0.5, w: 1.7, d: 12.0 }, height: 0.5, unitGap: 0.5,
+    label: ['입고 도크 / 지정 하역구역', 'D1~D4 · 예시 4개'], labelAt: { x: 13.6, y: -1.0, z: 2.0 },
+    info: {
+      sub: '도크 번호(D1~D4)는 예시값입니다.',
+      role: [
+        '입차 건에 도크 또는 센터 지정 하역구역을 배정합니다.',
+        '하역 전에 승인 기준·출하서류·차량정보로 사전 하역 제한을 확인합니다. 온도조건 부적합이나 센터 수용 불가가 명백하면 하역하지 않고 차량에 둡니다.'
+      ],
+      screens: ['P-ARR-04', 'W-ARR-01'],
+      steps: ['④ 도크 또는 지정 하역구역 배정', '⑤ 사전 하역 제한 확인', '⑥ 하역·입고 시작'],
+      undecided: ['도크 수 — 예시 4개 (CENTER_CONFIG.docks에서 변경)', '도크와 지정 하역구역의 화면 구분 방식', '배치·치수는 예시값']
+    }
+  },
+  {
+    id: 'inspection', kind: 'area',
+    name: '도크 검수구역',
+    rect: { x: 5.8, y: 0.5, w: 4.0, d: 12.0 }, height: 0,
+    subAreas: [{ id: 'dock-hold', label: '도크 보류', rect: { x: 6.2, y: 9.0, w: 3.2, d: 3.2 } }],
+    label: ['도크 검수구역'], labelAt: { x: 7.8, y: -0.25, z: 2.7 },
+    info: {
+      sub: '빗금 영역은 구역 안의 "도크 보류" 위치입니다.',
+      role: [
+        '하역한 화물을 PDA로 스캔·검수합니다. 품목 식별, 실제 수량, 포장 외관, 관리 대상 품목의 LOT·소비기한을 확인합니다.',
+        '하역 후 발견한 미식별·라벨/실물 불일치·보관온도대 미설정·온도조건 부적합 현물은 도크 검수구역에 보류합니다(도크 보류).',
+        '도크 보류는 센터·도크 또는 검수구역 코드와 실제 보류 위치로 식별합니다.'
+      ],
+      screens: ['P-RCV-01', 'P-RCV-02', 'P-RCV-03', 'P-RCV-04', 'W-RCV-01'],
+      steps: ['⑦ PDA 품목 스캔·검수 (예외 현물은 도크 보류)', '⑧ 검수 완료조건 점검'],
+      undecided: ['도크 보류 영역의 위치·크기는 예시값']
+    }
+  },
+  {
+    id: 'hold', kind: 'holdZones',   // CENTER_CONFIG.holdZones 배열을 그린다
+    name: '일반 입고 보류구역',
+    height: 0,
+    info: {
+      sub: '버전 1 · 위험물·격리·특수 보류구역은 제외합니다.',
+      role: [
+        '센터별로 물리적·시스템상 일반 입고 보류구역을 설정하고 보류 위치 코드로 식별합니다.',
+        '보류구역은 수용 보관온도대를 가집니다. 품목의 필요 보관온도대와 일치할 때만 도크 검수구역에서 이곳으로 옮길 수 있고, 다르거나 확인되지 않으면 도크 검수구역에 남습니다.',
+        '현물에는 예외 ID·화주사·품목·수량·입차 건 번호·보류 사유·반입 시각을 적은 임시 표찰을 붙입니다.'
+      ],
+      screens: ['P-HOLD-01', 'W-HOLD-01', 'W-MD-01'],
+      steps: ['⑦에서 발생한 예외 현물의 일반 보류구역 이동·보류 수령'],
+      undecided: ['보류구역 개수 강제 여부 (센터별 1개 / 최소 1개) 미결정', '수용 보관온도대 — 예시값 "상온"', '보류 위치 코드·위치·크기는 예시값']
+    }
+  },
+  {
+    id: 'downstream', kind: 'outOfScope',
+    name: '후속 업무 영역 — 적치·재고·출고',
+    rect: { x: 0.6, y: 6.4, w: 3.4, d: 6.1 }, height: 0,
+    label: ['후속 업무 · 범위 밖', '적치 · 재고 · 출고'], labelAt: { x: 1.8, y: 10.8, z: 0 },
+    info: {
+      sub: '이번 범위 밖입니다. 내부 구성은 그리지 않습니다.',
+      role: ['실제 입고 확정 이후 이어지는 적치·재고·출고 업무 영역입니다.'],
+      screens: [],
+      steps: ['범위 밖 — 실제 입고 확정 이후 연결 업무(적치·재고·출고)'],
+      undecided: ['범위 밖 — 해당 없음']
+    }
+  }
+];
+
+// 바닥에 페인트한 동선 화살표 (격자 좌표). labelAt = 라벨 칩 위치
+const FLOWS = [
+  { from: { x: 23.0, y: 13.4 }, to: { x: 23.0, y: 9.4 },  kind: 'normal',    label: '차량 도착',          labelAt: { x: 21.6, y: 12.2 } },
+  { from: { x: 18.0, y: 4.9 },  to: { x: 14.0, y: 4.9 },  kind: 'normal',    label: '도크 배정 → 접안',    labelAt: { x: 16.4, y: 6.6 } },
+  { from: { x: 11.3, y: 1.8 },  to: { x: 10.2, y: 1.8 },  kind: 'normal',    label: '하역 → 검수',        labelAt: { x: 10.0, y: 3.0 } },
+  { from: { x: 5.6,  y: 2.8 },  to: { x: 4.1,  y: 2.8 },  kind: 'exception', label: '예외 시 · 온도대 일치', labelAt: { x: 4.6, y: 5.75 } },
+  { from: { x: 5.6,  y: 9.8 },  to: { x: 4.1,  y: 9.8 },  kind: 'outscope',  label: '후속 업무',           labelAt: { x: 4.9, y: 12.0 } }
+];
+
+/* =====================================================================
+ * SAMPLE_SNAPSHOT — 예시 장면 데이터 (2단계에서 시나리오 엔진이 이 객체만 교체)
+ * 엔티티 위치 = zoneId (+ unit) + slot(구역 원점 기준 격자 좌표)
+ * ===================================================================== */
+const SAMPLE_SNAPSHOT = {
+  time: '14:32',
+  vehicles: [
+    { id: 'V1', zoneId: 'dock', unit: 'D1', slot: { x: 1.85, y: 0.2 }, cab: '+x', status: '접안·하역 중', tempZone: '상온', chipAt: { x: 4.6, y: 1.1 } },
+    { id: 'V2', zoneId: 'dock', unit: 'D3', slot: { x: 1.85, y: 0.2 }, cab: '+x', status: '접안·하역 전 확인', tempZone: '냉장', chipAt: { x: 4.6, y: 1.1 } },
+    { id: 'V3', zoneId: 'arrival', slot: { x: 0.6, y: 1.2 }, cab: '-x', status: '입차 접수', tempZone: '상온', chipAt: { x: 3.0, y: -0.4 } }
+  ],
+  pallets: [
+    { id: 'PL1', zoneId: 'dock', unit: 'D1', slot: { x: 0.35, y: 0.75 }, layers: 2 },
+    { id: 'PL2', zoneId: 'inspection', slot: { x: 0.5, y: 0.7 }, layers: 3 },
+    { id: 'PL3', zoneId: 'inspection', slot: { x: 2.1, y: 0.7 }, layers: 2 },
+    { id: 'PL4', zoneId: 'inspection', slot: { x: 0.5, y: 3.2 }, layers: 2 },
+    { id: 'PL5', zoneId: 'inspection', slot: { x: 2.2, y: 5.4 }, layers: 1 },
+    { id: 'PL6', zoneId: 'inspection', slot: { x: 1.4, y: 9.4 }, layers: 2, tempZone: '냉장', tag: '표찰', badge: true },
+    { id: 'PL7', zoneId: 'hold', unit: 'HOLD-A-01', slot: { x: 0.5, y: 0.6 }, layers: 2, tempZone: '상온', tag: '표찰' },
+    { id: 'PL8', zoneId: 'hold', unit: 'HOLD-A-01', slot: { x: 1.8, y: 2.6 }, layers: 1, tempZone: '상온', tag: '표찰' }
+  ],
+  workers: [
+    { id: 'W1', role: '3PL 입차 접수 담당자', vest: '#F2C14E', zoneId: 'arrival', slot: { x: 3.7, y: 4.6 }, task: { screen: 'P-ARR-02', action: '승인 기준 검색' } },
+    { id: 'W2', role: '3PL 검수 담당자', vest: '#E8833A', zoneId: 'dock', unit: 'D3', slot: { x: 0.9, y: 2.5 }, task: { screen: 'P-ARR-04', action: '하역 전 확인' } },
+    { id: 'W3', role: '3PL 검수 담당자', vest: '#E8833A', zoneId: 'inspection', slot: { x: 2.0, y: 3.6 }, task: { screen: 'P-RCV-02', action: '품목 스캔·검수' } },
+    { id: 'W4', role: '3PL 보류·반송 실행 담당자', vest: '#7DB4E6', zoneId: 'hold', unit: 'HOLD-A-01', slot: { x: 2.8, y: 0.9 }, task: { screen: 'P-HOLD-01', action: '보류 이동 확인' } }
+  ],
+  webStaff: [
+    { role: '3PL 입고 책임자·확정 담당자', task: { screen: 'W-CFM-01', action: '완료조건 점검' } }
+  ],
+  // 같은 차량(V1)이라도 화주사가 다르면 입차 건을 따로 둔다
+  arrivals: [
+    { id: 'ARR-예시-001', shipper: '예시 화주사 A', vehicleNo: '예시 12가 3456', vehicleId: 'V1', zoneId: 'dock', unit: 'D1', screens: ['P-RCV-01', 'P-RCV-02'], basis: '승인된 입고예정 (예시)' },
+    { id: 'ARR-예시-002', shipper: '예시 화주사 B', vehicleNo: '예시 12가 3456', vehicleId: 'V1', zoneId: 'dock', unit: 'D1', screens: ['P-RCV-02', 'P-RCV-03'], basis: '승인된 입고예정 (예시)' },
+    { id: 'ARR-예시-003', shipper: '예시 화주사 A', vehicleNo: '예시 34나 5678', vehicleId: 'V2', zoneId: 'dock', unit: 'D3', screens: ['P-ARR-04'], basis: '승인된 입고예정 (예시)' },
+    { id: 'ARR-예시-004', shipper: '예시 화주사 B', vehicleNo: '예시 56다 7890', vehicleId: 'V3', zoneId: 'arrival', screens: ['P-ARR-01', 'P-ARR-02'], basis: '— (검색 중)' }
+  ],
+  // 수정되지 않는 기록. 화면에는 시간 역순으로 표시
+  logs: [
+    { time: '13:58', actor: '3PL 입차 접수 담당자', screen: 'P-ARR-01', action: '차량 도착 등록 — 같은 차량, 화주사별 입차 건 분리', target: 'ARR-예시-001 · 002' },
+    { time: '14:05', actor: '3PL 입차 접수 담당자', screen: 'P-ARR-01', action: '차량 도착 등록 — 입차 건 생성', target: 'ARR-예시-004' },
+    { time: '14:09', actor: '3PL 검수 담당자', screen: 'P-RCV-01', action: '입고 시작', target: 'ARR-예시-001' },
+    { time: '14:14', actor: '3PL 입차 접수 담당자', screen: 'P-ARR-02', action: '승인 기준·ASN 검색', target: 'ARR-예시-004' },
+    { time: '14:18', actor: '3PL 검수 담당자', screen: 'P-ARR-04', action: '도크·하역 전 확인', target: 'ARR-예시-003' },
+    { time: '14:22', actor: '3PL 검수 담당자', screen: 'P-RCV-03', action: '현장 예외 기록 · 도크 보류 생성', target: 'ARR-예시-002' },
+    { time: '14:27', actor: '3PL 보류·반송 실행 담당자', screen: 'P-HOLD-01', action: '표찰 확인 · 일반 보류구역 이동', target: 'HOLD-A-01' },
+    { time: '14:32', actor: '3PL 검수 담당자', screen: 'P-RCV-02', action: '품목 스캔·검수', target: 'ARR-예시-001' }
+  ]
+};
+
+/* =====================================================================
+ * RENDER — SVG 그리기. 모든 좌표는 gridToIso를 거친다.
+ * ===================================================================== */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// 격자 좌표(x, y, z) → 아이소메트릭 화면 좌표
+function gridToIso(x, y, z = 0) {
+  return {
+    x: (x - y) * ISO.tileW / 2,
+    y: (x + y) * ISO.tileH / 2 - z * ISO.zUnit
+  };
+}
+
+function el(tag, attrs = {}, parent) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+function pts(points) {
+  return points.map(([x, y, z = 0]) => {
+    const p = gridToIso(x, y, z);
+    return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+  }).join(' ');
+}
+
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => Math.min(255, Math.round(v * f)));
+  return `rgb(${c.join(',')})`;
+}
+
+function quad(r, z) {
+  return pts([[r.x, r.y, z], [r.x + r.w, r.y, z], [r.x + r.w, r.y + r.d, z], [r.x, r.y + r.d, z]]);
+}
+
+// 상자(윗면·좌측면·우측면). 보이는 면은 +x, +y 쪽 두 면. z0 = 바닥 높이
+function drawBox(parent, r, h, color, z0 = 0) {
+  const { x, y, w, d } = r;
+  const zt = z0 + h;
+  const g = el('g', {}, parent);
+  if (h > 0) {
+    el('polygon', { class: 'face', fill: shade(color, 0.84),
+      points: pts([[x, y + d, z0], [x + w, y + d, z0], [x + w, y + d, zt], [x, y + d, zt]]) }, g);
+    el('polygon', { class: 'face', fill: shade(color, 0.7),
+      points: pts([[x + w, y, z0], [x + w, y + d, z0], [x + w, y + d, zt], [x + w, y, zt]]) }, g);
+  }
+  el('polygon', { class: 'face', fill: color, points: quad(r, zt) }, g);
+  return g;
+}
+
+function outlinePoints(r, h) {
+  const { x, y, w, d } = r;
+  return h > 0
+    ? pts([[x, y, h], [x + w, y, h], [x + w, y, 0], [x + w, y + d, 0], [x, y + d, 0], [x, y + d, h]])
+    : quad(r, 0);
+}
+
+// 텍스트 폭 추정 (한글 ≈ 1em, 영숫자 ≈ 0.6em)
+function textW(str, size) {
+  let w = 0;
+  for (const ch of str) {
+    const c = ch.codePointAt(0);
+    w += c >= 0x1100 ? size : ch === ' ' ? size * 0.3 : /[A-Z0-9]/.test(ch) ? size * 0.64 : size * 0.56;
+  }
+  return w;
+}
+
+// 라벨·말풍선 배율: 장면이 축소돼도 화면에서 최소 12px을 유지한다
+let K = 1;
+function updateLabelScale() {
+  const ctm = document.getElementById('scene').getScreenCTM();
+  K = ctm && ctm.a ? Math.min(2.4, Math.max(1, 1 / ctm.a)) : 1;
+}
+// 장면이 많이 축소되면 보조 라벨(동선·팔레트 배지)을 숨기고 차량 칩을 줄인다
+const isCompact = () => K > 1.6;
+
+// 라벨 칩: variant = dark | mint | muted | light
+function chip(parent, cx, cy, lines, variant = 'dark', opts = {}) {
+  const styles = {
+    dark:  { fill: 'rgba(32,52,59,.9)', stroke: 'rgba(255,255,255,.28)', text: '#FFFFFF' },
+    muted: { fill: 'rgba(32,52,59,.62)', stroke: 'rgba(255,255,255,.28)', text: 'rgba(255,255,255,.88)', dash: '4 3' },
+    mint:  { fill: SCENE_COLORS.mint, stroke: SCENE_COLORS.deep, text: SCENE_COLORS.deep },
+    light: { fill: '#FFFFFF', stroke: 'rgba(32,52,59,.45)', text: SCENE_COLORS.deep }
+  }[variant];
+  const size0 = (opts.size || 13) * K, size1 = 12 * K, lh = 17 * K;
+  const w = Math.max(...lines.map((l, i) => textW(l, i ? size1 : size0))) + 16 * K;
+  const h = lines.length * lh + 7 * K;
+  const g = el('g', {}, parent);
+  el('rect', { x: cx - w / 2, y: cy - h / 2, width: w, height: h, rx: 6 * K,
+    fill: opts.fill || styles.fill, stroke: styles.stroke, 'stroke-width': variant === 'mint' ? 1.6 : 1,
+    'stroke-dasharray': styles.dash || 'none' }, g);
+  lines.forEach((line, i) => {
+    const t = el('text', { x: cx, y: cy - h / 2 + lh * 0.98 + i * lh, 'text-anchor': 'middle',
+      'font-size': i ? size1 : size0, 'font-weight': i ? 500 : 700, fill: opts.textFill || styles.text }, g);
+    t.textContent = line;
+  });
+  return { g, w, h };
+}
+
+// 바닥 면에 눕힌 글자 (기준선이 -y 방향)
+function floorText(parent, x, y, z, text, size, fill) {
+  const p = gridToIso(x, y, z);
+  const t = el('text', { transform: `matrix(0.894,-0.447,0.894,0.447,${p.x.toFixed(1)},${p.y.toFixed(1)})`,
+    'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': size, 'font-weight': 800,
+    fill, 'letter-spacing': 1 }, parent);
+  t.textContent = text;
+  return t;
+}
+
+/* ---------- 바닥·건물 ---------- */
+function renderFloor(layer) {
+  const { cols, rows } = CENTER_CONFIG.floor;
+  const b = CENTER_CONFIG.building;
+  el('polygon', { fill: SCENE_COLORS.asphalt, stroke: 'rgba(255,255,255,.12)', points: quad({ x: 0, y: 0, w: cols, d: rows }, 0) }, layer);
+  el('polygon', { fill: SCENE_COLORS.concrete, points: quad({ x: 0, y: 0, w: b.wallX, d: rows }, 0) }, layer);
+  for (let i = 1; i < cols; i++) el('polyline', { stroke: SCENE_COLORS.grid, fill: 'none', points: pts([[i, 0], [i, rows]]) }, layer);
+  for (let j = 1; j < rows; j++) el('polyline', { stroke: SCENE_COLORS.grid, fill: 'none', points: pts([[0, j], [cols, j]]) }, layer);
+
+  // 바깥 에이프런 차선: 도크 레인 경계
+  const dock = ZONES.find(z => z.kind === 'docks');
+  dockUnits(dock).forEach((u, i, arr) => {
+    if (i === 0) return;
+    const yLine = (arr[i - 1].rect.y + arr[i - 1].rect.d + u.rect.y) / 2;
+    el('polyline', { stroke: SCENE_COLORS.paintSoft, 'stroke-width': 2, fill: 'none',
+      points: pts([[dock.rect.x + dock.rect.w + 0.2, yLine], [19.2, yLine]]) }, layer);
+  });
+
+  // 건물 뒷벽 (안쪽 면이 보인다)
+  drawBox(layer, { x: 0, y: -0.25, w: b.wallX, d: 0.25 }, b.wallH, SCENE_COLORS.wall);
+  drawBox(layer, { x: -0.25, y: -0.25, w: 0.25, d: rows + 0.25 }, b.wallH, SCENE_COLORS.wall);
+
+  // 도크 면 외벽: 문 사이 벽체 + 문 아래 기초 + 문 위 헤더
+  const wx = b.wallX - 0.2;
+  const units = dockUnits(dock);
+  let cursor = 0;
+  for (const u of units) {
+    const doorY = u.rect.y + 0.3, doorD = u.rect.d - 0.6;
+    if (doorY > cursor) drawBox(layer, { x: wx, y: cursor, w: 0.2, d: doorY - cursor }, b.wallH, SCENE_COLORS.wall);
+    drawBox(layer, { x: wx, y: doorY, w: 0.2, d: doorD }, b.doorBottom, SCENE_COLORS.wall);
+    drawBox(layer, { x: wx, y: doorY, w: 0.2, d: doorD }, b.wallH - b.doorTop, SCENE_COLORS.wall, b.doorTop);
+    cursor = doorY + doorD;
+  }
+  if (cursor < rows) drawBox(layer, { x: wx, y: cursor, w: 0.2, d: rows - cursor }, b.wallH, SCENE_COLORS.wall);
+}
+
+/* ---------- 구역 ---------- */
+function dockUnits(zone) {
+  const n = CENTER_CONFIG.docks;
+  const { x, y, w, d } = zone.rect;
+  const unitD = (d - zone.unitGap * (n - 1)) / n;
+  return Array.from({ length: n }, (_, i) => ({ unit: `D${i + 1}`, rect: { x, y: y + i * (unitD + zone.unitGap), w, d: unitD } }));
+}
+
+// 구역 정의 → 그릴 단위 목록
+function expandZones() {
+  const items = [];
+  for (const zone of ZONES) {
+    if (zone.kind === 'docks') {
+      for (const u of dockUnits(zone)) items.push({ zone, unit: u.unit, rect: u.rect, height: zone.height });
+    } else if (zone.kind === 'holdZones') {
+      for (const hz of CENTER_CONFIG.holdZones) items.push({ zone, unit: hz.code, hold: hz, rect: hz.rect, height: 0 });
+    } else {
+      items.push({ zone, rect: zone.rect, height: zone.height || 0 });
+    }
+  }
+  return items.sort((a, b) => (a.rect.x + a.rect.y) - (b.rect.x + b.rect.y));
+}
+
+function renderZones(layer, items) {
+  for (const item of items) {
+    const { zone, rect, height } = item;
+    const g = el('g', {
+      class: 'zone', 'data-zone': zone.id, 'data-unit': item.unit || '',
+      tabindex: '0', role: 'button',
+      'aria-label': `${zone.name}${item.unit ? ' ' + item.unit : ''}${zone.kind === 'outOfScope' ? ' (범위 밖)' : ''}`
+    }, layer);
+
+    if (zone.kind === 'docks') {
+      drawBox(g, rect, height, SCENE_COLORS.platform);
+      // 도크 레벨러와 범퍼
+      const lev = { x: rect.x + rect.w - 0.6, y: rect.y + 0.35, w: 0.55, d: rect.d - 0.7 };
+      el('polygon', { fill: SCENE_COLORS.leveler, stroke: 'rgba(0,0,0,.25)', points: quad(lev, height + 0.01) }, g);
+      for (let k = 1; k < 5; k++) {
+        const yy = lev.y + lev.d * k / 5;
+        el('polyline', { stroke: 'rgba(0,0,0,.18)', fill: 'none', points: pts([[lev.x, yy, height + 0.01], [lev.x + lev.w, yy, height + 0.01]]) }, g);
+      }
+      for (const by of [rect.y + 0.35, rect.y + rect.d - 0.6]) {
+        drawBox(g, { x: rect.x + rect.w, y: by, w: 0.12, d: 0.25 }, 0.35, SCENE_COLORS.rubber, 0.1);
+      }
+      floorText(g, rect.x + 0.6, rect.y + rect.d / 2, height, item.unit, 26, 'rgba(255,255,255,.9)');
+    } else if (zone.kind === 'outOfScope') {
+      el('polygon', { fill: 'rgba(255,255,255,.025)', stroke: 'rgba(255,255,255,.32)', 'stroke-width': 1.5,
+        'stroke-dasharray': '9 6', points: quad(rect, 0) }, g);
+    } else if (zone.kind === 'pad') {
+      el('polygon', { fill: 'rgba(255,255,255,.035)', stroke: SCENE_COLORS.paintSoft, 'stroke-width': 1.5,
+        'stroke-dasharray': '10 6', points: quad(rect, 0) }, g);
+      // 정차선
+      el('polygon', { fill: SCENE_COLORS.paint, points: quad({ x: rect.x + 0.25, y: rect.y + 0.9, w: 0.18, d: 2.8 }, 0) }, g);
+    } else {
+      el('polygon', { fill: 'rgba(255,255,255,.05)', stroke: SCENE_COLORS.paint, 'stroke-width': 2, points: quad(rect, 0) }, g);
+      // 팔레트 놓는 자리 구획선
+      if (zone.kind === 'area') {
+        for (let yy = rect.y + 2.6; yy < rect.y + rect.d - 4; yy += 2.6) {
+          el('polyline', { stroke: 'rgba(255,255,255,.18)', 'stroke-dasharray': '6 5', fill: 'none',
+            points: pts([[rect.x + 0.2, yy], [rect.x + rect.w - 0.2, yy]]) }, g);
+        }
+      }
+    }
+    for (const sub of zone.subAreas || []) {
+      el('polygon', { fill: 'url(#hatch)', stroke: 'rgba(255,255,255,.75)', 'stroke-width': 1.5,
+        'stroke-dasharray': '6 4', points: quad(sub.rect, 0.01) }, g);
+    }
+    el('polygon', { class: 'outline', points: outlinePoints(rect, height) }, g);
+    item.node = g;
+  }
+}
+
+/* ---------- 동선 (바닥 페인트 화살표) ---------- */
+function paintArrow(layer, f) {
+  const dx = f.to.x - f.from.x, dy = f.to.y - f.from.y;
+  const len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len, px = -uy, py = ux;
+  const shaftW = 0.28, headW = 0.85, headL = 0.7;
+  const fill = f.kind === 'outscope' ? 'rgba(255,255,255,.38)' : SCENE_COLORS.paint;
+  const at = (s, o) => [f.from.x + ux * s + px * o, f.from.y + uy * s + py * o, 0.01];
+  const pattern = f.kind === 'exception' ? [0.42, 0.28] : f.kind === 'outscope' ? [0.16, 0.22] : [len, 0];
+  for (let s = 0; s < len - headL; s += pattern[0] + pattern[1]) {
+    const e = Math.min(s + pattern[0], len - headL);
+    el('polygon', { fill, points: pts([at(s, -shaftW / 2), at(e, -shaftW / 2), at(e, shaftW / 2), at(s, shaftW / 2)]) }, layer);
+  }
+  el('polygon', { fill, points: pts([at(len - headL, -headW / 2), at(len, 0), at(len - headL, headW / 2)]) }, layer);
+}
+
+function renderFlows(layer) {
+  for (const f of FLOWS) paintArrow(layer, f);
+}
+
+/* ---------- 소품 (layer-props) ---------- */
+function drawCone(parent, x, y) {
+  const p = gridToIso(x, y, 0);
+  el('ellipse', { cx: p.x + 3, cy: p.y + 2, rx: 9, ry: 4, fill: 'rgba(0,0,0,.3)' }, parent);
+  el('polygon', { fill: '#3A2A20', points: pts([[x - 0.2, y - 0.2], [x + 0.2, y - 0.2], [x + 0.2, y + 0.2], [x - 0.2, y + 0.2]]) }, parent);
+  el('path', { fill: SCENE_COLORS.cone, d: `M${p.x - 6},${p.y} L${p.x},${p.y - 22} L${p.x + 6},${p.y} Z` }, parent);
+  el('path', { fill: '#FFFFFF', d: `M${p.x - 3.6},${p.y - 8} L${p.x - 2.2},${p.y - 13} L${p.x + 2.2},${p.y - 13} L${p.x + 3.6},${p.y - 8} Z` }, parent);
+}
+
+function drawFence(parent, r, gate) {
+  const posts = [];
+  const step = 0.9;
+  const edge = (x0, y0, x1, y1) => {
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / step));
+    for (let i = 0; i <= n; i++) posts.push([x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]);
+  };
+  const { x, y, w, d } = r;
+  const rail = (a, b) => {
+    for (const z of [0.45, 0.85]) {
+      el('polyline', { stroke: 'rgba(220,228,230,.65)', 'stroke-width': 1.6, fill: 'none', points: pts([[...a, z], [...b, z]]) }, parent);
+    }
+  };
+  // 뒤쪽 두 변 → 앞쪽 두 변 (게이트 구간은 비움)
+  rail([x, y + d], [x, y]); rail([x, y], [x + w, y]);
+  rail([x + w, y], [x + w, gate[0]]); rail([x + w, gate[1]], [x + w, y + d]);
+  rail([x, y + d], [x + w, y + d]);
+  edge(x, y + d, x, y); edge(x, y, x + w, y); edge(x + w, y, x + w, gate[0]); edge(x + w, gate[1], x + w, y + d); edge(x, y + d, x + w, y + d);
+  for (const [px, py] of posts) {
+    const a = gridToIso(px, py, 0), b = gridToIso(px, py, 0.95);
+    el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: SCENE_COLORS.fence, 'stroke-width': 2.5 }, parent);
+  }
+}
+
+function drawBooth(parent, r) {
+  const g = el('g', {}, parent);
+  el('polygon', { fill: 'rgba(0,0,0,.28)', points: quad({ x: r.x + 0.15, y: r.y + 0.15, w: r.w + 0.3, d: r.d + 0.3 }, 0) }, g);
+  drawBox(g, r, 1.5, '#C8D3D5');
+  // 창
+  el('polygon', { fill: SCENE_COLORS.glass, points: pts([[r.x + 0.12, r.y + r.d, 0.75], [r.x + r.w - 0.12, r.y + r.d, 0.75], [r.x + r.w - 0.12, r.y + r.d, 1.3], [r.x + 0.12, r.y + r.d, 1.3]]) }, g);
+  drawBox(g, { x: r.x - 0.1, y: r.y - 0.1, w: r.w + 0.2, d: r.d + 0.2 }, 0.12, '#E9EEEF', 1.5);
+}
+
+function drawShutter(parent, x, y, d, open) {
+  const b = CENTER_CONFIG.building;
+  if (open) {
+    drawBox(parent, { x, y, w: 0.16, d }, 0.14, SCENE_COLORS.shutter, b.doorTop - 0.14);
+    return;
+  }
+  el('polygon', { fill: SCENE_COLORS.shutter, stroke: 'rgba(0,0,0,.25)',
+    points: pts([[x, y, b.doorBottom], [x, y + d, b.doorBottom], [x, y + d, b.doorTop], [x, y, b.doorTop]]) }, parent);
+  for (let z = b.doorBottom + 0.12; z < b.doorTop; z += 0.12) {
+    el('polyline', { stroke: 'rgba(0,0,0,.16)', fill: 'none', points: pts([[x, y, z], [x, y + d, z]]) }, parent);
+  }
+}
+
+function renderProps(layer, snapshot) {
+  const b = CENTER_CONFIG.building;
+  const dock = ZONES.find(z => z.kind === 'docks');
+  const docked = new Set(snapshot.vehicles.filter(v => v.zoneId === 'dock').map(v => v.unit));
+  for (const u of dockUnits(dock)) {
+    drawShutter(layer, b.wallX - 0.05, u.rect.y + 0.3, u.rect.d - 0.6, docked.has(u.unit));
+  }
+  const arrival = ZONES.find(z => z.id === 'arrival');
+  drawBooth(layer, { x: arrival.rect.x + 2.4, y: arrival.rect.y + 4.3, w: 0.9, d: 0.8 });
+  for (const hz of CENTER_CONFIG.holdZones) drawFence(layer, hz.rect, [hz.rect.y + 1.7, hz.rect.y + 2.9]);
+  drawCone(layer, 25.1, 2.9);
+  drawCone(layer, 25.1, 9.9);
+  drawCone(layer, 14.6, 10.6);
+  drawCone(layer, 14.6, 12.0);
+}
+
+/* ---------- 엔티티 컴포넌트 (layer-entities) ---------- */
+// 엔티티 위치: zoneId (+unit) + slot → 절대 격자 좌표
+function resolveSlot(ent) {
+  const zone = ZONES.find(z => z.id === ent.zoneId);
+  let origin = zone.rect, z = zone.height || 0;
+  if (zone.kind === 'docks') origin = dockUnits(zone).find(u => u.unit === ent.unit).rect;
+  if (zone.kind === 'holdZones') origin = (CENTER_CONFIG.holdZones.find(h => h.code === ent.unit) || CENTER_CONFIG.holdZones[0]).rect;
+  return { x: origin.x + ent.slot.x, y: origin.y + ent.slot.y, z };
+}
+
+const TRUCK = { len: 5.2, wid: 2.2, cargoLen: 3.8, cabLen: 1.3 };
+
+function drawTruck(parent, v, pos, highlighted) {
+  const g = el('g', { class: 'truck' + (highlighted ? ' is-highlight' : ''), 'data-vehicle': v.id }, parent);
+  const { len, wid, cargoLen, cabLen } = TRUCK;
+  const x0 = pos.x, y0 = pos.y;
+  const cabFirst = v.cab === '-x';
+  const cargo = { x: cabFirst ? x0 + cabLen + 0.1 : x0, y: y0, w: cargoLen, d: wid };
+  const cab = { x: cabFirst ? x0 : x0 + cargoLen + 0.1, y: y0 + 0.1, w: cabLen, d: wid - 0.2 };
+
+  el('polygon', { class: 'hl', fill: 'rgba(115,184,174,.25)', stroke: SCENE_COLORS.mint, 'stroke-width': 3,
+    points: quad({ x: x0 - 0.3, y: y0 - 0.3, w: len + 0.6, d: wid + 0.6 }, 0.01) }, g);
+  el('polygon', { fill: 'rgba(0,0,0,.32)', points: quad({ x: x0 + 0.2, y: y0 + 0.25, w: len, d: wid + 0.2 }, 0) }, g);
+
+  const parts = [
+    { r: { x: x0 + 0.2, y: y0 + 0.2, w: len - 0.4, d: wid - 0.4 }, h: 0.3, z0: 0.2, c: '#2A3134' },
+    { r: cargo, h: 2.0, z0: 0.5, c: SCENE_COLORS.cargo, cargo: true },
+    { r: cab, h: 1.5, z0: 0.35, c: SCENE_COLORS.cab, cab: true }
+  ];
+  const wheelU = cabFirst ? [0.5, cabLen + 1.0, cabLen + 2.2, len - 0.7] : [0.5, 1.7, cargoLen - 0.6, len - 0.8];
+  for (const u of wheelU) parts.push({ r: { x: x0 + u, y: y0 + wid - 0.02, w: 0.55, d: 0.1 }, h: 0.5, z0: 0, c: '#15191B' });
+  parts.sort((a, b) => (a.r.x + a.r.y) - (b.r.x + b.r.y));
+
+  for (const p of parts) {
+    drawBox(g, p.r, p.h, p.c, p.z0);
+    if (p.cargo) {
+      // 측면 띠
+      const r = p.r, ys = r.y + r.d;
+      el('polygon', { fill: 'rgba(32,52,59,.18)', points: pts([[r.x + 0.1, ys, 0.95], [r.x + r.w - 0.1, ys, 0.95], [r.x + r.w - 0.1, ys, 1.1], [r.x + 0.1, ys, 1.1]]) }, g);
+    }
+    if (p.cab) {
+      const r = p.r, ys = r.y + r.d;
+      // 옆 창
+      const wx0 = cabFirst ? r.x + 0.15 : r.x + 0.55, wx1 = cabFirst ? r.x + 0.75 : r.x + r.w - 0.15;
+      el('polygon', { fill: SCENE_COLORS.glass, points: pts([[wx0, ys, 1.2], [wx1, ys, 1.2], [wx1, ys, 1.7], [wx0, ys, 1.7]]) }, g);
+      if (!cabFirst) {
+        // 앞 유리 (+x 면)
+        const xf = r.x + r.w;
+        el('polygon', { fill: SCENE_COLORS.glass, points: pts([[xf, r.y + 0.15, 1.15], [xf, r.y + r.d - 0.15, 1.15], [xf, r.y + r.d - 0.15, 1.7], [xf, r.y + 0.15, 1.7]]) }, g);
+      }
+    }
+  }
+  return g;
+}
+
+function drawPallet(parent, pal, pos) {
+  const g = el('g', {}, parent);
+  const s = 1.1, z0 = pos.z;
+  el('polygon', { fill: 'rgba(0,0,0,.3)', points: quad({ x: pos.x + 0.12, y: pos.y + 0.12, w: s, d: s }, z0) }, g);
+  drawBox(g, { x: pos.x, y: pos.y, w: s, d: s }, 0.16, SCENE_COLORS.pallet, z0);
+  // 팔레트 틈
+  for (const f of [0.3, 0.7]) {
+    const yy = pos.y + s * f;
+    el('polygon', { fill: '#3B2A1C', points: pts([[pos.x + s, yy, z0 + 0.02], [pos.x + s, yy + 0.12, z0 + 0.02], [pos.x + s, yy + 0.12, z0 + 0.11], [pos.x + s, yy, z0 + 0.11]]) }, g);
+  }
+  const bs = 0.52, bh = 0.34, gap = 0.03;
+  for (let l = 0; l < pal.layers; l++) {
+    const bz = z0 + 0.16 + l * bh;
+    for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      const r = { x: pos.x + gap + i * (bs + gap), y: pos.y + gap + j * (bs + gap), w: bs, d: bs };
+      drawBox(g, r, bh - 0.01, shade(SCENE_COLORS.kraft, 1 - ((i + j + l) % 2) * 0.05), bz);
+      // 테이프
+      el('polyline', { stroke: 'rgba(120,80,40,.45)', 'stroke-width': 1.2, fill: 'none',
+        points: pts([[r.x + r.w / 2, r.y, bz + bh - 0.01], [r.x + r.w / 2, r.y + r.d, bz + bh - 0.01]]) }, g);
+    }
+  }
+  if (pal.tag) {
+    // 임시 표찰 (+y 면, 맨 위 단 앞 상자)
+    const ty = pos.y + gap + 2 * bs + gap;
+    const tz = z0 + 0.16 + (pal.layers - 1) * bh;
+    const tx = pos.x + 0.1;
+    el('polygon', { fill: '#FFFFFF', stroke: SCENE_COLORS.deep, 'stroke-width': 0.8,
+      points: pts([[tx, ty + 0.01, tz + 0.05], [tx + 0.36, ty + 0.01, tz + 0.05], [tx + 0.36, ty + 0.01, tz + 0.29], [tx, ty + 0.01, tz + 0.29]]) }, g);
+    for (const dz of [0.12, 0.2]) {
+      el('polyline', { stroke: SCENE_COLORS.deep, 'stroke-width': 1, fill: 'none', points: pts([[tx + 0.05, ty + 0.01, tz + dz], [tx + 0.3, ty + 0.01, tz + dz]]) }, g);
+    }
+  }
+  return g;
+}
+
+function drawWorker(parent, wk, pos) {
+  const p = gridToIso(pos.x, pos.y, pos.z);
+  const g = el('g', { transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)})` }, parent);
+  el('ellipse', { cx: 2, cy: 1, rx: 10, ry: 4.5, fill: 'rgba(0,0,0,.35)' }, g);
+  // 다리
+  el('rect', { x: -5, y: -16, width: 4.5, height: 16, rx: 2, fill: '#2E3A3F' }, g);
+  el('rect', { x: 0.8, y: -16, width: 4.5, height: 16, rx: 2, fill: '#26323A' }, g);
+  // 몸통 + 조끼
+  el('rect', { x: -7, y: -33, width: 14, height: 19, rx: 5, fill: '#3E5A63' }, g);
+  el('path', { d: 'M-7,-28 Q-7,-33 -2,-33 L-2,-14 L-7,-14 Z M7,-28 Q7,-33 2,-33 L2,-14 L7,-14 Z', fill: wk.vest }, g);
+  el('rect', { x: -7, y: -22, width: 14, height: 2.2, fill: 'rgba(255,255,255,.75)' }, g);
+  // 팔 + PDA
+  el('rect', { x: 4, y: -30, width: 4, height: 12, rx: 2, fill: '#3E5A63', transform: 'rotate(-35 6 -30)' }, g);
+  el('rect', { x: 8, y: -27, width: 6, height: 8, rx: 1.2, fill: '#1B2427' }, g);
+  el('rect', { x: 9, y: -26, width: 4, height: 4, fill: '#9FD3F0' }, g);
+  // 머리 + 안전모
+  el('circle', { cx: 0, cy: -39, r: 6, fill: SCENE_COLORS.skin }, g);
+  el('path', { d: 'M-6.8,-40 A6.8,6.8 0 0 1 6.8,-40 L7.8,-39 L-7.8,-39 Z', fill: '#F4F7F7' }, g);
+  return { g, head: { x: p.x, y: p.y - 48 } };
+}
+
+function drawBubble(parent, anchor, screen, action) {
+  const text = `${screen} ${action}`;
+  const fs = 12 * K, r = 6 * K, tail = 8 * K;
+  const w = textW(screen, fs) * 0.95 + textW(' ' + action, fs) + 18 * K, h = 24 * K;
+  const x = anchor.x - w / 2, y = anchor.y - h - tail - 2;
+  const g = el('g', {}, parent);
+  el('path', { fill: '#FFFFFF', stroke: 'rgba(32,52,59,.55)', 'stroke-width': 1,
+    d: `M${x + r},${y} h${w - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - 2 * r} a${r},${r} 0 0 1 ${-r},${r} h${-(w / 2 - r - tail * 0.6)} l${-tail * 0.6},${tail} l${-tail * 0.3},${-tail} h${-(w / 2 - r - tail * 0.3)} a${r},${r} 0 0 1 ${-r},${-r} v${-(h - 2 * r)} a${r},${r} 0 0 1 ${r},${-r} z` }, g);
+  const t = el('text', { x: anchor.x, y: y + h * 0.69, 'text-anchor': 'middle', 'font-size': fs, fill: SCENE_COLORS.deep }, g);
+  const s1 = el('tspan', { 'font-weight': 800, 'font-family': 'ui-monospace, Consolas, monospace' }, t);
+  s1.textContent = screen;
+  const s2 = el('tspan', { 'font-weight': 600 }, t);
+  s2.textContent = ' ' + action;
+  g.setAttribute('aria-label', text);
+  return g;
+}
+
+function tempChip(parent, cx, cy, temp, text) {
+  const tb = TEMP_BADGE[temp];
+  return chip(parent, cx, cy, [text], 'light', { fill: tb.fill, textFill: tb.text, size: 12 });
+}
+
+function renderEntities(layer, snapshot, highlightVehicleId) {
+  layer.replaceChildren();
+  const bodies = [];
+  for (const v of snapshot.vehicles) bodies.push({ kind: 'vehicle', ent: v, pos: resolveSlot(v) });
+  for (const p of snapshot.pallets) bodies.push({ kind: 'pallet', ent: p, pos: resolveSlot(p) });
+  for (const w of snapshot.workers) bodies.push({ kind: 'worker', ent: w, pos: resolveSlot(w) });
+  // 아이소메트릭 겹침: (x + y)가 작은 것부터
+  bodies.sort((a, b) => (a.pos.x + a.pos.y) - (b.pos.x + b.pos.y));
+
+  const overlay = [];
+  for (const b of bodies) {
+    if (b.kind === 'vehicle') {
+      const on = b.ent.id === highlightVehicleId;
+      const node = drawTruck(layer, b.ent, b.pos, on);
+      node.addEventListener('click', () => UI.selectVehicle(b.ent.id));
+      const top = gridToIso(b.pos.x + TRUCK.len / 2, b.pos.y + TRUCK.wid / 2, 2.5);
+      const label = isCompact()
+        ? `${b.ent.unit || b.ent.status} · ${b.ent.tempZone}`
+        : (b.ent.unit ? `${b.ent.unit} · ${b.ent.status}` : b.ent.status) + ` · ${b.ent.tempZone}(예시)`;
+      // chipAt: 라벨 칩 위치(차량 기준 격자 오프셋, 표시용)
+      const at = b.ent.chipAt ? gridToIso(b.pos.x + b.ent.chipAt.x, b.pos.y + b.ent.chipAt.y, 2.3) : top;
+      overlay.push(() => {
+        tempChip(layer, at.x, at.y - 14 * K, b.ent.tempZone, label);
+        if (on) chip(layer, at.x, at.y - 40 * K, ['▶ 선택됨'], 'mint', { size: 12 });
+      });
+    } else if (b.kind === 'pallet') {
+      drawPallet(layer, b.ent, b.pos);
+      if (b.ent.badge && !isCompact()) {
+        const top = gridToIso(b.pos.x + 0.55, b.pos.y + 0.55, b.pos.z + 0.2 + b.ent.layers * 0.34);
+        overlay.push(() => tempChip(layer, top.x, top.y - 14 * K, b.ent.tempZone, `${b.ent.tag} · ${b.ent.tempZone}(예시)`));
+      }
+    } else {
+      const { head } = drawWorker(layer, b.ent, b.pos);
+      overlay.push({ bubble: true, run: () => drawBubble(layer, head, b.ent.task.screen, b.ent.task.action) });
+    }
+  }
+  // 칩 → 말풍선 순서로 맨 위에 그린다
+  overlay.filter(o => typeof o === 'function').forEach(fn => fn());
+  overlay.filter(o => o.bubble).forEach(o => o.run());
+}
+
+/* ---------- 라벨 ---------- */
+function renderLabels(layer, selectedZoneId) {
+  layer.replaceChildren();
+  for (const zone of ZONES) {
+    const on = zone.id === selectedZoneId;
+    const variant = on ? 'mint' : zone.kind === 'outOfScope' ? 'muted' : 'dark';
+    const place = (lines, at) => {
+      const p = gridToIso(at.x, at.y, at.z || 0);
+      chip(layer, p.x, p.y, on ? ['▶ 선택됨 · ' + lines[0], ...lines.slice(1)] : lines, variant);
+    };
+    if (zone.kind === 'holdZones') {
+      for (const hz of CENTER_CONFIG.holdZones) {
+        place(['일반 입고 보류구역', `${hz.code} · 수용 ${hz.tempZone} (예시값)`], { x: -0.25, y: hz.rect.y + hz.rect.d / 2, z: 3.4 });
+      }
+      continue;
+    }
+    place(zone.label, zone.labelAt);
+    for (const sub of zone.subAreas || []) {
+      const p = gridToIso(sub.rect.x + sub.rect.w / 2, sub.rect.y + sub.rect.d - 0.5, 0);
+      chip(layer, p.x, p.y, [sub.label], 'dark', { size: 12 });
+    }
+  }
+  if (isCompact()) return;
+  for (const f of FLOWS) {
+    const p = gridToIso(f.labelAt.x, f.labelAt.y, 0);
+    chip(layer, p.x, p.y, [f.label], f.kind === 'outscope' ? 'muted' : 'dark', { size: 12 });
+  }
+}
+
+function fitViewBox(svg) {
+  const { cols, rows } = CENTER_CONFIG.floor;
+  const corners = [[0, 0, 3], [cols, 0, 0], [0, rows, 0], [cols, rows, 0], [0, -1.5, 3], [-0.5, 3, 3]].map(([x, y, z]) => gridToIso(x, y, z));
+  const xs = corners.map(c => c.x), ys = corners.map(c => c.y);
+  const minX = Math.min(...xs) - 60, maxX = Math.max(...xs) + 40;
+  const minY = Math.min(...ys) - 60, maxY = Math.max(...ys) + 20;
+  svg.setAttribute('viewBox', `${minX} ${minY} ${maxX - minX} ${maxY - minY}`);
+}
+
+function renderScene(snapshot) {
+  const items = expandZones();
+  renderFloor(document.getElementById('layer-floor'));
+  renderZones(document.getElementById('layer-zones'), items);
+  renderFlows(document.getElementById('layer-flow'));
+  renderProps(document.getElementById('layer-props'), snapshot);
+  renderEntities(document.getElementById('layer-entities'), snapshot, null);
+  renderLabels(document.getElementById('layer-labels'), null);
+  fitViewBox(document.getElementById('scene'));
+  return items;
+}
+
+/* =====================================================================
+ * UI — 선택 상태, 좌측 목록, 우측 탭, 범례
+ * ===================================================================== */
+const uiState = { zoneId: null, unit: null, arrivalId: null, vehicleId: null, tab: 'zone' };
+let sceneItems = [];
+const snapshot = SAMPLE_SNAPSHOT;
+
+function h(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
+  for (const c of [].concat(children)) if (c != null) node.append(c);
+  return node;
+}
+
+function zoneDisplayName(zoneId, unit) {
+  const zone = ZONES.find(z => z.id === zoneId);
+  if (!zone) return '—';
+  if (zone.kind === 'docks' && unit) return `입고 도크 ${unit}`;
+  return zone.name + (zone.nameNote ? ` (${zone.nameNote})` : '');
+}
+
+function chipRow(label, list) {
+  return h('div', { className: 'chip-group' },
+    [h('span', { textContent: label }), h('div', { className: 'chips' }, list.map(s => h('span', { className: 'chip', textContent: s })))]);
+}
+
+function kv(pairs) {
+  return h('dl', { className: 'kv' }, pairs.flatMap(([k, v]) => [h('dt', { textContent: k }), h('dd', {}, [v])]));
+}
+
+function screensBlock(screens) {
+  if (!screens.length) return [h('p', { textContent: '—' })];
+  const pda = screens.filter(s => s.startsWith('P-')), web = screens.filter(s => s.startsWith('W-'));
+  return [pda.length ? chipRow('PDA', pda) : null, web.length ? chipRow('Web', web) : null].filter(Boolean);
+}
+
+function renderDefaultPanel(panel) {
+  panel.replaceChildren(
+    h('h2', { textContent: CENTER_CONFIG.name }),
+    h('div', { className: 'info-sub', textContent: '예시값 · 정지 화면' }),
+    h('p', { textContent: '장면에서 구역을 클릭하거나 Tab 키로 이동한 뒤 Enter를 누르면 구역 정보를 볼 수 있습니다. 왼쪽 입차 건을 누르면 해당 차량이 강조됩니다.' }),
+    h('h3', { textContent: '동선 순서' }),
+    h('ul', {}, ['입차 접수', '도크·하역', '도크 검수구역', '(예외 시) 보류', '후속 업무 (범위 밖)'].map(t => h('li', { textContent: t }))),
+    h('h3', { textContent: '센터 설정' }),
+    kv([
+      ['도크 수', `${CENTER_CONFIG.docks}개 (예시값)`],
+      ['일반 보류구역', `${CENTER_CONFIG.holdZones.length}개 (예시값)`],
+      ['보관온도대', CENTER_CONFIG.tempZones.join(' · ')],
+      ['집계', '—']
+    ])
+  );
+}
+
+function renderZonePanel(panel, zone, unit) {
+  const info = zone.info;
+  const facts = [];
+  if (zone.kind === 'docks' && unit) facts.push(['선택한 도크', `${unit} (예시값)`]);
+  if (zone.kind === 'holdZones') {
+    const hz = CENTER_CONFIG.holdZones.find(x => x.code === unit) || CENTER_CONFIG.holdZones[0];
+    facts.push(['보류 위치 코드', `${hz.code} (예시값)`], ['수용 보관온도대', `${hz.tempZone} (예시값)`]);
+  }
+  facts.push(['집계', '—']);
+  panel.replaceChildren(
+    h('span', { className: 'sel-flag', textContent: '▶ 선택됨' }),
+    h('h2', { textContent: zone.name + (zone.nameNote ? ` (${zone.nameNote})` : '') }),
+    h('div', { className: 'info-sub', textContent: info.sub || '' }),
+    kv(facts),
+    h('h3', { textContent: '역할' }),
+    ...info.role.map(t => h('p', { textContent: t })),
+    h('h3', { textContent: '관련 화면 ID' }),
+    ...screensBlock(info.screens),
+    h('h3', { textContent: '관련 프로세스 단계' }),
+    h('ul', {}, info.steps.map(s => h('li', { textContent: s }))),
+    h('h3', { textContent: '미확정 항목' }),
+    h('ul', { className: 'undecided' }, info.undecided.map(s => h('li', { textContent: s })))
+  );
+}
+
+function renderArrivalPanel(panel, arr) {
+  const vehicle = snapshot.vehicles.find(v => v.id === arr.vehicleId);
+  const siblings = snapshot.arrivals.filter(a => a.vehicleId === arr.vehicleId && a.id !== arr.id);
+  panel.replaceChildren(
+    h('span', { className: 'sel-flag', textContent: '▶ 선택된 입차 건' }),
+    h('h2', { textContent: arr.id }),
+    h('div', { className: 'info-sub', textContent: '예시 데이터 · 장면의 해당 차량을 민트 테두리로 표시했습니다.' }),
+    kv([
+      ['화주사', arr.shipper],
+      ['실제 차량번호', arr.vehicleNo],
+      ['현재 구역', zoneDisplayName(arr.zoneId, arr.unit)],
+      ['연결 기준', arr.basis],
+      ['차량 온도대', vehicle ? `${vehicle.tempZone} (예시)` : '—']
+    ]),
+    h('h3', { textContent: '관련 화면 ID' }),
+    ...screensBlock(arr.screens),
+    h('h3', { textContent: '같은 차량의 다른 입차 건' }),
+    siblings.length
+      ? h('div', {}, siblings.map(s => {
+          const b = h('button', { type: 'button', className: 'link-btn', textContent: `${s.id} · ${s.shipper}` });
+          b.addEventListener('click', () => UI.selectArrival(s.id));
+          return b;
+        }))
+      : h('p', { textContent: '없음' }),
+    h('div', { className: 'note-box', textContent: '차량번호는 고유 키가 아닙니다. 같은 차량이라도 화주사가 다르면 입차 건을 따로 만듭니다(P-ARR-01).' }),
+    (() => {
+      const b = h('button', { type: 'button', className: 'link-btn', textContent: '현재 구역 정보 보기' });
+      b.style.marginTop = '12px';
+      b.addEventListener('click', () => UI.selectZone(arr.zoneId, arr.unit));
+      return b;
+    })()
+  );
+}
+
+function renderPeoplePanel(panel) {
+  const items = snapshot.workers.map(w => h('li', {}, [
+    h('div', { className: 'role' }, [h('span', { className: 'vest', style: `background:${w.vest}` }), w.role]),
+    h('div', { className: 'where', textContent: `현재 구역 · ${zoneDisplayName(w.zoneId, w.unit)}` }),
+    h('div', { className: 'chips', style: 'margin-top:4px' }, [h('span', { className: 'chip', textContent: w.task.screen }), h('span', { textContent: w.task.action })])
+  ]));
+  for (const s of snapshot.webStaff) {
+    items.push(h('li', {}, [
+      h('div', { className: 'role' }, [s.role, h('span', { className: 'web', textContent: 'Web 근무' })]),
+      h('div', { className: 'where', textContent: '현장 장면에 배치하지 않음' }),
+      h('div', { className: 'chips', style: 'margin-top:4px' }, [h('span', { className: 'chip', textContent: s.task.screen }), h('span', { textContent: s.task.action })])
+    ]));
+  }
+  panel.replaceChildren(
+    h('h2', { textContent: '현장 인원' }),
+    h('div', { className: 'info-sub', textContent: `예시 데이터 · 스냅샷 ${snapshot.time} 기준 · 인원 집계 —` }),
+    h('ul', { className: 'people' }, items)
+  );
+}
+
+function renderLogsPanel(panel) {
+  const logs = [...snapshot.logs].sort((a, b) => b.time.localeCompare(a.time));
+  panel.replaceChildren(
+    h('h2', { textContent: '작업 이력' }),
+    h('div', { className: 'info-sub', textContent: '예시 데이터 · 시간 역순 · 기록은 수정하지 않고 조회만 합니다.' }),
+    h('ol', { className: 'logs' }, logs.map(l => h('li', {}, [
+      h('div', {}, [h('span', { className: 'time', textContent: l.time }), '  ', h('span', { className: 'who', textContent: l.actor })]),
+      h('div', { className: 'act' }, [h('span', { className: 'chip', textContent: l.screen }), ' ', l.action]),
+      h('div', { className: 'who', textContent: `대상 · ${l.target}` })
+    ])))
+  );
+}
+
+function renderArrivalList() {
+  const list = document.getElementById('arrival-list');
+  list.replaceChildren(...snapshot.arrivals.map(a => {
+    const btn = h('button', { type: 'button', className: 'arrival-item' }, [
+      h('span', { className: 'aid' }, [a.id, h('em', { textContent: '선택됨' })]),
+      h('span', { className: 'meta' }, [h('b', { textContent: a.shipper }), ` · ${a.vehicleNo}`]),
+      h('span', { className: 'meta', textContent: `현재 구역 · ${zoneDisplayName(a.zoneId, a.unit)}` }),
+      h('span', { className: 'chips' }, a.screens.map(s => h('span', { className: 'chip', textContent: s })))
+    ]);
+    btn.dataset.arrival = a.id;
+    btn.setAttribute('aria-pressed', 'false');
+    btn.addEventListener('click', () => { UI.selectArrival(a.id); setDrawer(false); });
+    return h('li', {}, btn);
+  }));
+}
+
+function setTab(tab, focus) {
+  uiState.tab = tab;
+  for (const t of ['zone', 'people', 'logs']) {
+    const btn = document.getElementById(`tab-${t}`);
+    const on = t === tab;
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    btn.tabIndex = on ? 0 : -1;
+    document.getElementById(`panel-${t}`).hidden = !on;
+    if (on && focus) btn.focus();
+  }
+}
+
+function refresh() {
+  for (const item of sceneItems) {
+    const on = item.zone.id === uiState.zoneId;
+    item.node.classList.toggle('is-selected', on);
+    item.node.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  renderLabels(document.getElementById('layer-labels'), uiState.zoneId);
+  renderEntities(document.getElementById('layer-entities'), snapshot, uiState.vehicleId);
+  document.querySelectorAll('.arrival-item').forEach(b =>
+    b.setAttribute('aria-pressed', b.dataset.arrival === uiState.arrivalId ? 'true' : 'false'));
+
+  const panel = document.getElementById('panel-zone');
+  const arr = snapshot.arrivals.find(a => a.id === uiState.arrivalId);
+  const zone = ZONES.find(z => z.id === uiState.zoneId);
+  if (arr) renderArrivalPanel(panel, arr);
+  else if (zone) renderZonePanel(panel, zone, uiState.unit);
+  else renderDefaultPanel(panel);
+}
+
+const UI = {
+  selectZone(zoneId, unit) {
+    Object.assign(uiState, { zoneId, unit: unit || null, arrivalId: null, vehicleId: null });
+    setTab('zone');
+    refresh();
+  },
+  selectArrival(arrivalId) {
+    const arr = snapshot.arrivals.find(a => a.id === arrivalId);
+    Object.assign(uiState, { zoneId: null, unit: null, arrivalId, vehicleId: arr ? arr.vehicleId : null });
+    setTab('zone');
+    refresh();
+  },
+  selectVehicle(vehicleId) {
+    const arr = snapshot.arrivals.find(a => a.vehicleId === vehicleId);
+    if (arr) UI.selectArrival(arr.id);
+  },
+  clear() {
+    Object.assign(uiState, { zoneId: null, unit: null, arrivalId: null, vehicleId: null });
+    refresh();
+  }
+};
+
+function setDrawer(open) {
+  document.body.classList.toggle('drawer-open', open);
+  document.getElementById('drawer-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function legendSvg(inner, w = 28, hgt = 18) {
+  return `<svg width="${w}" height="${hgt}" viewBox="0 0 ${w} ${hgt}" aria-hidden="true">${inner}</svg>`;
+}
+
+function renderLegend() {
+  const C = SCENE_COLORS;
+  const items = [
+    [legendSvg(`<rect x="1" y="1" width="26" height="16" rx="3" fill="${C.asphalt}"/><rect x="5" y="5" width="18" height="8" fill="rgba(255,255,255,.08)" stroke="#fff" stroke-width="1.5"/>`), '구역(바닥 흰 구획선)'],
+    [legendSvg(`<rect x="1" y="1" width="26" height="16" rx="3" fill="${C.asphalt}"/><rect x="4" y="4" width="20" height="10" fill="rgba(115,184,174,.35)" stroke="${C.mint}" stroke-width="2.5"/>`), '선택된 구역 (민트 테두리·채움 + "▶ 선택됨" 라벨)'],
+    [legendSvg(`<rect x="1" y="1" width="26" height="16" rx="3" fill="${C.asphalt}"/><rect x="4" y="4" width="20" height="10" fill="none" stroke="rgba(255,255,255,.5)" stroke-dasharray="4 3"/>`), '점선·흐린 톤 = 범위 밖'],
+    [legendSvg(`<rect x="1" y="1" width="26" height="16" rx="3" fill="${C.asphalt}"/><path d="M4,6 l20,0 M4,10 l20,0 M4,14 l20,0" stroke="rgba(255,255,255,.35)" stroke-width="2" transform="rotate(-30 14 9)"/><rect x="4" y="4" width="20" height="10" fill="none" stroke="#fff" stroke-dasharray="4 3"/>`), '빗금 = 도크 보류'],
+    [legendSvg(`<rect x="1" y="1" width="34" height="16" rx="3" fill="${C.asphalt}"/><path d="M4,8 h20 v-2.5 l7,4 l-7,4 v-2.5 h-20z" fill="#fff"/>`, 36), '정상 동선'],
+    [legendSvg(`<rect x="1" y="1" width="34" height="16" rx="3" fill="${C.asphalt}"/><path d="M4,8 h5 v3 h-5z M12,8 h5 v3 h-5z M20,8 h4 v3 h-4z M24,6 l7,4 l-7,4z" fill="#fff"/>`, 36), '예외 시 동선'],
+    [legendSvg(`<rect x="1" y="5" width="15" height="10" fill="${C.cargo}" stroke="#8A9DA2"/><rect x="17" y="7" width="8" height="8" fill="${C.cab}"/><circle cx="6" cy="16" r="2" fill="#15191B"/><circle cx="21" cy="16" r="2" fill="#15191B"/>`), '트럭'],
+    [legendSvg(`<rect x="5" y="3" width="8" height="6" fill="${C.kraft}"/><rect x="14" y="3" width="8" height="6" fill="${C.kraft}"/><rect x="5" y="9" width="17" height="5" fill="${shade(C.kraft, .85)}"/><rect x="3" y="14" width="21" height="3" fill="${C.pallet}"/>`), '팔레트·박스'],
+    [legendSvg(`<circle cx="14" cy="4" r="3" fill="${C.skin}"/><rect x="10" y="7" width="8" height="7" rx="2" fill="#E8833A"/><rect x="11" y="14" width="2.5" height="4" fill="#2E3A3F"/><rect x="14.5" y="14" width="2.5" height="4" fill="#2E3A3F"/>`), '작업자 (조끼 색 = 역할)'],
+    [legendSvg(`<rect x="7" y="3" width="14" height="11" fill="#fff" stroke="${C.deep}"/><path d="M10,7 h8 M10,10 h8" stroke="${C.deep}"/>`), '임시 표찰'],
+  ];
+  const host = document.getElementById('legend');
+  host.replaceChildren(h('span', { className: 'legend-title', textContent: '범례' }));
+  for (const [svg, text] of items) {
+    const it = h('span', { className: 'legend-item' });
+    it.innerHTML = svg;
+    it.append(text);
+    host.append(it);
+  }
+  const temps = h('span', { className: 'legend-item' }, ['온도대 배지']);
+  for (const t of CENTER_CONFIG.tempZones) {
+    temps.append(h('span', { className: 'chip', textContent: t, style: `background:${TEMP_BADGE[t].fill};font-family:inherit` }));
+  }
+  host.append(temps);
+  host.append(h('span', { className: 'legend-item' }, [h('span', { className: 'tag-example', textContent: '예시값' }), '확정되지 않아 임시로 넣은 값']));
+  host.append(h('span', { className: 'legend-item', textContent: '— = 집계 미연동' }));
+}
+
+function bindUI() {
+  for (const item of sceneItems) {
+    const go = () => UI.selectZone(item.zone.id, item.unit);
+    item.node.addEventListener('click', go);
+    item.node.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+    });
+  }
+  const tabs = ['zone', 'people', 'logs'];
+  tabs.forEach((t, i) => {
+    const btn = document.getElementById(`tab-${t}`);
+    btn.addEventListener('click', () => setTab(t));
+    btn.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight') setTab(tabs[(i + 1) % tabs.length], true);
+      if (e.key === 'ArrowLeft') setTab(tabs[(i + tabs.length - 1) % tabs.length], true);
+    });
+  });
+  document.getElementById('drawer-toggle').addEventListener('click', () => setDrawer(!document.body.classList.contains('drawer-open')));
+  document.getElementById('drawer-close').addEventListener('click', () => setDrawer(false));
+  document.getElementById('backdrop').addEventListener('click', () => setDrawer(false));
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (document.body.classList.contains('drawer-open')) setDrawer(false);
+    else UI.clear();
+  });
+}
+
+function initUI() {
+  document.getElementById('center-option').textContent = CENTER_CONFIG.name;
+  document.getElementById('snapshot-time').textContent = `스냅샷 ${snapshot.time} (예시)`;
+  renderArrivalList();
+  renderPeoplePanel(document.getElementById('panel-people'));
+  renderLogsPanel(document.getElementById('panel-logs'));
+  renderLegend();
+  bindUI();
+  refresh();
+}
+
+/* =====================================================================
+ * SIMULATION — 이번 단계에서는 구현하지 않는다.
+ * TODO: 시나리오 엔진이 SAMPLE_SNAPSHOT과 같은 구조의 스냅샷을 만들어 renderEntities()에 넘긴다
+ * TODO: 엔티티 위치는 zoneId + slot으로만 바꾸고, 화면 좌표는 resolveSlot → gridToIso가 계산한다
+ * TODO: 재생 / 일시정지 / 배속 버튼 연결 (헤더 .controls)
+ * TODO: 상태 전이는 확정 문서(입고 상태 전이 및 완료 조건)를 기준으로만 추가한다
+ * ===================================================================== */
+
+sceneItems = renderScene(snapshot);
+updateLabelScale();
+initUI();
+// 화면 크기가 바뀌면 라벨 배율을 다시 계산한다
+new ResizeObserver(() => requestAnimationFrame(() => {
+  const prev = K;
+  updateLabelScale();
+  if (Math.abs(prev - K) > 0.02) refresh();
+})).observe(document.querySelector('.stage'));
+</script>
+</body>
+</html>

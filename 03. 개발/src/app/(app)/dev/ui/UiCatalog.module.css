@@ -1,0 +1,88 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.secHead h2 {
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+
+.secHead p {
+  color: var(--muted);
+  font-size: var(--fs-13);
+  margin-top: 2px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.swGroup h3 {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.sw {
+  border: 1px solid var(--line);
+  border-radius: var(--r-group);
+  overflow: hidden;
+}
+
+.chip {
+  height: 48px;
+  border-bottom: 1px solid var(--line);
+}
+
+.meta {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.meta strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.type {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-group);
+  padding: 14px 16px;
+}
+
+.display {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+.display span {
+  color: var(--violet-600);
+}
+
+.noCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
