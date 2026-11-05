@@ -13,7 +13,11 @@ import { can } from "@/domain/permissions";
 import { CANCEL_GROUP, PLAN_REJECT_GROUP } from "@/domain/master";
 import { PLAN_STATUS_META, type PlanStatus } from "@/domain/plan-status";
 import { CONFLICT_MSG, SAVE_CONFLICT_MSG, canReview, canShipperEdit, nextPlanNo, planNoPrefix } from "@/domain/plan-rules";
+import { approvedCancelBlock } from "@/domain/inquiry-rules";
 import { todayKst } from "@/lib/format";
+
+/** 승인 건 취소 시점 version 불일치 (그사이 검수 배분 등으로 바뀜) */
+const INQUIRY_CONFLICT_MSG = "그사이 내용이 바뀐 입고예정입니다. 최신 내용을 확인한 뒤 다시 처리하세요.";
 
 type Tx = Prisma.TransactionClient;
 export type PlanActor = Pick<SessionUser, "id" | "name" | "roles" | "clientId" | "centerId">;
@@ -209,6 +213,60 @@ export async function cancelPlanByShipper(
         return ok(`${cur.planNo}을(를) 취소했습니다.`);
       }),
     SAVE_CONFLICT_MSG,
+  );
+}
+
+/* ═════════ 3PL: 승인 건 취소 (입고예정 조회 상세, C3·D5) ═════════ */
+
+/**
+ * 승인 건 취소 — 3PL만, 승인 상태, 후행 전표(취소되지 않은 ASN·검수 배분)가 없을 때만, 사유 필수, 최종 상태 "취소".
+ * ASN 분배(asn/service)가 입고예정 라인을 FOR UPDATE로 잠그고 상태를 확인하므로, 여기서도 같은 라인을 먼저 잠근다.
+ */
+export async function cancelApprovedPlan(
+  me: PlanActor,
+  input: { id: number; version: number; reasonCode: string; reasonText?: string },
+): Promise<ActionResult> {
+  if (!can(me.roles, "planInquiry", "edit")) return forbidden();
+  const text = input.reasonText?.trim() ?? "";
+  if (text.length > 500) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
+  return guarded(
+    () =>
+      db.$transaction(async (tx) => {
+        const cur = await tx.inboundPlan.findUnique({ where: { id: input.id }, include: { lines: { select: { id: true }, orderBy: { id: "asc" } } } });
+        if (!cur || (me.centerId && cur.centerId !== me.centerId)) return notFound();
+        const ids = cur.lines.map((l) => l.id);
+        if (ids.length) await tx.$queryRaw`SELECT id FROM tb_inb_plan_d WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`;
+        const [activeAsnCount, allocCount] = await Promise.all([
+          tx.asn.count({ where: { status: { not: "CANCELED" }, lines: { some: { planId: cur.id } } } }),
+          tx.rcvAlloc.count({ where: { planLineId: { in: ids }, reverse: false } }),
+        ]);
+        const block = approvedCancelBlock({ status: cur.status, activeAsnCount, allocCount });
+        if (block) return fail("STATE", block);
+        if (cur.version !== input.version) return fail("CONFLICT", INQUIRY_CONFLICT_MSG);
+        const { reason, error } = await checkReason(tx, CANCEL_GROUP, input.reasonCode, text);
+        if (error) return error;
+        const r = await tx.inboundPlan.updateMany({
+          where: { id: cur.id, version: cur.version, status: "APPROVED" },
+          data: {
+            status: "CANCELED",
+            version: { increment: 1 },
+            cancelReasonCode: reason.code,
+            cancelReasonText: text || null,
+            canceledAt: new Date(),
+            canceledBy: me.name,
+            updatedBy: me.name,
+          },
+        });
+        if (r.count === 0) throw new Race();
+        await tx.inboundPlanHistory.create({
+          data: {
+            planId: cur.id, action: "CANCEL_APPROVED", version: cur.version + 1, revisionNo: cur.revisionNo, actor: me.name, actorId: me.id,
+            reasonCode: reason.code, reasonName: reason.name, reasonText: text || null,
+          },
+        });
+        return ok(`${cur.planNo} 승인 건을 취소했습니다. 다시 입고하려면 화주사가 새 입고예정을 등록해야 합니다.`);
+      }),
+    INQUIRY_CONFLICT_MSG,
   );
 }
 
