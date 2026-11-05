@@ -40,6 +40,11 @@ export async function approvePlan(input: { id: number; version: number }) {
   return refresh(await svc.approvePlan(await getActor(), input));
 }
 
+/** 입고예정 조회 상세 — 3PL 승인 건 취소 (후행 전표 없을 때만, 사유 필수) */
+export async function cancelApprovedPlan(input: { id: number; version: number; reasonCode: string; reasonText?: string }) {
+  return refresh(await svc.cancelApprovedPlan(await getActor(), input));
+}
+
 export async function rejectPlan(input: { id: number; version: number; reasonCode: string; reasonText?: string }) {
   return refresh(await svc.rejectPlan(await getActor(), input));
 }

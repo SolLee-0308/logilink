@@ -18,6 +18,7 @@ export type Resource =
   | "master"
   | "approval"
   | "planEntry"
+  | "planInquiry"
   | "asn"
   | "asnStatus"
   | "loading"
@@ -43,6 +44,8 @@ const MATRIX: Record<Resource, Record<Op, readonly UserRole[]>> = {
   approval: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: ["TPL_ADMIN", "TPL_OPERATOR"] },
   // 입고예정 등록·수정·취소: 화주사 담당자 (승인 전 상태만 — plan-rules.ts)
   planEntry: { view: ["SHIPPER_STAFF"], edit: ["SHIPPER_STAFF"] },
+  // 입고예정 조회(정의서 ⑤): 화주사 담당자·3PL 관리자·운영담당 공통 조회. 승인 건 취소(edit)는 3PL만 (C3)
+  planInquiry: { view: ["SHIPPER_STAFF", "TPL_ADMIN", "TPL_OPERATOR"], edit: ["TPL_ADMIN", "TPL_OPERATOR"] },
   // ASN 등록·취소, 상차지시서 인쇄: 화주사 담당자 (정의서 ③). 3PL은 ASN·상차 현황(추후)에서 조회
   asn: { view: ["SHIPPER_STAFF"], edit: ["SHIPPER_STAFF"] },
   // ASN·상차 현황: 3PL 조회 전용 (소속 센터 ASN만, 센터가 없는 계정은 전체)
@@ -89,6 +92,7 @@ export function resourceOfPath(href: string): Resource {
   if (href.startsWith("/master/holidays")) return "holidays";
   if (href.startsWith("/plans/approval")) return "approval";
   if (href.startsWith("/plans/entry")) return "planEntry";
+  if (href.startsWith("/plans/inquiry")) return "planInquiry";
   if (href.startsWith("/plans/asn-status")) return "asnStatus";
   if (href.startsWith("/plans/asn")) return "asn";
   return "master";
