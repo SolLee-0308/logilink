@@ -165,10 +165,10 @@ export async function startUnorderedLoad(me: PlanActor, input: z.input<typeof un
 
 /* ═════════ 스캔 → 품목 찾기 ═════════ */
 
-type Resolved = { itemId: number; itemCode: string; itemName: string; unit: ItemUnit; factor: number; baseUnit: ItemUnit; by: "barcode" | "code" };
+export type Resolved = { itemId: number; itemCode: string; itemName: string; unit: ItemUnit; factor: number; baseUnit: ItemUnit; by: "barcode" | "code" };
 
 /** 바코드(단위별)로 먼저 찾고, 없으면 품목코드로 찾는다(기준 단위). 같은 화주사 품목만 */
-async function resolveScan(tx: Tx | typeof db, clientId: number, raw: string): Promise<Resolved | null> {
+export async function resolveScan(tx: Tx | typeof db, clientId: number, raw: string): Promise<Resolved | null> {
   const scan = normalizeScan(raw);
   if (!scan) return null;
   const bc = await tx.itemBarcode.findUnique({

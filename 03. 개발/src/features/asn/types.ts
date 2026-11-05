@@ -1,3 +1,4 @@
+import type { RcvView } from "@/features/rcv/types";
 import type { ItemUnit } from "@/domain/master";
 import type { AsnAction, AsnStatus } from "@/domain/asn-rules";
 import type { PlanStatus } from "@/domain/plan-status";
@@ -141,6 +142,8 @@ export interface AsnDetail {
   histories: AsnHistoryView[];
   /** 상차 실적 (상차지시서를 스캔한 뒤) */
   load: LoadView | null;
+  /** 입고검수 (상차완료 뒤 검수를 시작하면) */
+  rcv: RcvView | null;
 }
 
 /** 상차지시서 인쇄 — 발송인(화주사 법인)·수신(센터) 정보를 더한다 */

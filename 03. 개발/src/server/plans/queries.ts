@@ -135,6 +135,9 @@ export async function getPlanDetail(me: PlanActor, id: number): Promise<PlanDeta
       lotNo: l.lotNo,
       expiryManaged: l.item.expiryManaged,
       lotManaged: l.item.lotManaged,
+      rcvQty: l.rcvQty,
+      returnQty: l.returnQty,
+      closeQty: l.closeQty,
     })),
     lastReject: rej
       ? {

@@ -1269,3 +1269,145 @@
   text-align: center;
   font-size: var(--fs-14);
 }
+
+/* ═════════ 입고검수 (2026-11-05) ═════════ */
+
+/* 정상 / 훼손 반송 고르기 */
+.segment {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--line);
+}
+
+.seg,
+.segOn {
+  flex: 1;
+  min-height: 38px;
+  border: 0;
+  border-radius: var(--r-pill);
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.seg {
+  background: transparent;
+  color: var(--muted);
+}
+
+.segOn {
+  background: var(--ink);
+  color: #fff;
+}
+
+.unentered {
+  margin: 0;
+  padding-left: 18px;
+  font-weight: 600;
+}
+
+/* 품목 라인 — 누르면 0 확인·사유·유통기한·로트·사진 */
+.rcvLines {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: var(--r-group);
+  background: var(--bg);
+}
+
+.rcvLine + .rcvLine {
+  border-top: 1px solid var(--line-row);
+}
+
+.rcvSum {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.rcvSum::-webkit-details-marker {
+  display: none;
+}
+
+.rcvBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 0 10px;
+}
+
+.miniField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--fs-11);
+  color: var(--muted);
+}
+
+.miniField .field {
+  padding: 7px 10px;
+  font-size: var(--fs-13);
+}
+
+.photos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.photo,
+.photoAdd {
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: var(--r-control);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.photo {
+  border: 1px solid var(--line-2);
+  background: var(--card-head);
+}
+
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photoAdd {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1.5px dashed var(--line-hover);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-11);
+}
+
+.barNote {
+  margin: 0 0 6px;
+  text-align: center;
+  color: var(--warn-text);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+.rcvSum .lineQty b {
+  font-size: var(--fs-12);
+}

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Forbidden } from "@/features/master/Forbidden";
 import { LoadDetailScreen } from "@/features/loads/LoadDetailScreen";
 import { getLoadView, webLoadScope } from "@/server/loads/queries";
+import { getRcvOfLoad } from "@/server/rcv/queries";
 import { requireUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "상차 실적" };
@@ -22,5 +23,5 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
   if (!load) notFound();
   const shipper = !!me.clientId;
   if (load.asn) redirect(shipper ? `/plans/asn/${load.asn.id}` : `/plans/asn-status/${load.asn.id}`);
-  return <LoadDetailScreen load={load} view={shipper ? "shipper" : "tpl"} />;
+  return <LoadDetailScreen load={load} view={shipper ? "shipper" : "tpl"} rcv={await getRcvOfLoad(load.id)} />;
 }

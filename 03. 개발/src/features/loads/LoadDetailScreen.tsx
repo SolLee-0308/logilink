@@ -10,13 +10,15 @@ import { ASN_RULES, ASN_STATUS_RULES } from "@/features/asn/rules";
 import { ASN_LIST_KEY } from "@/features/asn/asn-list";
 import { ASN_STATUS_LIST_KEY } from "@/features/asn/asn-status-list";
 import { LoadSection } from "./LoadSection";
+import { RcvSection } from "@/features/rcv/RcvSection";
+import type { RcvView } from "@/features/rcv/types";
 import type { LoadView } from "./types";
 
 /**
  * 무지시 상차 상세 (웹, 조회 전용) — 예정 외 차량은 ASN이 없어 상차 실적만 있다 (D12).
  * 화주사 담당자는 ASN 등록 목록에서, 3PL은 ASN·상차 현황에서 들어온다.
  */
-export function LoadDetailScreen({ load, view }: { load: LoadView; view: "shipper" | "tpl" }) {
+export function LoadDetailScreen({ load, view, rcv = null }: { load: LoadView; view: "shipper" | "tpl"; rcv?: RcvView | null }) {
   const tpl = view === "tpl";
   const meta = LOAD_STATUS_META[load.status];
   return (
@@ -44,6 +46,7 @@ export function LoadDetailScreen({ load, view }: { load: LoadView; view: "shippe
           ]}
         />
       </Card>
+      {rcv && <RcvSection rcv={rcv} />}
       <LoadSection load={load} />
     </>
   );

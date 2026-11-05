@@ -84,6 +84,8 @@ export const PLAN_REJECT_GROUP = "PLAN_REJECT";
 export const CANCEL_GROUP = "CANCEL";
 /** 상차 차이 사유 코드 그룹 (정의서 ④, C6) */
 export const LOAD_DIFF_GROUP = "LOAD_DIFF";
+/** 검수 차이·반송 사유 (정의서 ⑥, U1) */
+export const RCV_DIFF_GROUP = "RCV_DIFF";
 
 /** 품목 메뉴·화면 이름 — 3PL은 조회 + 등록·수정(품목 관리), 화주사는 조회만(품목 조회) (2026-11-04 Sol 확정) */
 export const itemsTitle = (canEdit: boolean) => (canEdit ? "품목 관리" : "품목 조회");

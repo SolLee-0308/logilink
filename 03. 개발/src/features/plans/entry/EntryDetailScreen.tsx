@@ -18,6 +18,8 @@ import { SubHeader, useAction } from "@/features/master/shared";
 import { ViewSection } from "@/features/master/record";
 import { ENTRY_RULES } from "../rules";
 import type { PlanDetail, PlanLineView } from "../types";
+import { qtyInUnit } from "@/domain/load-rules";
+import { planLineRemain } from "@/domain/rcv-rules";
 import { ENTRY_LIST_KEY, entryListUrl } from "./entry-list";
 import styles from "./EntryDetailScreen.module.css";
 
@@ -49,6 +51,8 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
   const editable = canShipperEdit(d.status);
   const n = dday(d.planDate, today);
 
+  const received = d.lines.some((l) => l.rcvQty > 0 || l.returnQty > 0);
+  const qf = (l: PlanLineView, base: number) => qtyInUnit(base, l.unit, Math.max(Math.round(l.baseQty / Math.max(l.qty, 1)), 1), l.baseUnit);
   const columns: Column<PlanLineView>[] = [
     { key: "no", header: "#", align: "right", render: (l) => <span className="mono">{l.lineNo}</span> },
     { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
@@ -63,6 +67,14 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
     },
     { key: "exp", header: "유통기한", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">{l.expiryManaged ? "없음" : "–"}</span>) },
     { key: "lot", header: "로트", render: (l) => (l.lotNo ? <span className="mono">{l.lotNo}</span> : <span className="muted">–</span>) },
+    // 입고검수 확정 뒤 — 입고·반송·잔량 (입고예정 라인 단위로 묶어 표시, 기준 단위 누계)
+    ...(received
+      ? ([
+          { key: "rcv", header: "입고", align: "right", render: (l) => <b className="mono">{qf(l, l.rcvQty)}</b> },
+          { key: "ret", header: "반송", align: "right", render: (l) => (l.returnQty ? <span className="mono">{qf(l, l.returnQty)}</span> : <span className="muted">–</span>) },
+          { key: "remain", header: "잔량", align: "right", render: (l) => <span className="mono">{qf(l, Math.max(planLineRemain(l), 0))}</span> },
+        ] as Column<PlanLineView>[])
+      : []),
   ];
 
   return (

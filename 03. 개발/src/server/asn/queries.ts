@@ -8,10 +8,11 @@ import type { PlanActor } from "@/server/plans/service";
 import type { Prisma } from "@/generated/prisma/client";
 import { centerChoices } from "@/server/plans/entry";
 import { can } from "@/domain/permissions";
-import { ASN_COUNTED, DISTRIBUTABLE_PLAN, remainingBase, toLineUnitQty, type AsnStatus } from "@/domain/asn-rules";
+import { ASN_OPEN, DISTRIBUTABLE_PLAN, remainingBase, toLineUnitQty, type AsnStatus } from "@/domain/asn-rules";
 import type { ItemUnit } from "@/domain/master";
 import { todayKst } from "@/lib/format";
 import { getLoadOfAsn, listUnorderedLoads } from "@/server/loads/queries";
+import { getRcvOfLoad } from "@/server/rcv/queries";
 import type { AsnDetail, AsnOptions, AsnRow, AsnTab, DistPlan, LoadOrderPrint } from "@/features/asn/types";
 
 const iso = (d: Date) => d.toISOString();
@@ -30,22 +31,24 @@ function sumByUnit(lines: { unit: ItemUnit; qty: number }[]): [ItemUnit, number]
 
 const tabOf = (s: AsnStatus): AsnTab => (s === "REGISTERED" ? "wait" : s === "LOADING" || s === "LOADED" ? "loading" : s === "RECEIVED" ? "done" : "canceled");
 
-/** 입고예정 라인별로 취소되지 않은 ASN에 이미 담은 기준 단위 수량 */
+/** 입고예정 라인별로 아직 입고되지 않은 ASN(등록·상차중·상차완료)에 담은 기준 단위 수량 — 입고완료 ASN은 라인의 입고·반송 누계로 센다 */
 export async function distributedByLine(planLineIds: number[], tx: Pick<typeof db, "asnLine"> = db): Promise<Map<number, number>> {
   if (!planLineIds.length) return new Map();
   const rows = await tx.asnLine.groupBy({
     by: ["planLineId"],
-    where: { planLineId: { in: planLineIds }, asn: { status: { in: [...ASN_COUNTED] } } },
+    where: { planLineId: { in: planLineIds }, asn: { status: { in: [...ASN_OPEN] } } },
     _sum: { baseQty: true },
   });
   return new Map(rows.map((r) => [r.planLineId, r._sum.baseQty ?? 0]));
 }
 
-/** 무지시 상차 실적을 ASN 목록 행으로 — 작업중은 상차중, 상차완료는 검수 대기로 보인다 (검수가 생기면 입고완료도) */
+/** 무지시 상차 실적을 ASN 목록 행으로 — 작업중은 상차중, 상차완료는 검수 대기, 검수 확정은 입고완료로 보인다 */
 async function unorderedRows(scope: Prisma.LoadWhereInput): Promise<AsnRow[]> {
   const loads = await listUnorderedLoads(scope);
-  return loads.map((l) => ({
-    kind: "load",
+  return loads.map((l) => {
+    const received = l.rcvs[0]?.confirmedAt ?? null;
+    return {
+    kind: "load" as const,
     key: `load-${l.id}`,
     href: `/plans/loads/${l.id}`,
     id: l.id,
@@ -54,8 +57,8 @@ async function unorderedRows(scope: Prisma.LoadWhereInput): Promise<AsnRow[]> {
     asnNo: "",
     loadOrderNo: null,
     loadNo: l.loadNo,
-    tab: "loading",
-    status: l.status === "WORKING" ? "LOADING" : "LOADED",
+    tab: received ? ("done" as const) : ("loading" as const),
+    status: received ? ("RECEIVED" as const) : l.status === "WORKING" ? ("LOADING" as const) : ("LOADED" as const),
     centerId: l.centerId,
     centerName: l.center.name,
     shipDate: ymd(l.loadDate),
@@ -68,8 +71,9 @@ async function unorderedRows(scope: Prisma.LoadWhereInput): Promise<AsnRow[]> {
     itemTexts: l.lines.flatMap((d) => [d.item.code, d.item.name]),
     createdAt: iso(l.createdAt),
     createdBy: l.createdBy,
-    closedAt: null,
-  }));
+    closedAt: received ? iso(received) : null,
+    };
+  });
 }
 
 /** 목록에 남기는 ASN — 상차 전·진행 건 전부 + 최근 30일 입고완료·취소 */
@@ -179,7 +183,7 @@ export async function distributablePlans(clientId: number): Promise<DistPlan[]> 
           qty: l.qty,
           factor,
           baseUnit: l.item.baseUnit,
-          distributedQty: toLineUnitQty(distributed, factor),
+          distributedQty: toLineUnitQty(distributed + l.rcvQty + l.returnQty, factor),
           remainingQty: toLineUnitQty(remainingBase(l, distributed), factor),
           expiryDate: l.expiryDate ? ymd(l.expiryDate) : null,
           lotNo: l.lotNo,
@@ -235,6 +239,7 @@ async function loadAsnDetail(where: Prisma.AsnWhereInput): Promise<AsnDetail | n
   if (!a) return null;
   const cancel = a.histories.findLast((h) => h.action === "CANCEL");
   const load = await getLoadOfAsn(a.id);
+  const rcv = load ? await getRcvOfLoad(load.id) : null;
   return {
     id: a.id,
     asnNo: a.asnNo,
@@ -287,6 +292,7 @@ async function loadAsnDetail(where: Prisma.AsnWhereInput): Promise<AsnDetail | n
       reasonText: h.reasonText,
     })),
     load,
+    rcv,
   };
 }
 

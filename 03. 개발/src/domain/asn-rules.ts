@@ -16,7 +16,7 @@ export const ASN_STATUS_META: Record<AsnStatus, { label: string; tone: StatusTon
   CANCELED: { label: "취소", tone: "cancel" },
 };
 
-export const ASN_ACTION_LABEL = { CREATE: "등록 · 상차지시서 발행", CANCEL: "취소", LOAD_START: "상차 시작", LOAD_COMPLETE: "상차완료 · 상차확인서 발행" } as const;
+export const ASN_ACTION_LABEL = { CREATE: "등록 · 상차지시서 발행", CANCEL: "취소", LOAD_START: "상차 시작", LOAD_COMPLETE: "상차완료 · 상차확인서 발행", RECEIVE: "입고검수 확정 · 입고완료" } as const;
 export type AsnAction = keyof typeof ASN_ACTION_LABEL;
 
 /** ASN에 담을 수 있는 입고예정 — 승인·미종결(승인·부분입고) (D8) */
@@ -28,8 +28,11 @@ export const ASN_CANCELABLE: readonly AsnStatus[] = ["REGISTERED"];
 /** 미종결 ASN — 화주사 사용 안 함·이용 센터 제외를 막는다 (등록·상차중) */
 export const UNCLOSED_ASN: readonly AsnStatus[] = ["REGISTERED", "LOADING"];
 
-/** 분배 수량에 들어가는 ASN — 취소만 뺀다 */
+/** 분배 수량에 들어가는 ASN — 취소만 뺀다 (검수 배분 2단계의 "ASN으로 분배된 라인" 기준) */
 export const ASN_COUNTED: readonly AsnStatus[] = ["REGISTERED", "LOADING", "LOADED", "RECEIVED"];
+
+/** 아직 입고되지 않은 ASN — 남은 분배 수량을 셀 때 지시수량으로 센다 (입고완료 ASN은 실제 입고·반송 누계로 센다) */
+export const ASN_OPEN: readonly AsnStatus[] = ["REGISTERED", "LOADING", "LOADED"];
 
 export const canCancelAsn = (s: AsnStatus) => ASN_CANCELABLE.includes(s);
 
@@ -54,11 +57,12 @@ export const looksLikeVehicleNo = (s: string) => /^([가-힣]{2})?\d{2,3}[가-�
 
 /**
  * 입고예정 라인의 분배 잔량 (기준 단위) — C4: 라인별 분배 합계 ≤ 승인 잔량
- * = 승인 수량 − 종결 수량 − 취소되지 않은 ASN에 이미 분배한 수량
- * (입고검수가 생기면 입고완료 ASN은 지시수량 대신 실제 배분수량으로 바꿔 센다)
+ * = 승인 수량 − 종결 수량 − 입고 누계 − 반송 누계 − 아직 입고되지 않은 ASN에 담은 수량
+ * 입고완료 ASN은 지시수량 대신 검수 확정으로 실제 배분된 입고·반송 누계로 센다 (2026-11-05 입고검수).
+ * 그래서 덜 들어온 수량(부족분)은 다시 다른 차량에 담을 수 있다 (5-1: 부족분은 잔량에 남는다).
  */
-export function remainingBase(line: { baseQty: number; closeQty: number }, distributedBase: number) {
-  return Math.max(line.baseQty - line.closeQty - distributedBase, 0);
+export function remainingBase(line: { baseQty: number; closeQty: number; rcvQty?: number; returnQty?: number }, openDistributedBase: number) {
+  return Math.max(line.baseQty - line.closeQty - (line.rcvQty ?? 0) - (line.returnQty ?? 0) - openDistributedBase, 0);
 }
 
 /** 기준 단위 잔량 → 입고예정 라인 단위 수량 (나누어떨어지지 않는 낱개는 버린다) */

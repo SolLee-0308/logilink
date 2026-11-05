@@ -111,6 +111,7 @@ model Center {
   plans        InboundPlan[]
   asns         Asn[]
   loads        Load[]
+  rcvs         Rcv[]
   clientLinks  ClientCenter[]
 
   @@map("tb_center")
@@ -153,6 +154,7 @@ model Client {
   planAiReads  PlanAiRead[]
   asns         Asn[]
   loads        Load[]
+  rcvs         Rcv[]
   users        User[]
 
   @@map("tb_client")
@@ -203,6 +205,8 @@ model Item {
   asnLines    AsnLine[]
   loadLines   LoadLine[]
   loadInputs  LoadInput[]
+  rcvLines    RcvLine[]
+  rcvInputs   RcvInput[]
 
   @@unique([clientId, code])
   @@map("tb_item")
@@ -521,6 +525,7 @@ enum PlanAction {
   CANCEL_APPROVED // 3PL 승인 건 취소
   EXPIRE_CANCEL // 일마감 기한경과 취소
   CLOSE // 3PL 잔량 종결
+  RECEIVE // 입고검수 확정 — 자동 배분 (부분입고·입고완료)
 }
 
 /// 입고예정 헤더 (TB_INB_PLAN_H) — 화주사·센터·입고예정일 1건 단위
@@ -595,6 +600,7 @@ model InboundPlanLine {
   plan     InboundPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
   item     Item        @relation(fields: [itemId], references: [id])
   asnLines AsnLine[]
+  rcvAllocs RcvAlloc[]
 
   @@unique([planId, lineNo])
   @@index([itemId])
@@ -718,6 +724,7 @@ enum AsnAction {
   CANCEL // 화주사 취소
   LOAD_START // 상차 시작 (첫 상차 입력)
   LOAD_COMPLETE // 상차완료 (상차확인서 발행)
+  RECEIVE // 입고검수 확정 (입고완료)
 }
 
 /// ASN 헤더 (TB_ASN_H) — 차량 1대 단위. 입고예정번호를 두지 않고 라인이 입고예정 라인을 가리킨다 (D9)
@@ -777,6 +784,7 @@ model AsnLine {
   plan     InboundPlan     @relation(fields: [planId], references: [id])
   planLine InboundPlanLine @relation(fields: [planLineId], references: [id])
   item     Item            @relation(fields: [itemId], references: [id])
+  rcvAllocs RcvAlloc[]
 
   @@unique([asnId, lineNo])
   @@index([planLineId])
@@ -872,6 +880,7 @@ model Load {
   center    Center      @relation(fields: [centerId], references: [id])
   lines     LoadLine[]
   inputs    LoadInput[]
+  rcvs      Rcv[]
 
   @@index([clientId, status])
   @@index([centerId, loadDate])
@@ -924,4 +933,165 @@ model LoadInput {
   @@index([loadId, inputAt])
   @@index([workerId])
   @@map("tb_load_input")
+}
+
+/**
+ * ═════════ 입고검수 · 자동 배분 (정의서 ⑥ · 4-2 · 5장 · C7 · C8 · D14 · D15) ═════════
+ * 검수 기준은 상차완료 차량 실적(상차확인서)이다. 차량 1대 = 검수 확정 1회.
+ * 작업자 잠금 없음 (2026-11-05 Sol 결정, 미결 O1 → 상차와 같은 방식): 입력 1건 = 추가 수량 1행.
+ */
+
+/// 검수 상태 — 정의서 4-2 (입고취소 역전표는 4단계에서 추가)
+enum RcvStatus {
+  WORKING // 검수중
+  CONFIRMED // 확정 (자동 배분 완료)
+}
+
+/// 검수 입력 구분 — 정상 / 훼손·오염 반송 / 품목 불일치 반송(상차 실적에 없는 품목)
+enum RcvKind {
+  GOOD
+  DAMAGED
+  MISMATCH
+}
+
+/// 배분 구분 — 정상 입고 누계(rcv_qty) / 반송 누계(return_qty)
+enum RcvAllocKind {
+  GOOD
+  RETURN
+}
+
+/// 입고검수 헤더 (TB_RCV_H) — 상차완료 차량 실적 1건 기준
+model Rcv {
+  id             Int       @id @default(autoincrement())
+  /// RC-YYYYMMDD-NNNN (검수 시작일)
+  rcvNo          String    @unique @map("rcv_no") @db.VarChar(20)
+  loadId         Int       @map("load_id")
+  clientId       Int       @map("client_id")
+  centerId       Int       @map("center_id")
+  vehicleNo      String    @map("vehicle_no") @db.VarChar(20)
+  /// 검수일 (KST)
+  rcvDate        DateTime  @map("rcv_dt") @db.Date
+  status         RcvStatus @default(WORKING)
+  version        Int       @default(1)
+  confirmUserId  Int?      @map("confirm_user_id")
+  confirmedBy    String?   @map("confirmed_by") @db.VarChar(50)
+  confirmedAt    DateTime? @map("confirm_dt") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy      String    @map("created_by") @db.VarChar(50)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  load   Load       @relation(fields: [loadId], references: [id], onDelete: Restrict)
+  client Client     @relation(fields: [clientId], references: [id])
+  center Center     @relation(fields: [centerId], references: [id])
+  lines  RcvLine[]
+  inputs RcvInput[]
+  images RcvImage[]
+  allocs RcvAlloc[]
+
+  /// 입고취소 뒤 재검수를 위해 load_id 유일 제약은 두지 않는다 — 진행·확정 검수는 차량 실적당 1건(서비스에서 검사)
+  @@index([loadId])
+  @@index([centerId, rcvDate])
+  @@index([clientId, status])
+  @@map("tb_rcv_h")
+}
+
+/// 검수 품목별 합계 (TB_RCV_D) — 기대수량 = 상차완료 수량. 차이 = 정상 + 반송 − 기대 (C7)
+model RcvLine {
+  id            Int       @id @default(autoincrement())
+  rcvId         Int       @map("rcv_id")
+  itemId        Int       @map("item_id")
+  /// 상차완료 수량 (기준 단위). 품목 불일치 라인은 0
+  expectBaseQty Int       @default(0) @map("expect_base_qty")
+  /// 정상 누계 (기준 단위)
+  goodBaseQty   Int       @default(0) @map("good_base_qty")
+  /// 훼손·오염 반송 누계 (기준 단위)
+  damagedBaseQty Int      @default(0) @map("damaged_base_qty")
+  /// 품목 불일치 반송 누계 (기준 단위) — 재고·배분 미반영
+  mismatchBaseQty Int     @default(0) @map("mismatch_base_qty")
+  /// 상차 실적에 없는 품목 (품목 불일치 라인)
+  mismatch      Boolean   @default(false)
+  /// 검수자가 확인하고 0으로 입력함 (D15 — "실제로 없었다"와 "검수를 빠뜨렸다" 구분)
+  zeroConfirm   Boolean   @default(false) @map("zero_confirm_yn")
+  reasonCode    String?   @map("reason_cd") @db.VarChar(20)
+  reasonName    String?   @map("reason_nm") @db.VarChar(100)
+  reasonText    String?   @map("reason_text") @db.VarChar(500)
+  /// 관리 품목 — 입고예정 값과 다르면 현장 입력 (R8)
+  expiryDate    DateTime? @map("expiry_dt") @db.Date
+  lotNo         String?   @map("lot_no") @db.VarChar(40)
+
+  rcv    Rcv        @relation(fields: [rcvId], references: [id], onDelete: Cascade)
+  item   Item       @relation(fields: [itemId], references: [id])
+  allocs RcvAlloc[]
+
+  @@unique([rcvId, itemId])
+  @@map("tb_rcv_d")
+}
+
+/// 검수 입력 행 (TB_RCV_INPUT) — 입력 1건 = 추가 수량 1행 (검수자·단말·시각). 확정 전 본인 입력만 취소·정정
+model RcvInput {
+  id         Int       @id @default(autoincrement())
+  rcvId      Int       @map("rcv_id")
+  itemId     Int       @map("item_id")
+  kind       RcvKind
+  unit       ItemUnit
+  addQty     Int       @map("add_qty")
+  baseQty    Int       @map("base_qty")
+  scanned    String?   @db.VarChar(40)
+  workerId   Int       @map("worker_id")
+  workerName String    @map("worker_nm") @db.VarChar(50)
+  deviceId   String?   @map("device_id") @db.VarChar(64)
+  inputAt    DateTime  @default(now()) @map("input_dt") @db.Timestamptz(3)
+  canceledAt DateTime? @map("canceled_at") @db.Timestamptz(3)
+  correctsId Int?      @map("corrects_id")
+
+  rcv  Rcv  @relation(fields: [rcvId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@index([rcvId, inputAt])
+  @@index([workerId, inputAt])
+  @@map("tb_rcv_input")
+}
+
+/// 훼손·오염 사진 (TB_RCV_IMAGE) — 품목당 최소 1장, 최대 5장. PDA에서 압축한 JPEG를 DB에 저장 (R7)
+model RcvImage {
+  id        Int      @id @default(autoincrement())
+  rcvId     Int      @map("rcv_id")
+  itemId    Int      @map("item_id")
+  mime      String   @db.VarChar(40)
+  size      Int
+  data      Bytes
+  createdBy String   @map("created_by") @db.VarChar(50)
+  creatorId Int      @map("creator_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  rcv Rcv @relation(fields: [rcvId], references: [id], onDelete: Cascade)
+
+  @@index([rcvId, itemId])
+  @@map("tb_rcv_image")
+}
+
+/// 자동 배분 결과 (TB_RCV_ALLOC) — (검수 라인, 입고예정 라인, 배분수량, 배분 단계). 3단계(초과)는 입고예정 라인 없음 (5-2 · C8)
+model RcvAlloc {
+  id         Int          @id @default(autoincrement())
+  rcvId      Int          @map("rcv_id")
+  rcvLineId  Int          @map("rcv_line_id")
+  kind       RcvAllocKind
+  /// 1: 원 ASN 라인 / 2: 같은 화주사 미종결 입고예정(승인 시각 순) / 3: 초과
+  step       Int
+  planLineId Int?         @map("plan_line_id")
+  asnLineId  Int?         @map("asn_line_id")
+  allocQty   Int          @map("alloc_qty")
+  /// 입고취소 역전표로 되돌린 배분 (4단계)
+  reverse    Boolean      @default(false) @map("reverse_yn")
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  rcv      Rcv              @relation(fields: [rcvId], references: [id], onDelete: Cascade)
+  rcvLine  RcvLine          @relation(fields: [rcvLineId], references: [id], onDelete: Cascade)
+  planLine InboundPlanLine? @relation(fields: [planLineId], references: [id])
+  asnLine  AsnLine?         @relation(fields: [asnLineId], references: [id])
+
+  @@index([rcvId])
+  @@index([planLineId])
+  @@index([asnLineId])
+  @@map("tb_rcv_alloc")
 }

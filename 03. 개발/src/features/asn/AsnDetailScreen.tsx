@@ -17,6 +17,7 @@ import { RejectModal, type ReasonOption } from "@/features/shared/RejectModal";
 import { SubHeader, useAction } from "@/features/master/shared";
 import { ViewSection } from "@/features/master/record";
 import { LoadSection } from "@/features/loads/LoadSection";
+import { RcvSection } from "@/features/rcv/RcvSection";
 import { ASN_RULES, ASN_STATUS_RULES } from "./rules";
 import type { AsnDetail, AsnLineView } from "./types";
 import { ASN_LIST_KEY, asnListUrl } from "./asn-list";
@@ -180,6 +181,7 @@ export function AsnDetailScreen({
         </div>
       </Card>
 
+      {d.rcv && <RcvSection rcv={d.rcv} />}
       {d.load && <LoadSection load={d.load} />}
 
       <Card

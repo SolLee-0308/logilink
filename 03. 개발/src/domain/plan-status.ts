@@ -47,5 +47,6 @@ export const PLAN_ACTION_LABEL = {
   CANCEL_APPROVED: "승인 건 취소",
   EXPIRE_CANCEL: "기한경과 취소",
   CLOSE: "잔량 종결",
+  RECEIVE: "입고검수 확정",
 } as const;
 export type PlanAction = keyof typeof PLAN_ACTION_LABEL;

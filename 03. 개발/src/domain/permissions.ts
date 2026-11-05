@@ -1,7 +1,7 @@
 /**
  * 역할별 권한 — 화면 숨김과 서버 검사가 이 표 하나를 같이 본다.
  * 적용 범위(2026-11-03): 회사 정보·센터·화주사·사용자·역할·계정 관리(잠금 해제·비밀번호 초기화).
- * 2026-11-04: 품목·품목 등록 요청·휴무일 추가. 같은 날 ASN 등록 추가. 2026-11-05: 상차등록(PDA) 추가. 사용자는 역할을 여러 개 가질 수 있다(roles 배열).
+ * 2026-11-04: 품목·품목 등록 요청·휴무일 추가. 같은 날 ASN 등록 추가. 2026-11-05: 상차등록(PDA)·입고검수(PDA) 추가. 사용자는 역할을 여러 개 가질 수 있다(roles 배열).
  * 나머지 기준정보 메뉴는 Sol이 권한 매트릭스를 정한 뒤 반영한다 (지금은 Web 역할 모두 기존처럼 사용).
  */
 import { ROLE_META, type UserRole } from "./master";
@@ -20,7 +20,8 @@ export type Resource =
   | "planEntry"
   | "asn"
   | "asnStatus"
-  | "loading";
+  | "loading"
+  | "inspection";
 export type Op = "view" | "edit";
 
 /** 3PL 관리자는 3PL 운영담당 권한을 모두 포함한다 */
@@ -48,6 +49,8 @@ const MATRIX: Record<Resource, Record<Op, readonly UserRole[]>> = {
   asnStatus: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: [] },
   // 상차등록(PDA): 화주사 상차담당 (정의서 ④). 결과 조회·상차확인서 인쇄는 ASN(화주사)·ASN·상차 현황(3PL) 권한으로 한다
   loading: { view: ["SHIPPER_LOADER"], edit: ["SHIPPER_LOADER"] },
+  // 입고검수(PDA): 3PL 입고검수자 (정의서 ⑥). 소속 센터 차량만, 센터가 없는 계정은 전체. 결과 조회는 웹 ASN 화면에서
+  inspection: { view: ["TPL_INSPECTOR"], edit: ["TPL_INSPECTOR"] },
   // 그 외 기준정보 — 기존 유지 (매트릭스 확정 전)
   master: { view: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"], edit: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"] },
 };
