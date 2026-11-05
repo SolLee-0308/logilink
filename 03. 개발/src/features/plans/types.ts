@@ -44,6 +44,10 @@ export interface PlanLineView {
   lotNo: string | null;
   expiryManaged: boolean;
   lotManaged: boolean;
+  /** 기준 단위 누계 — 입고검수 확정 시 자동 배분으로 쌓인다 (5-1 잔량 = 승인 − 입고 − 반송 − 종결) */
+  rcvQty: number;
+  returnQty: number;
+  closeQty: number;
 }
 
 export interface RejectSnapshotView {

@@ -205,7 +205,7 @@ async function main() {
 
   // 모든 기준정보 테이블을 비우고 번호를 1부터 다시 시작한다 (로그인 세션·이력 포함)
   await db.$executeRawUnsafe(
-    'TRUNCATE tb_load_input, tb_load_d, tb_load_h, tb_asn_his, tb_load_order, tb_asn_d, tb_asn_h, tb_inb_plan_his, tb_inb_plan_rej_d, tb_inb_plan_rej_h, tb_inb_plan_d, tb_inb_plan_h, tb_session, tb_login_log, tb_change_log, tb_item_req_his, tb_item_req, tb_item_alias, tb_item_barcode, tb_item_uom, tb_item, tb_user, tb_holiday, tb_client_center, tb_client, tb_common_code, tb_code_group, tb_setting, tb_company, tb_center RESTART IDENTITY CASCADE',
+    'TRUNCATE tb_rcv_alloc, tb_rcv_image, tb_rcv_input, tb_rcv_d, tb_rcv_h, tb_load_input, tb_load_d, tb_load_h, tb_asn_his, tb_load_order, tb_asn_d, tb_asn_h, tb_inb_plan_his, tb_inb_plan_rej_d, tb_inb_plan_rej_h, tb_inb_plan_d, tb_inb_plan_h, tb_session, tb_login_log, tb_change_log, tb_item_req_his, tb_item_req, tb_item_alias, tb_item_barcode, tb_item_uom, tb_item, tb_user, tb_holiday, tb_client_center, tb_client, tb_common_code, tb_code_group, tb_setting, tb_company, tb_center RESTART IDENTITY CASCADE',
   );
 
   // 회사 정보 (3PL 운영 법인, 가상) — 시스템명 LogiLink와 운영사명을 분리한다

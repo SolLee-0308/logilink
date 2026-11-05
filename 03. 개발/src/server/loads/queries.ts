@@ -292,6 +292,7 @@ export async function listUnorderedLoads(scope: Prisma.LoadWhereInput) {
       client: { select: { name: true } },
       center: { select: { name: true } },
       lines: { select: { loadBaseQty: true, item: { select: { code: true, name: true, baseUnit: true } } } },
+      rcvs: { where: { status: "CONFIRMED" }, select: { confirmedAt: true } },
     },
   });
 }

@@ -22,6 +22,9 @@ test("분배 잔량: 승인 − 종결 − 분배, 음수는 0", () => {
   assert.equal(remainingBase({ baseQty: 2400, closeQty: 0 }, 0), 2400);
   assert.equal(remainingBase({ baseQty: 2400, closeQty: 400 }, 1200), 800);
   assert.equal(remainingBase({ baseQty: 100, closeQty: 0 }, 150), 0);
+  // 입고완료 ASN: 실제 입고·반송 누계로 센다 — 덜 들어온 20은 다시 담을 수 있다
+  assert.equal(remainingBase({ baseQty: 100, closeQty: 0, rcvQty: 70, returnQty: 10 }, 0), 20);
+  assert.equal(remainingBase({ baseQty: 100, closeQty: 0, rcvQty: 70, returnQty: 10 }, 15), 5);
   assert.equal(toLineUnitQty(2400, 20), 120);
   assert.equal(toLineUnitQty(2410, 20), 120);
   assert.equal(toLineUnitQty(7, 1), 7);
