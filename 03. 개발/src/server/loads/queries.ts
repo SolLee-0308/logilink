@@ -11,7 +11,7 @@ import { can } from "@/domain/permissions";
 import type { ItemUnit } from "@/domain/master";
 import { LOADABLE_ASN, TODAY_ASN_COUNTED, hasLoadDiff, lineState } from "@/domain/load-rules";
 import { todayKst } from "@/lib/format";
-import type { LoadConfirmPrint, LoadView, PdaHome, PdaWorkingRow } from "@/features/loads/types";
+import type { LoadConfirmPrint, LoadView, PdaHistory, PdaHome, PdaLoadDashboard, PdaWorkingRow } from "@/features/loads/types";
 
 const iso = (d: Date) => d.toISOString();
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -190,6 +190,58 @@ export async function getLoadConfirmPrint(me: PlanActor, id: number): Promise<Lo
   };
 }
 
+/** PDA 목록 카드 한 줄에 필요한 관계 */
+const ROW_INCLUDE = {
+  center: { select: { name: true } },
+  loadOrder: { select: { orderNo: true } },
+  inputs: { where: { canceledAt: null }, select: { workerId: true } },
+} satisfies Prisma.LoadInclude;
+
+type RowLoad = Prisma.LoadGetPayload<{ include: typeof ROW_INCLUDE }>;
+
+const pdaRow = (l: RowLoad): PdaWorkingRow => ({
+  loadId: l.id,
+  loadNo: l.loadNo,
+  type: l.loadType,
+  vehicleNo: l.vehicleNo,
+  centerName: l.center.name,
+  orderNo: l.loadOrder?.orderNo ?? null,
+  inputCount: l.inputs.length,
+  workerCount: new Set(l.inputs.map((i) => i.workerId)).size,
+  completedAt: l.completedAt ? iso(l.completedAt) : null,
+  completedBy: l.completedBy,
+  diffReasonName: l.diffReasonName,
+});
+
+/** PDA 상차내역 — 자기 화주사의 그 날짜(상차일) 상차완료 차량, 최근 완료가 앞 */
+export async function pdaLoadHistory(me: PlanActor, date: string): Promise<PdaHistory | null> {
+  if (!canLoad(me)) return null;
+  const rows = await db.load.findMany({
+    where: { clientId: me.clientId!, status: "COMPLETED", loadDate: asDate(date) },
+    orderBy: [{ completedAt: "desc" }, { id: "desc" }],
+    include: ROW_INCLUDE,
+  });
+  return { date, today: todayKst(), rows: rows.map(pdaRow) };
+}
+
+/** PDA 대시보드(상차담당) — 오늘 상차할·작업 중·완료 차량과 내 입력 건수 (임시안 U41) */
+export async function pdaLoadDashboard(me: PlanActor): Promise<PdaLoadDashboard | null> {
+  const home = await pdaHome(me);
+  if (!home) return null;
+  const start = new Date(`${home.today}T00:00:00+09:00`);
+  const myInputs = await db.loadInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: start } } });
+  return {
+    today: home.today,
+    todo: home.orders.filter((o) => !o.loadId).length,
+    working: home.working.length,
+    done: home.done.length,
+    unorderedDone: home.done.filter((d) => d.type === "UNORDERED").length,
+    diffDone: home.done.filter((d) => !!d.diffReasonName).length,
+    myInputs,
+    recent: home.done.slice(0, 3),
+  };
+}
+
 /** PDA 첫 화면 — 오늘(과 출고일 지난) 상차할 지시서, 작업 중인 차량, 오늘 상차완료한 차량 */
 export async function pdaHome(me: PlanActor): Promise<PdaHome | null> {
   if (!canLoad(me)) return null;
@@ -204,24 +256,10 @@ export async function pdaHome(me: PlanActor): Promise<PdaHome | null> {
     db.load.findMany({
       where: { clientId, OR: [{ status: "WORKING" }, { status: "COMPLETED", loadDate: asDate(today) }] },
       orderBy: { id: "desc" },
-      include: {
-        center: { select: { name: true } },
-        loadOrder: { select: { orderNo: true } },
-        inputs: { where: { canceledAt: null }, select: { workerId: true } },
-      },
+      include: ROW_INCLUDE,
     }),
     centerChoices(me),
   ]);
-  const row = (l: (typeof loads)[number]): PdaWorkingRow => ({
-    loadId: l.id,
-    loadNo: l.loadNo,
-    type: l.loadType,
-    vehicleNo: l.vehicleNo,
-    centerName: l.center.name,
-    orderNo: l.loadOrder?.orderNo ?? null,
-    inputCount: l.inputs.length,
-    workerCount: new Set(l.inputs.map((i) => i.workerId)).size,
-  });
   return {
     today,
     orders: asns
@@ -238,8 +276,8 @@ export async function pdaHome(me: PlanActor): Promise<PdaHome | null> {
         lineCount: a._count.lines,
         loadId: a.load?.id ?? null,
       })),
-    working: loads.filter((l) => l.status === "WORKING").map(row),
-    done: loads.filter((l) => l.status === "COMPLETED").map(row),
+    working: loads.filter((l) => l.status === "WORKING").map(pdaRow),
+    done: loads.filter((l) => l.status === "COMPLETED").map(pdaRow),
     centers,
     defaultCenterId,
   };

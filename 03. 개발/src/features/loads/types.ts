@@ -102,6 +102,29 @@ export interface PdaWorkingRow {
   orderNo: string | null;
   inputCount: number;
   workerCount: number;
+  /** 상차완료한 차량만 */
+  completedAt: string | null;
+  completedBy: string | null;
+  diffReasonName: string | null;
+}
+
+/** PDA 상차내역 — 날짜별 상차완료 차량 (2026-11-05 PDA 메뉴 확정) */
+export interface PdaHistory {
+  date: string;
+  today: string;
+  rows: PdaWorkingRow[];
+}
+
+/** PDA 대시보드(상차담당) — 오늘 상차 현황 (임시안 U41) */
+export interface PdaLoadDashboard {
+  today: string;
+  todo: number;
+  working: number;
+  done: number;
+  unorderedDone: number;
+  diffDone: number;
+  myInputs: number;
+  recent: PdaWorkingRow[];
 }
 
 export interface PdaHome {
