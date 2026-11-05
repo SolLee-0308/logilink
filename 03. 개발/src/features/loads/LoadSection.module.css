@@ -1,0 +1,22 @@
+.info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 32px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 900px) {
+  .info {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.minus {
+  color: var(--st-rej-fg);
+  font-weight: 600;
+}
+
+.plus {
+  color: var(--st-wait-fg);
+  font-weight: 600;
+}

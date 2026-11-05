@@ -11,6 +11,7 @@ import { can } from "@/domain/permissions";
 import { ASN_COUNTED, DISTRIBUTABLE_PLAN, remainingBase, toLineUnitQty, type AsnStatus } from "@/domain/asn-rules";
 import type { ItemUnit } from "@/domain/master";
 import { todayKst } from "@/lib/format";
+import { getLoadOfAsn, listUnorderedLoads } from "@/server/loads/queries";
 import type { AsnDetail, AsnOptions, AsnRow, AsnTab, DistPlan, LoadOrderPrint } from "@/features/asn/types";
 
 const iso = (d: Date) => d.toISOString();
@@ -40,6 +41,37 @@ export async function distributedByLine(planLineIds: number[], tx: Pick<typeof d
   return new Map(rows.map((r) => [r.planLineId, r._sum.baseQty ?? 0]));
 }
 
+/** 무지시 상차 실적을 ASN 목록 행으로 — 작업중은 상차중, 상차완료는 검수 대기로 보인다 (검수가 생기면 입고완료도) */
+async function unorderedRows(scope: Prisma.LoadWhereInput): Promise<AsnRow[]> {
+  const loads = await listUnorderedLoads(scope);
+  return loads.map((l) => ({
+    kind: "load",
+    key: `load-${l.id}`,
+    href: `/plans/loads/${l.id}`,
+    id: l.id,
+    clientId: l.clientId,
+    clientName: l.client.name,
+    asnNo: "",
+    loadOrderNo: null,
+    loadNo: l.loadNo,
+    tab: "loading",
+    status: l.status === "WORKING" ? "LOADING" : "LOADED",
+    centerId: l.centerId,
+    centerName: l.center.name,
+    shipDate: ymd(l.loadDate),
+    vehicleNo: l.vehicleNo,
+    driverName: null,
+    driverTel: null,
+    lineCount: l.lines.filter((d) => d.loadBaseQty > 0).length,
+    planNos: [],
+    qtyByUnit: sumByUnit(l.lines.filter((d) => d.loadBaseQty > 0).map((d) => ({ unit: d.item.baseUnit, qty: d.loadBaseQty }))),
+    itemTexts: l.lines.flatMap((d) => [d.item.code, d.item.name]),
+    createdAt: iso(l.createdAt),
+    createdBy: l.createdBy,
+    closedAt: null,
+  }));
+}
+
 /** 목록에 남기는 ASN — 상차 전·진행 건 전부 + 최근 30일 입고완료·취소 */
 function listWhere(scope: Prisma.AsnWhereInput): Prisma.AsnWhereInput {
   const since = new Date(Date.now() - ASN_RECENT_DAYS * 86_400_000);
@@ -56,7 +88,8 @@ function listWhere(scope: Prisma.AsnWhereInput): Prisma.AsnWhereInput {
 /** ASN 목록 (화주사) — 자기 화주사 건만 */
 export async function listMyAsns(me: PlanActor): Promise<AsnRow[]> {
   if (!canAsn(me)) return [];
-  return listAsnRows(listWhere({ clientId: me.clientId! }));
+  const [asns, loads] = await Promise.all([listAsnRows(listWhere({ clientId: me.clientId! }), "/plans/asn"), unorderedRows({ clientId: me.clientId! })]);
+  return [...asns, ...loads];
 }
 
 /** 3PL 조회 범위 — 소속 센터 ASN만 (센터가 없는 계정은 전체) */
@@ -66,10 +99,12 @@ const tplScope = (me: PlanActor): Prisma.AsnWhereInput => (me.centerId ? { cente
 /** ASN·상차 현황 (3PL) */
 export async function listAsnStatus(me: PlanActor): Promise<AsnRow[]> {
   if (!canAsnStatus(me)) return [];
-  return listAsnRows(listWhere(tplScope(me)));
+  const scope = tplScope(me);
+  const [asns, loads] = await Promise.all([listAsnRows(listWhere(scope), "/plans/asn-status"), unorderedRows(scope.centerId ? { centerId: scope.centerId as number } : {})]);
+  return [...asns, ...loads];
 }
 
-async function listAsnRows(where: Prisma.AsnWhereInput): Promise<AsnRow[]> {
+async function listAsnRows(where: Prisma.AsnWhereInput, base: string): Promise<AsnRow[]> {
   const asns = await db.asn.findMany({
     where,
     orderBy: [{ shipDate: "asc" }, { asnNo: "asc" }],
@@ -77,15 +112,20 @@ async function listAsnRows(where: Prisma.AsnWhereInput): Promise<AsnRow[]> {
       client: { select: { name: true } },
       center: { select: { name: true } },
       loadOrder: { select: { orderNo: true } },
+      load: { select: { loadNo: true } },
       lines: { select: { unit: true, qty: true, plan: { select: { planNo: true } }, item: { select: { code: true, name: true } } } },
     },
   });
   return asns.map((a) => ({
+    kind: "asn" as const,
+    key: `asn-${a.id}`,
+    href: `${base}/${a.id}`,
     id: a.id,
     clientId: a.clientId,
     clientName: a.client.name,
     asnNo: a.asnNo,
     loadOrderNo: a.loadOrder?.orderNo ?? null,
+    loadNo: a.load?.loadNo ?? null,
     tab: tabOf(a.status),
     status: a.status,
     centerId: a.centerId,
@@ -194,6 +234,7 @@ async function loadAsnDetail(where: Prisma.AsnWhereInput): Promise<AsnDetail | n
   });
   if (!a) return null;
   const cancel = a.histories.findLast((h) => h.action === "CANCEL");
+  const load = await getLoadOfAsn(a.id);
   return {
     id: a.id,
     asnNo: a.asnNo,
@@ -245,6 +286,7 @@ async function loadAsnDetail(where: Prisma.AsnWhereInput): Promise<AsnDetail | n
       reasonName: h.reasonName,
       reasonText: h.reasonText,
     })),
+    load,
   };
 }
 

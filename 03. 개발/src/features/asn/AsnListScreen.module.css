@@ -10,3 +10,14 @@
 .item {
   width: 200px;
 }
+
+/* 무지시 상차 행 표시 */
+.unordered {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--r-tag);
+  background: var(--st-wait-bg);
+  color: var(--st-wait-fg);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}

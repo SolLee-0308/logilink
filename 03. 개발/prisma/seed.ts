@@ -205,7 +205,7 @@ async function main() {
 
   // 모든 기준정보 테이블을 비우고 번호를 1부터 다시 시작한다 (로그인 세션·이력 포함)
   await db.$executeRawUnsafe(
-    'TRUNCATE tb_asn_his, tb_load_order, tb_asn_d, tb_asn_h, tb_inb_plan_his, tb_inb_plan_rej_d, tb_inb_plan_rej_h, tb_inb_plan_d, tb_inb_plan_h, tb_session, tb_login_log, tb_change_log, tb_item_req_his, tb_item_req, tb_item_alias, tb_item_barcode, tb_item_uom, tb_item, tb_user, tb_holiday, tb_client_center, tb_client, tb_common_code, tb_code_group, tb_setting, tb_company, tb_center RESTART IDENTITY CASCADE',
+    'TRUNCATE tb_load_input, tb_load_d, tb_load_h, tb_asn_his, tb_load_order, tb_asn_d, tb_asn_h, tb_inb_plan_his, tb_inb_plan_rej_d, tb_inb_plan_rej_h, tb_inb_plan_d, tb_inb_plan_h, tb_session, tb_login_log, tb_change_log, tb_item_req_his, tb_item_req, tb_item_alias, tb_item_barcode, tb_item_uom, tb_item, tb_user, tb_holiday, tb_client_center, tb_client, tb_common_code, tb_code_group, tb_setting, tb_company, tb_center RESTART IDENTITY CASCADE',
   );
 
   // 회사 정보 (3PL 운영 법인, 가상) — 시스템명 LogiLink와 운영사명을 분리한다
@@ -632,14 +632,68 @@ async function main() {
     const ymdOf = (at: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(at);
     await extra("HB", "HB-1004", `ASN-${ymdOf(hoursAgo(30)).replaceAll("-", "")}-0001`, day(-1), "91다4521", "한상우", 12, "박민지", 30);
     await extra("GM", "GM-0501", `ASN-${ymd}-0003`, day(1), "77라3090", "문지호", 20, "이도윤", 0.2);
+
+    /*
+     * 상차등록 예시 (2026-11-05) — 그린마켓 오늘 출고 차량 (ASN은 어제 등록, 상차담당 오세라)
+     * 한빛식품 데이터는 ASN 점검(check-asn-rules)이 쓰므로 건드리지 않는다.
+     * 31바7788: 상차중(세제 일부 실음) / 55사2020: 상차완료(종이타월 부족 → 재고 부족) / 99허1004: 무지시 상차완료(예정 외 차량)
+     */
+    const gmLine = async (itemCode: string) =>
+      db.inboundPlanLine.findFirstOrThrow({ where: { itemId: itemId[itemCode], plan: { clientId: clientId.GM, status: "APPROVED", centerId: center.id } }, orderBy: { id: "asc" } });
+    const sera = { id: userId["gm.sera"], name: "오세라" };
+    const yymd = ymdOf(hoursAgo(24)).replaceAll("-", "");
+    let loadSeq = 0;
+    type Done = { reason: [string, string]; h: number };
+    const loadOf = async (
+      type: "ORDERED" | "UNORDERED", vehicleNo: string, order: [string, number][], inputs: [itemCode: string, boxQty: number, h: number][],
+      done: Done | undefined, ref: { asnId: number; loadOrderId: number } | null,
+    ) => {
+      const sum = new Map<string, number>(order.map(([c]) => [c, 0]));
+      for (const [c, q] of inputs) sum.set(c, (sum.get(c) ?? 0) + q * uomQty(c, "BOX"));
+      await db.load.create({
+        data: {
+          loadNo: `LD-${ymd}-${String(++loadSeq).padStart(4, "0")}`, loadType: type, asnId: ref?.asnId ?? null, loadOrderId: ref?.loadOrderId ?? null,
+          clientId: clientId.GM, centerId: center.id, vehicleNo, loadDate: new Date(`${kstToday}T00:00:00Z`),
+          status: done ? "COMPLETED" : "WORKING", version: done ? 2 : 1, createdAt: hoursAgo(inputs[0][2] + 0.05), createdBy: sera.name,
+          ...(done ? { completedAt: hoursAgo(done.h), completedBy: sera.name, completeUserId: sera.id, diffReasonCode: done.reason[0], diffReasonName: done.reason[1] } : {}),
+          lines: { create: [...sum].map(([c, b]) => ({ itemId: itemId[c], orderBaseQty: order.find(([oc]) => oc === c)?.[1] ?? 0, loadBaseQty: b })) },
+          inputs: {
+            create: inputs.map(([c, q, h]) => ({ itemId: itemId[c], unit: "BOX" as const, addQty: q, baseQty: q * uomQty(c, "BOX"), workerId: sera.id, workerName: sera.name, deviceId: "PDA-SEED01", inputAt: hoursAgo(h) })),
+          },
+        },
+      });
+    };
+    const loaded = async (n: number, vehicleNo: string, driverName: string, lines: [itemCode: string, boxQty: number][], inputs: [string, number, number][], done?: Done) => {
+      const pls = await Promise.all(lines.map(([c]) => gmLine(c)));
+      const asn = await db.asn.create({
+        data: {
+          asnNo: `ASN-${yymd}-000${n}`, clientId: clientId.GM, centerId: center.id, shipDate: new Date(`${kstToday}T00:00:00Z`), vehicleNo, driverName, driverTel: "010-3030-4545",
+          status: done ? "LOADED" : "LOADING", version: done ? 3 : 2, createdAt: hoursAgo(24 - n * 0.1), createdBy: "이도윤", updatedBy: sera.name,
+          lines: { create: lines.map(([c, qty], i) => ({ lineNo: i + 1, planId: pls[i].planId, planLineId: pls[i].id, itemId: itemId[c], unit: pls[i].unit, qty, baseQty: qty * uomQty(c, pls[i].unit) })) },
+          loadOrder: { create: { orderNo: `LO-${yymd}-000${n}`, status: done ? "LOADED" : "ISSUED", issuedAt: hoursAgo(24 - n * 0.1), issuedBy: "이도윤" } },
+          histories: {
+            create: [
+              { action: "CREATE", version: 1, actor: "이도윤", actorId: userId["gm.doyun"], at: hoursAgo(24 - n * 0.1) },
+              { action: "LOAD_START", version: 2, actor: sera.name, actorId: sera.id, at: hoursAgo(inputs[0][2]) },
+              ...(done ? [{ action: "LOAD_COMPLETE" as const, version: 3, actor: sera.name, actorId: sera.id, at: hoursAgo(done.h), reasonCode: done.reason[0], reasonName: done.reason[1] }] : []),
+            ],
+          },
+        },
+        include: { loadOrder: true },
+      });
+      await loadOf("ORDERED", vehicleNo, lines.map(([c, q], i) => [c, q * uomQty(c, pls[i].unit)]), inputs, done, { asnId: asn.id, loadOrderId: asn.loadOrder!.id });
+    };
+    await loaded(2, "31바7788", "김태준", [["GM-0501", 10], ["GM-0730", 8]], [["GM-0501", 6, 0.25]]);
+    await loaded(3, "55사2020", "이강민", [["GM-0730", 12]], [["GM-0730", 10, 1.3]], { reason: ["L01", "재고 부족(결품)"], h: 1.2 });
+    await loadOf("UNORDERED", "99허1004", [], [["GM-0501", 2, 0.9]], { reason: ["L04", "예정 외 차량(무지시)"], h: 0.8 }, null);
   }
 
   await db.changeLog.createMany({ data: createLogs });
 
   const counts = await Promise.all([
-    db.client.count(), db.item.count(), db.itemRequest.count(), db.commonCode.count(), db.user.count(), db.setting.count(), db.inboundPlan.count(), db.asn.count(),
+    db.client.count(), db.item.count(), db.itemRequest.count(), db.commonCode.count(), db.user.count(), db.setting.count(), db.inboundPlan.count(), db.asn.count(), db.load.count(),
   ]);
-  console.log("seed 완료 — 화주사 %d, 품목 %d, 품목 등록 요청 %d, 사유 코드 %d, 사용자 %d, 설정 %d, 입고예정 %d, ASN %d", ...counts);
+  console.log("seed 완료 — 화주사 %d, 품목 %d, 품목 등록 요청 %d, 사유 코드 %d, 사용자 %d, 설정 %d, 입고예정 %d, ASN %d, 상차 실적 %d", ...counts);
 }
 
 main()

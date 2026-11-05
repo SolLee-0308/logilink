@@ -82,7 +82,7 @@ export function AsnListScreen({
         .sort((a, b) =>
           tab === "done" || tab === "canceled"
             ? (b.closedAt ?? "").localeCompare(a.closedAt ?? "")
-            : a.shipDate.localeCompare(b.shipDate) || a.asnNo.localeCompare(b.asnNo),
+            : a.shipDate.localeCompare(b.shipDate) || a.kind.localeCompare(b.kind) || (a.asnNo || a.loadNo || "").localeCompare(b.asnNo || b.loadNo || ""),
         ),
     [rows, tab, center, q, item, from, to],
   );
@@ -91,12 +91,22 @@ export function AsnListScreen({
     {
       key: "no",
       header: "ASN번호",
-      render: (r) => (
-        <>
-          <span className="mono">{r.asnNo}</span>
-          {r.loadOrderNo && <CellSub mono>지시서 {r.loadOrderNo}</CellSub>}
-        </>
-      ),
+      render: (r) =>
+        r.kind === "load" ? (
+          <>
+            <span className={styles.unordered}>무지시 상차</span>
+            <CellSub mono>확인서 {r.loadNo}</CellSub>
+          </>
+        ) : (
+          <>
+            <span className="mono">{r.asnNo}</span>
+            {r.loadNo && (r.status === "LOADED" || r.status === "RECEIVED") ? (
+              <CellSub mono>확인서 {r.loadNo}</CellSub>
+            ) : (
+              r.loadOrderNo && <CellSub mono>지시서 {r.loadOrderNo}</CellSub>
+            )}
+          </>
+        ),
     },
     {
       key: "date",
@@ -126,12 +136,15 @@ export function AsnListScreen({
       key: "plans",
       header: "입고예정",
       wrap: true,
-      render: (r) => (
-        <span className="mono">
-          {r.planNos[0]}
-          {r.planNos.length > 1 && <span className="muted"> 외 {r.planNos.length - 1}건</span>}
-        </span>
-      ),
+      render: (r) =>
+        r.kind === "load" ? (
+          <span className="muted">ASN 없음</span>
+        ) : (
+          <span className="mono">
+            {r.planNos[0]}
+            {r.planNos.length > 1 && <span className="muted"> 외 {r.planNos.length - 1}건</span>}
+          </span>
+        ),
     },
     {
       key: "lines",
@@ -140,7 +153,7 @@ export function AsnListScreen({
       render: (r) => (
         <>
           {r.lineCount}줄
-          <CellSub mono>{qtyText(r.qtyByUnit)}</CellSub>
+          <CellSub mono>{r.kind === "load" ? `상차 ${qtyText(r.qtyByUnit) || "0"}` : qtyText(r.qtyByUnit)}</CellSub>
         </>
       ),
     },
@@ -153,7 +166,7 @@ export function AsnListScreen({
         ) : (
           <>
             <span className="mono">{fmtShortDateTime(r.createdAt)}</span>
-            <CellSub>{r.createdBy}</CellSub>
+            <CellSub>{r.kind === "load" ? `${r.createdBy} · 상차 시작` : r.createdBy}</CellSub>
           </>
         ),
     },
@@ -212,13 +225,16 @@ export function AsnListScreen({
           caption="ASN 목록"
           columns={columns}
           rows={list}
-          rowKey={(r) => String(r.id)}
-          onActivate={(k) => router.push(`/plans/asn/${k}`)}
+          rowKey={(r) => r.key}
+          onActivate={(k) => {
+            const r = list.find((x) => x.key === k);
+            if (r) router.push(r.href);
+          }}
           empty={
             tab === "wait"
               ? "상차를 기다리는 ASN이 없습니다. [+ ASN 등록]으로 승인된 입고예정을 차량에 담으세요."
               : tab === "loading"
-                ? "상차 중이거나 상차를 마친 ASN이 없습니다."
+                ? "상차 중이거나 상차를 마친 차량이 없습니다."
                 : tab === "done"
                   ? "최근 30일 동안 입고완료된 ASN이 없습니다."
                   : "최근 30일 동안 취소된 ASN이 없습니다."

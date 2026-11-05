@@ -3,8 +3,8 @@ export type ActionResult<T = undefined> =
   | { ok: true; message: string; data?: T }
   | {
       ok: false;
-      /** CONFLICT: 다른 사람이 먼저 바꿈(version 불일치) / VALIDATION: 입력 오류 / NOT_FOUND / STATE: 처리할 수 없는 상태 / FORBIDDEN: 권한 없음 */
-      code: "CONFLICT" | "VALIDATION" | "NOT_FOUND" | "STATE" | "FORBIDDEN" | "EXTERNAL" | "ERROR";
+      /** CONFLICT: 다른 사람이 먼저 바꿈(version 불일치) / VALIDATION: 입력 오류 / NOT_FOUND / STATE: 처리할 수 없는 상태 / FORBIDDEN: 권한 없음 / CONFIRM: 경고를 보고 한 번 더 확인해야 함 */
+      code: "CONFLICT" | "VALIDATION" | "NOT_FOUND" | "STATE" | "FORBIDDEN" | "EXTERNAL" | "ERROR" | "CONFIRM";
       error: string;
       fieldErrors?: Record<string, string>;
     };

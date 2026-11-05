@@ -110,6 +110,7 @@ model Center {
   holidays     Holiday[]
   plans        InboundPlan[]
   asns         Asn[]
+  loads        Load[]
   clientLinks  ClientCenter[]
 
   @@map("tb_center")
@@ -151,6 +152,7 @@ model Client {
   plans        InboundPlan[]
   planAiReads  PlanAiRead[]
   asns         Asn[]
+  loads        Load[]
   users        User[]
 
   @@map("tb_client")
@@ -199,6 +201,8 @@ model Item {
   fromRequest ItemRequest?
   planLines   InboundPlanLine[]
   asnLines    AsnLine[]
+  loadLines   LoadLine[]
+  loadInputs  LoadInput[]
 
   @@unique([clientId, code])
   @@map("tb_item")
@@ -712,6 +716,8 @@ enum LoadOrderStatus {
 enum AsnAction {
   CREATE // 등록 (상차지시서 발행)
   CANCEL // 화주사 취소
+  LOAD_START // 상차 시작 (첫 상차 입력)
+  LOAD_COMPLETE // 상차완료 (상차확인서 발행)
 }
 
 /// ASN 헤더 (TB_ASN_H) — 차량 1대 단위. 입고예정번호를 두지 않고 라인이 입고예정 라인을 가리킨다 (D9)
@@ -744,6 +750,7 @@ model Asn {
   center    Center       @relation(fields: [centerId], references: [id])
   lines     AsnLine[]
   loadOrder LoadOrder?
+  load      Load?
   histories AsnHistory[]
 
   @@index([clientId, status])
@@ -789,7 +796,8 @@ model LoadOrder {
   issuedBy  String          @map("issued_by") @db.VarChar(50)
   updatedAt DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  asn Asn @relation(fields: [asnId], references: [id], onDelete: Cascade)
+  asn  Asn   @relation(fields: [asnId], references: [id], onDelete: Cascade)
+  load Load?
 
   @@map("tb_load_order")
 }
@@ -811,4 +819,109 @@ model AsnHistory {
 
   @@index([asnId])
   @@map("tb_asn_his")
+}
+
+/**
+ * ═════════ 상차등록 (정의서 ④ · 4-2 · 9장 · C5 · C6 · D10~D13) ═════════
+ * 상차 실적은 ASN과 독립된 차량 단위 문서다. 지시 상차는 상차지시서를 참조하고, 무지시 상차는 참조 없이 만든다.
+ */
+
+/// 상차 구분 — 지시(상차지시서 스캔) / 무지시(예정 외 차량, ASN 없음, D12)
+enum LoadType {
+  ORDERED
+  UNORDERED
+}
+
+/// 상차 실적 상태 — 정의서 4-2
+enum LoadStatus {
+  WORKING // 작업중
+  COMPLETED // 상차완료 (상차확인서 발행)
+}
+
+/// 상차 실적 (TB_LOAD_H) — 차량 1대 단위. 작업자 잠금 없음 (D11). 상차완료는 1회, 이후 입력 거부 (C6)
+model Load {
+  id             Int        @id @default(autoincrement())
+  /// LD-YYYYMMDD-NNNN — 상차확인서 번호·바코드도 이 번호 (정의서 ④ "실적 번호 + 바코드")
+  loadNo         String     @unique @map("load_no") @db.VarChar(20)
+  loadType       LoadType   @map("load_type")
+  /// 지시 상차만 — 상차지시서 1장에 상차 실적 1건
+  loadOrderId    Int?       @unique @map("load_order_id")
+  asnId          Int?       @unique @map("asn_id")
+  clientId       Int        @map("client_id")
+  centerId       Int        @map("center_id")
+  /// 공백을 뺀 대문자 차량번호 (필수)
+  vehicleNo      String     @map("vehicle_no") @db.VarChar(20)
+  /// 상차하는 날 (KST) — 무지시 상차의 "당일 ASN 품목" 기준
+  loadDate       DateTime   @map("load_dt") @db.Date
+  status         LoadStatus @default(WORKING)
+  version        Int        @default(1)
+  /// ASN 대비 차이 사유 (LOAD_DIFF 그룹, 기타는 텍스트 필수)
+  diffReasonCode String?    @map("diff_reason_cd") @db.VarChar(20)
+  diffReasonName String?    @map("diff_reason_nm") @db.VarChar(100)
+  diffReasonText String?    @map("diff_reason_text") @db.VarChar(500)
+  completeUserId Int?       @map("complete_user_id")
+  completedBy    String?    @map("completed_by") @db.VarChar(50)
+  completedAt    DateTime?  @map("complete_dt") @db.Timestamptz(3)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy      String     @map("created_by") @db.VarChar(50)
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  loadOrder LoadOrder?  @relation(fields: [loadOrderId], references: [id], onDelete: Restrict)
+  asn       Asn?        @relation(fields: [asnId], references: [id], onDelete: Restrict)
+  client    Client      @relation(fields: [clientId], references: [id])
+  center    Center      @relation(fields: [centerId], references: [id])
+  lines     LoadLine[]
+  inputs    LoadInput[]
+
+  @@index([clientId, status])
+  @@index([centerId, loadDate])
+  @@index([vehicleNo])
+  @@map("tb_load_h")
+}
+
+/// 상차 품목별 합계 (TB_LOAD_D) — 입력 행 합계를 기준 단위로 모은다. 지시수량은 ASN 라인 합계
+model LoadLine {
+  id           Int @id @default(autoincrement())
+  loadId       Int @map("load_id")
+  itemId       Int @map("item_id")
+  /// ASN 지시수량 합계 (기준 단위, 무지시·지시 외 품목은 0)
+  orderBaseQty Int @default(0) @map("order_base_qty")
+  /// 상차수량 합계 (기준 단위) = 취소되지 않은 입력 행의 합
+  loadBaseQty  Int @default(0) @map("load_base_qty")
+
+  load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@unique([loadId, itemId])
+  @@map("tb_load_d")
+}
+
+/// 상차 입력 행 (TB_LOAD_INPUT) — 입력 1건 = "추가로 실은 수량" 1행 (C5). 완료 전 본인 입력만 취소(정정)한다
+model LoadInput {
+  id          Int       @id @default(autoincrement())
+  loadId      Int       @map("load_id")
+  itemId      Int       @map("item_id")
+  /// 스캔한 바코드의 단위 (손 입력은 기준 단위)
+  unit        ItemUnit
+  addQty      Int       @map("add_qty")
+  baseQty     Int       @map("base_qty")
+  /// 스캔·입력한 값 그대로
+  scanned     String?   @db.VarChar(40)
+  workerId    Int       @map("worker_id")
+  workerName  String    @map("worker_nm") @db.VarChar(50)
+  /// 단말 구분값 (단말 관리는 보류 — H2)
+  deviceId    String?   @map("device_id") @db.VarChar(64)
+  inputAt     DateTime  @default(now()) @map("input_dt") @db.Timestamptz(3)
+  /// 지시수량 초과 경고를 보고 확인한 입력
+  overConfirm Boolean   @default(false) @map("over_confirm")
+  canceledAt  DateTime? @map("canceled_at") @db.Timestamptz(3)
+  /// 정정으로 새로 넣은 행이면 원래 행
+  correctsId  Int?      @map("corrects_id")
+
+  load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@index([loadId, inputAt])
+  @@index([workerId])
+  @@map("tb_load_input")
 }

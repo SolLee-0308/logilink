@@ -2,9 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
-import { clientIp, createSession, destroySession, getSessionUser } from "@/server/session";
+import { clientIp, createSession, destroySession, getAnySessionUser } from "@/server/session";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
-import { isWebRole } from "@/domain/permissions";
+import { isPdaRole, isWebRole } from "@/domain/permissions";
 import { isValidPassword, PASSWORD_RULE_TEXT } from "@/domain/validators";
 import type { LoginResult } from "@/generated/prisma/client";
 
@@ -16,7 +16,8 @@ const LOGIN_MSG = {
   locked: "계정이 잠겼습니다. 관리자에게 문의하세요",
   inactive: "사용이 중지된 계정입니다. 관리자에게 문의하세요",
   clientInactive: "사용이 중지된 화주사의 계정입니다. 관리자에게 문의하세요.",
-  pda: "PDA 전용 계정입니다",
+  pda: "PDA 전용 계정입니다. PDA 화면(/pda)에서 로그인하세요",
+  web: "PDA 권한이 없는 계정입니다. Web 화면에서 로그인하세요",
 } as const;
 
 export type FormState = {
@@ -25,9 +26,9 @@ export type FormState = {
 };
 
 /** 로그인 후 이동할 경로 — 같은 사이트 안의 경로만 허용한다 */
-function safeNext(v: FormDataEntryValue | null) {
+function safeNext(v: FormDataEntryValue | null, home = "/") {
   const s = typeof v === "string" ? v : "";
-  if (!s.startsWith("/") || s.startsWith("//") || s.startsWith("/\\") || s.startsWith("/login")) return "/";
+  if (!s.startsWith("/") || s.startsWith("//") || s.startsWith("/\\") || s.startsWith("/login") || s.startsWith("/pda/login")) return home;
   return s;
 }
 
@@ -43,9 +44,19 @@ async function logAttempt(loginInput: string, result: LoginResult, reason: strin
  * 4) 비밀번호가 맞을 때만 사용 안 함 / 사용 안 함 화주사 소속 / PDA 전용 차단 문구를 보여 준다 (계정 상태가 비밀번호 없이 드러나지 않게)
  */
 export async function login(_prev: FormState, form: FormData): Promise<FormState> {
+  return loginAs("Web", form);
+}
+
+/** PDA 로그인 (/pda/login) — PDA 역할(화주사 상차담당 등)이 있는 계정만 */
+export async function pdaLogin(_prev: FormState, form: FormData): Promise<FormState> {
+  return loginAs("PDA", form);
+}
+
+async function loginAs(channel: "Web" | "PDA", form: FormData): Promise<FormState> {
   const input = String(form.get("loginId") ?? "").trim();
   const password = String(form.get("password") ?? "");
-  const next = safeNext(form.get("next"));
+  const next = safeNext(form.get("next"), channel === "PDA" ? "/pda" : "/");
+  if (channel === "PDA" && !next.startsWith("/pda")) return { error: "잘못된 접근입니다" };
   if (!input || !password) {
     return {
       fieldErrors: {
@@ -86,9 +97,13 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
     await logAttempt(input, "BLOCKED_INACTIVE", "사용 안 함 화주사 소속 계정", user.id);
     return { error: LOGIN_MSG.clientInactive };
   }
-  if (!isWebRole(user.roles)) {
+  if (channel === "Web" && !isWebRole(user.roles)) {
     await logAttempt(input, "BLOCKED_PDA", "PDA 전용 역할의 Web 로그인", user.id);
     return { error: LOGIN_MSG.pda };
+  }
+  if (channel === "PDA" && !isPdaRole(user.roles)) {
+    await logAttempt(input, "BLOCKED_PDA", "PDA 역할이 없는 계정의 PDA 로그인", user.id);
+    return { error: LOGIN_MSG.web };
   }
 
   await db.user.update({ where: { id: user.id }, data: { failCount: 0, lastLoginAt: new Date() } });
@@ -102,9 +117,14 @@ export async function logout() {
   redirect("/login");
 }
 
+export async function pdaLogout() {
+  await destroySession();
+  redirect("/pda/login");
+}
+
 /** 비밀번호 변경 — 관리자 초기화 후 첫 로그인에서 강제된다 */
 export async function changePassword(_prev: FormState, form: FormData): Promise<FormState> {
-  const me = await getSessionUser();
+  const me = await getAnySessionUser();
   if (!me) redirect("/login");
   const current = String(form.get("current") ?? "");
   const next = String(form.get("next") ?? "");

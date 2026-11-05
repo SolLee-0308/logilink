@@ -16,6 +16,7 @@ import { cancelAsn } from "@/server/asn/actions";
 import { RejectModal, type ReasonOption } from "@/features/shared/RejectModal";
 import { SubHeader, useAction } from "@/features/master/shared";
 import { ViewSection } from "@/features/master/record";
+import { LoadSection } from "@/features/loads/LoadSection";
 import { ASN_RULES, ASN_STATUS_RULES } from "./rules";
 import type { AsnDetail, AsnLineView } from "./types";
 import { ASN_LIST_KEY, asnListUrl } from "./asn-list";
@@ -25,7 +26,7 @@ import styles from "./AsnDetailScreen.module.css";
 function historyEntries(d: AsnDetail): TimelineEntry[] {
   return d.histories.map((h) => ({
     key: h.id,
-    tone: h.action === "CANCEL" ? "reject" : "save",
+    tone: h.action === "CANCEL" ? "reject" : h.action === "LOAD_COMPLETE" ? "ok" : "save",
     title: (
       <span>
         {h.actor} · {ASN_ACTION_LABEL[h.action]}
@@ -130,7 +131,13 @@ export function AsnDetailScreen({
             : "화주사 상차 전입니다. 상차를 시작하기 전까지는 화주사가 취소하거나 다시 등록할 수 있습니다."}
         </NoteBox>
       )}
-      {tpl && d.status === "LOADED" && <NoteBox tone="info">상차를 마친 차량입니다. 차량이 도착하면 입고검수를 시작할 수 있습니다.</NoteBox>}
+      {tpl && d.status === "LOADED" && <NoteBox tone="info">상차를 마친 차량입니다. 차량이 도착하면 상차확인서 바코드를 스캔해 입고검수를 시작할 수 있습니다.</NoteBox>}
+      {d.status === "LOADING" && (
+        <NoteBox tone="info">
+          화주사 상차담당이 PDA로 싣고 있습니다. 상차를 시작한 ASN은 취소할 수 없고, 지시수량과 다르게 실으면 상차완료 때 차이 사유를 남깁니다.
+        </NoteBox>
+      )}
+      {!tpl && d.status === "LOADED" && <NoteBox tone="info">상차를 마쳤습니다. 상차확인서를 인쇄해 차량에 함께 보내세요. 이후 차이는 입고검수에서 처리합니다.</NoteBox>}
       {!tpl && d.status === "REGISTERED" && !issued && <NoteBox tone="info">상차를 기다리고 있습니다. 상차를 시작하기 전까지는 취소할 수 있습니다. 내용이 바뀌면 취소하고 새로 등록하세요.</NoteBox>}
       {!tpl && d.status === "REGISTERED" && n < 0 && <NoteBox tone="warn">출고일이 지났습니다. 이 차량이 오지 않으면 ASN을 취소하고, 다른 날 보낼 물량은 새 ASN에 담으세요.</NoteBox>}
       {d.status === "CANCELED" && (
@@ -173,8 +180,10 @@ export function AsnDetailScreen({
         </div>
       </Card>
 
+      {d.load && <LoadSection load={d.load} />}
+
       <Card
-        title="품목"
+        title={d.load ? "ASN 지시 품목" : "품목"}
         count={d.lineCount}
         description={`입고예정 ${d.planNos.length}건: ${d.planNos.join(", ")}`}
         aside={<span className={`${styles.qty} mono`}>{d.qtyByUnit.map(([u, q]) => `${u} ${q.toLocaleString()}`).join(" · ")}</span>}

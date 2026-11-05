@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * 화면이 로그인 후 돌아올 경로를 알 수 있도록 x-pathname 헤더를 넘긴다.
  */
 const SESSION_COOKIE = "ll_session";
-const PUBLIC = ["/login"];
+const PUBLIC = ["/login", "/pda/login"];
 
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
@@ -14,8 +14,10 @@ export function proxy(req: NextRequest) {
 
   if (!PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`)) && !req.cookies.has(SESSION_COOKIE)) {
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(path)}`;
+    // PDA 화면은 PDA 로그인으로 보낸다
+    const pda = pathname === "/pda" || pathname.startsWith("/pda/");
+    url.pathname = pda ? "/pda/login" : "/login";
+    url.search = pathname === "/" || pathname === "/pda" ? "" : `?next=${encodeURIComponent(path)}`;
     return NextResponse.redirect(url);
   }
 

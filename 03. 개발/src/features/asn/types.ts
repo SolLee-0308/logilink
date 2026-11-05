@@ -2,6 +2,7 @@ import type { ItemUnit } from "@/domain/master";
 import type { AsnAction, AsnStatus } from "@/domain/asn-rules";
 import type { PlanStatus } from "@/domain/plan-status";
 import type { CenterOption } from "@/features/plans/types";
+import type { LoadView } from "@/features/loads/types";
 
 /** ASN 목록 탭 — 상차 대기(등록) / 상차 진행(상차중·상차완료) / 최근 입고완료 / 최근 취소 */
 export type AsnTab = "wait" | "loading" | "done" | "canceled";
@@ -10,11 +11,20 @@ export type AsnTab = "wait" | "loading" | "done" | "canceled";
 export type AsnStatusTab = "wait" | "loading" | "loaded" | "done" | "canceled";
 
 export interface AsnRow {
+  /** asn: ASN 1건 / load: ASN 없는 무지시 상차 실적 (D12) */
+  kind: "asn" | "load";
+  /** 목록 행 키 (asn-1, load-3) */
+  key: string;
+  /** 행을 누르면 갈 상세 주소 */
+  href: string;
   id: number;
   clientId: number;
   clientName: string;
+  /** 무지시 상차는 "" */
   asnNo: string;
   loadOrderNo: string | null;
+  /** 상차 실적·상차확인서 번호 (상차를 시작한 뒤) */
+  loadNo: string | null;
   tab: AsnTab;
   status: AsnStatus;
   centerId: number;
@@ -129,6 +139,8 @@ export interface AsnDetail {
   planNos: string[];
   qtyByUnit: [ItemUnit, number][];
   histories: AsnHistoryView[];
+  /** 상차 실적 (상차지시서를 스캔한 뒤) */
+  load: LoadView | null;
 }
 
 /** 상차지시서 인쇄 — 발송인(화주사 법인)·수신(센터) 정보를 더한다 */

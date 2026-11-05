@@ -1,0 +1,500 @@
+/* PDA 화면 — 한 손으로 쓰는 세로 화면. 큰 글자·큰 누름 영역, 바이올렛은 주 버튼·포커스에만 */
+.app {
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: #fff;
+}
+
+.logo {
+  height: 22px;
+  width: auto;
+}
+
+.back {
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  font-size: var(--fs-16);
+  padding: 6px 2px;
+}
+
+.barTitle {
+  font-weight: 700;
+  font-size: var(--fs-16);
+}
+
+.user {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: var(--fs-13);
+  line-height: 1.2;
+}
+
+.user small {
+  color: var(--ink-text);
+  font-size: var(--fs-11);
+}
+
+.logout {
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--ink-text);
+  background: transparent;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-control);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 12px 12px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel {
+  background: var(--bg);
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-card);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.h2 {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+.label {
+  display: block;
+  margin: 2px 0 4px;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.help {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.dim {
+  color: var(--muted);
+  font-size: var(--fs-13);
+  font-weight: 400;
+}
+
+.empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+.scanRow {
+  display: flex;
+  gap: 8px;
+}
+
+.scan,
+.qty,
+.select,
+.textarea {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-17);
+  padding: 12px;
+  border: 1.5px solid var(--line-hover);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+.qty {
+  font-size: 24px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.textarea {
+  font-size: var(--fs-14);
+  resize: vertical;
+  margin-top: 6px;
+}
+
+.scan:focus,
+.qty:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--violet-600);
+  box-shadow: 0 0 0 3px var(--violet-100);
+}
+
+.primary,
+.secondary,
+.primaryWide,
+.finish {
+  font: inherit;
+  font-size: var(--fs-16);
+  font-weight: 700;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primary,
+.primaryWide {
+  border: 0;
+  background: var(--violet-600);
+  color: #fff;
+}
+
+.secondary {
+  border: 1.5px solid var(--line-hover);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.primaryWide,
+.finish {
+  width: 100%;
+}
+
+.finish {
+  border: 0;
+  background: var(--ink);
+  color: #fff;
+  min-height: 56px;
+  font-size: var(--fs-17);
+}
+
+.primary:disabled,
+.secondary:disabled,
+.finish:disabled,
+.primaryWide:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnRow {
+  display: flex;
+  gap: 8px;
+}
+
+.btnRow > * {
+  flex: 1;
+}
+
+.link {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--violet-600);
+  font: inherit;
+  font-size: var(--fs-14);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--danger-soft);
+  color: var(--danger-hover);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.warnText {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: var(--fs-14);
+  line-height: 1.45;
+}
+
+.toast {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--st-done-bg);
+  color: var(--st-done-fg);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.confirm {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1.5px solid var(--warn-fg);
+  border-radius: var(--r-control);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: var(--fs-14);
+  line-height: 1.45;
+}
+
+.confirm p {
+  margin: 0;
+}
+
+/* 목록 */
+.list,
+.lines,
+.inputs,
+.workers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.list {
+  gap: 8px;
+}
+
+.rowBtn {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.rowBtn:active {
+  background: var(--violet-50);
+  border-color: var(--violet-300);
+}
+
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-17);
+}
+
+.rowSub {
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.tag,
+.tagFree,
+.tagWarn {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--r-tag);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+.tag {
+  background: var(--st-ok-bg);
+  color: var(--st-ok-fg);
+}
+
+.tagFree {
+  background: var(--st-wait-bg);
+  color: var(--st-wait-fg);
+}
+
+.tagWarn {
+  background: var(--st-rej-bg);
+  color: var(--st-rej-fg);
+}
+
+/* 작업 화면 머리 */
+.head {
+  padding: 4px 2px;
+}
+
+.headMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vehicle {
+  font-size: 26px;
+  letter-spacing: -0.01em;
+}
+
+.head p {
+  margin: 4px 0 0;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--violet-50);
+  font-size: var(--fs-16);
+}
+
+.previewQty {
+  margin-top: 4px;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+/* 품목 합계 줄 — 왼쪽 띠 색으로 부족·일치·초과·지시 외 */
+.lines li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 12px;
+  border-bottom: 1px solid var(--line-row);
+  border-left: 4px solid transparent;
+}
+
+.lines li:last-child {
+  border-bottom: 0;
+}
+
+.ln_match {
+  border-left-color: var(--st-done-fg) !important;
+}
+
+.ln_short {
+  border-left-color: var(--line-hover) !important;
+}
+
+.ln_over,
+.ln_extra {
+  border-left-color: var(--warn-fg) !important;
+  background: var(--warn-bg);
+}
+
+.lineName {
+  font-size: var(--fs-14);
+  min-width: 0;
+}
+
+.lineQty {
+  text-align: right;
+  white-space: nowrap;
+  font-size: var(--fs-16);
+}
+
+.lineState {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--muted);
+}
+
+.inputs li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-row);
+  font-size: var(--fs-14);
+}
+
+.inputs li.editRow {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.inputMain {
+  min-width: 0;
+}
+
+.inputBtns {
+  display: flex;
+  gap: 6px;
+}
+
+.small,
+.smallDanger {
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--line-hover);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.smallDanger {
+  color: var(--danger-hover);
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+}
+
+.workers li {
+  padding: 4px 0;
+  font-size: var(--fs-14);
+}
+
+/* 상차완료 뒤 */
+.doneBox {
+  align-items: center;
+  text-align: center;
+}
+
+.doneTitle {
+  margin: 0;
+  font-size: var(--fs-21);
+  font-weight: 800;
+  color: var(--st-done-fg);
+}
+
+.barcode {
+  padding: 8px 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.barcode svg {
+  max-width: 100%;
+  height: auto;
+}

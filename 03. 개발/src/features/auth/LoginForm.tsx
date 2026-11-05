@@ -3,11 +3,12 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { FormField, Input } from "@/components/ui/Form";
-import { login, type FormState } from "@/server/auth/actions";
+import { login, pdaLogin, type FormState } from "@/server/auth/actions";
 import styles from "./Auth.module.css";
 
-export function LoginForm({ next }: { next: string }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(login, {});
+/** pda: PDA 로그인(/pda/login) — PDA 역할이 있는 계정만 */
+export function LoginForm({ next, pda = false }: { next: string; pda?: boolean }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(pda ? pdaLogin : login, {});
   const idRef = useRef<HTMLInputElement>(null);
   const pwRef = useRef<HTMLInputElement>(null);
 

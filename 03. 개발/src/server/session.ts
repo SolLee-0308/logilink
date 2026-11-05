@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/server/db";
-import { isWebRole } from "@/domain/permissions";
+import { isPdaRole, isWebRole } from "@/domain/permissions";
 import type { UserRole } from "@/domain/master";
 
 /**
@@ -60,8 +60,8 @@ export async function destroySession() {
   store.delete(SESSION_COOKIE);
 }
 
-/** 현재 세션 사용자 — 만료·사용 안 함·잠금·PDA 역할이면 null. 요청 안에서 한 번만 읽는다 */
-export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
+/** 세션 사용자 (Web·PDA 구분 전) — 만료·사용 안 함·잠금·사용 안 함 화주사 소속이면 null. 요청 안에서 한 번만 읽는다 */
+const readSessionUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const s = await db.session.findUnique({
@@ -70,8 +70,8 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   });
   if (!s || s.expiresAt < new Date()) return null;
   const u = s.user;
-  // 사용 안 함 계정·잠금·PDA 역할·사용 안 함 화주사 소속이면 세션을 인정하지 않는다
-  if (!u.isActive || u.lockedAt || !isWebRole(u.roles) || (u.client && !u.client.isActive)) return null;
+  // 사용 안 함 계정·잠금·사용 안 함 화주사 소속이면 세션을 인정하지 않는다
+  if (!u.isActive || u.lockedAt || (u.client && !u.client.isActive)) return null;
   return {
     id: u.id,
     loginId: u.loginId,
@@ -84,6 +84,40 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     mustChangePw: u.mustChangePw,
   };
 });
+
+/** Web 세션 사용자 — Web 역할이 없으면(PDA 전용 계정) null */
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
+  const u = await readSessionUser();
+  return u && isWebRole(u.roles) ? u : null;
+});
+
+/** PDA 세션 사용자 — PDA 역할이 없으면 null (Web·PDA 역할을 함께 가진 계정은 둘 다 쓸 수 있다) */
+export const getPdaSessionUser = cache(async (): Promise<SessionUser | null> => {
+  const u = await readSessionUser();
+  return u && isPdaRole(u.roles) ? u : null;
+});
+
+/** 비밀번호 변경 화면용 — Web·PDA 어느 쪽이든 */
+export const getAnySessionUser = readSessionUser;
+
+/** PDA 화면용: 로그인이 없으면 /pda/login, 비밀번호 변경이 필요하면 /change-password?next=/pda */
+export async function requirePdaUser(): Promise<SessionUser> {
+  const u = await getPdaSessionUser();
+  if (!u) {
+    const path = await currentPath();
+    redirect(path.startsWith("/pda/") ? `/pda/login?next=${encodeURIComponent(path)}` : "/pda/login");
+  }
+  if (u.mustChangePw) redirect("/change-password?next=/pda");
+  return u;
+}
+
+/** PDA 서버 액션용 처리자 */
+export async function getPdaActor(): Promise<SessionUser> {
+  const u = await getPdaSessionUser();
+  if (!u) redirect("/pda/login");
+  if (u.mustChangePw) redirect("/change-password?next=/pda");
+  return u;
+}
 
 /** 로그인 후 돌아올 경로 — proxy가 넣어 준 x-pathname */
 async function currentPath() {

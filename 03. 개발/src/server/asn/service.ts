@@ -196,6 +196,8 @@ export async function cancelAsn(me: PlanActor, input: { id: number; version: num
           },
         });
         if (r.count === 0) throw new Race();
+        // 상차지시서를 스캔만 하고 아직 아무것도 싣지 않은 상차 실적은 지운다 (첫 입력부터 ASN이 상차중이 되므로 입력은 없다)
+        await tx.load.deleteMany({ where: { asnId: cur.id, status: "WORKING", inputs: { none: {} } } });
         await tx.loadOrder.updateMany({ where: { asnId: cur.id }, data: { status: "CANCELED" } });
         await tx.asnHistory.create({
           data: {

@@ -58,8 +58,8 @@ export function parseAsnListQuery(sp: Record<string, string | string[] | undefin
 }
 
 /** ASN번호·차량번호·입고예정번호 검색 — 공백·하이픈은 무시 */
-export function matchAsnText(r: { asnNo: string; vehicleNo: string; loadOrderNo: string | null; planNos: string[] }, q: string) {
+export function matchAsnText(r: { asnNo: string; vehicleNo: string; loadOrderNo: string | null; loadNo?: string | null; planNos: string[] }, q: string) {
   const n = q.replace(/[\s-]/g, "").toUpperCase();
   if (!n) return true;
-  return [r.asnNo, r.vehicleNo, r.loadOrderNo ?? "", ...r.planNos].some((t) => t.replace(/[\s-]/g, "").toUpperCase().includes(n));
+  return [r.asnNo, r.vehicleNo, r.loadOrderNo ?? "", r.loadNo ?? "", ...r.planNos].some((t) => t.replace(/[\s-]/g, "").toUpperCase().includes(n));
 }
