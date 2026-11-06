@@ -78,15 +78,15 @@ async function main() {
 
   /* 화주사: 입력 검사 */
   const items = await db.item.findMany({ where: { client: { code: "HB01" } } });
-  const it = (code: string) => items.find((i) => i.code === code)!.id;
+  const it = (code: string) => items.find((i) => i.clientCode === code)!.id;
   const tomorrow = ymd(new Date(Date.now() + 86_400_000));
   r = await savePlan(hb, { centerId: p1.centerId, planDate: tomorrow, lines: [{ itemId: it("HB-1001"), unit: "BOX", qty: 5 }] });
-  ok(!r.ok && !!r.fieldErrors?.["lines.0.expiryDate"], "유통기한 관리 품목은 유통기한 필수", r);
+  ok(!r.ok && !!r.fieldErrors?.["lines.0.expiryDate"], "소비기한 관리 품목은 소비기한 필수", r);
   r = await savePlan(hb, { centerId: p1.centerId, planDate: tomorrow, lines: [{ itemId: it("HB-2210"), unit: "BOX", qty: 5, expiryDate: "2027-05-01" }] });
   ok(!r.ok && !!r.fieldErrors?.["lines.0.unit"], "품목에 없는 단위 차단", r);
   r = await savePlan(hb, { centerId: p1.centerId, planDate: "2020-01-01", lines: [{ itemId: it("HB-2210"), unit: "EA", qty: 5, expiryDate: "2027-05-01" }] });
   ok(!r.ok && !!r.fieldErrors?.planDate, "지난 입고예정일 차단", r);
-  const doItem = await db.item.findFirstOrThrow({ where: { code: "DO-0099" } });
+  const doItem = await db.item.findFirstOrThrow({ where: { clientCode: "DO-0099" } });
   r = await savePlan(doo, { centerId: p1.centerId, planDate: tomorrow, lines: [{ itemId: doItem.id, unit: "EA", qty: 5 }] });
   ok(!r.ok && !!r.fieldErrors?.["lines.0.itemId"], "사용 안 함 품목 차단", r);
   r = await savePlan(hb, { centerId: p1.centerId, planDate: tomorrow, lines: [{ itemId: it("HB-2210"), unit: "PLT", qty: 2, expiryDate: "2027-05-01" }] });

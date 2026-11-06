@@ -117,6 +117,7 @@ export function ClientsScreen({
         <SearchInput value={q} onChange={setQ} placeholder="화주사 코드, 화주사명, 사업자등록번호 검색" />
       </FilterBar>
       <SplitView
+        collapsible
         list={
           <>
             <ListToolbar total={list.length} />
@@ -169,25 +170,22 @@ function ClientView({ row, canEdit, onEdit, opening }: { row: ClientRow | null; 
         <>
           <PanelTitle mono>{row.code}</PanelTitle>
           <ActiveBadge active={row.isActive} />
-          {canEdit && (
-            <span className={styles.headAction}>
-              <Button size="sm" onClick={onEdit} disabled={opening}>
-                수정
-              </Button>
-            </span>
-          )}
         </>
       }
       sub={row.name}
       footer={
-        <LastChanged
-          by={row.updatedBy}
-          at={row.updatedAt}
-          title={row.name}
-          entries={row.history}
-          created={{ at: row.createdAt, by: row.createdBy }}
-          labels={LABELS}
-        />
+        <>
+          <LastChanged
+            by={row.updatedBy}
+            at={row.updatedAt}
+            title={row.name}
+            entries={row.history}
+            created={{ at: row.createdAt, by: row.createdBy }}
+            labels={LABELS}
+          />
+          {/* 수정은 패널 아래 오른쪽 (2026-11-06 Sol 결정: 위쪽 접기 아이콘과 나눔) */}
+          {canEdit && <Button size="sm" variant="editSoft" onClick={onEdit} disabled={opening}>수정</Button>}
+        </>
       }
     >
       <ViewSection

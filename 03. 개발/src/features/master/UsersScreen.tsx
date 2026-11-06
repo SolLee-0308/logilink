@@ -6,6 +6,7 @@ import { Button, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
+import { ClientPicker } from "@/features/plans/ClientFinder";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { Modal } from "@/components/ui/Overlay";
 import { KeyValue, ListToolbar, PanelSection, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
@@ -173,15 +174,7 @@ export function UsersScreen({
         {org !== "TPL" && (
           <>
           <FilterField label="화주사" htmlFor="f-client">
-            <Select id="f-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-              <option value="">전체</option>
-              {clientChoices.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.isActive ? "" : " (사용 안 함)"}
-                </option>
-              ))}
-            </Select>
+            <ClientPicker id="f-client" value={clientId} onChange={setClientId} clients={clientChoices} />
           </FilterField>
           <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>
@@ -192,6 +185,7 @@ export function UsersScreen({
         <SearchInput value={q} onChange={setQ} placeholder="아이디, 이름 검색" />
       </FilterBar>
       <SplitView
+        collapsible
         list={
           <>
             <ListToolbar total={list.length} />
@@ -215,26 +209,27 @@ export function UsersScreen({
                 <>
                   <PanelTitle>{current.name}</PanelTitle>
                   <ActiveBadge active={current.isActive} />
-                  {canEdit && (
-                    <span className={styles.headAction}>
-                      <Button size="sm" onClick={() => edit.openEdit(current.id)} disabled={edit.loading}>
-                        수정
-                      </Button>
-                    </span>
-                  )}
                 </>
               }
               sub={`${current.loginId} · ${rolesLabel(current.roles)}`}
               footer={
-                <LastChanged
-                  by={current.updatedBy}
-                  at={current.updatedAt}
-                  title={current.name}
-                  entries={current.history}
-                  created={{ at: current.createdAt, by: current.createdBy }}
-                  labels={LABELS}
-                  format={fmt}
-                />
+                <>
+                  <LastChanged
+                    by={current.updatedBy}
+                    at={current.updatedAt}
+                    title={current.name}
+                    entries={current.history}
+                    created={{ at: current.createdAt, by: current.createdBy }}
+                    labels={LABELS}
+                    format={fmt}
+                  />
+                  {/* 수정은 패널 아래 오른쪽 (2026-11-06 Sol 결정: 위쪽 접기 아이콘과 나눔) */}
+                  {canEdit && (
+                    <Button size="sm" variant="editSoft" onClick={() => edit.openEdit(current.id)} disabled={edit.loading}>
+                      수정
+                    </Button>
+                  )}
+                </>
               }
             >
               <ViewSection
@@ -400,24 +395,18 @@ function UserEditModal({
         </Full>
         {org === "SHIPPER" && (
           <FormField label="소속 화주사" htmlFor="u-client" required error={act.fieldErrors.clientId}>
-            <Select
+            <ClientPicker
               id="u-client"
               value={clientId}
-              onChange={(e) => {
-                setClientId(e.target.value);
+              onChange={(v) => {
+                setClientId(v);
                 setDefaultCenterId("");
               }}
-            >
-              <option value="">화주사를 선택하세요</option>
-              {clients
-                .filter((c) => c.isActive || c.id === row?.clientId)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.isActive ? "" : " (사용 안 함)"}
-                  </option>
-                ))}
-            </Select>
+              clients={clients.filter((c) => c.isActive || c.id === row?.clientId)}
+              placeholder="화주사를 선택하세요"
+              block
+              clearable={false}
+            />
           </FormField>
         )}
         {org === "SHIPPER" && (

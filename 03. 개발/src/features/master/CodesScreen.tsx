@@ -93,6 +93,7 @@ export function CodesScreen({
         </NoteBox>
       )}
       <SplitView
+        collapsible
         list={
           <>
             <ListToolbar total={list.length} />
@@ -143,15 +144,16 @@ function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; 
         <>
           <PanelTitle mono>{row.code}</PanelTitle>
           <ActiveBadge active={row.isActive} />
-          <span className={recordStyles.headAction}>
-            <Button size="sm" onClick={onEdit} disabled={opening}>
-              수정
-            </Button>
-          </span>
         </>
       }
       sub={`${group.name} 그룹 · ${row.name}`}
-      footer={<LastChanged by={row.updatedBy} at={row.updatedAt} title={row.name} entries={row.history} created={{ at: row.createdAt, by: row.createdBy }} labels={LABELS} />}
+      footer={
+        <>
+          <LastChanged by={row.updatedBy} at={row.updatedAt} title={row.name} entries={row.history} created={{ at: row.createdAt, by: row.createdBy }} labels={LABELS} />
+          {/* 수정은 패널 아래 오른쪽 (2026-11-06 Sol 결정: 위쪽 접기 아이콘과 나눔) */}
+          <Button size="sm" variant="editSoft" onClick={onEdit} disabled={opening}>수정</Button>
+        </>
+      }
     >
       <ViewSection
         title="기본 정보"

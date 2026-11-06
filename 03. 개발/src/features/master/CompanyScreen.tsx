@@ -97,7 +97,7 @@ function CompanyCard({ row, canEdit }: { row: CompanyRow; canEdit: boolean }) {
           <PanelTitle>회사 정보</PanelTitle>
           {canEdit && (
             <span className={styles.headAction}>
-              <Button size="sm" onClick={startEdit} disabled={opening}>
+              <Button size="sm" variant="editSoft" onClick={startEdit} disabled={opening}>
                 수정
               </Button>
             </span>

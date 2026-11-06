@@ -9,7 +9,7 @@ import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, previewS
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { LoadInputView, LoadLineView, LoadView, ScanPreview } from "@/features/loads/types";
 import { deviceId, takeNotice } from "./device";
-import { Icon, InfoRows, Pill, Steps, type PillTone } from "./PdaParts";
+import { Icon, InfoRows, Pill } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 /** 다른 작업자 입력을 다시 읽는 간격 */
@@ -169,29 +169,31 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
   const tone = ordered ? "blue" : "amber";
   const firstInput = [...view.inputs].reverse().find((i) => !i.canceled);
 
-  /** 차량 머리 — 아이콘 원 + 차량번호 + 구분 알약 (참고 UI 상세 머리). withSteps면 진행 단계까지 한 덩어리 */
-  const head = (withSteps: boolean) => (
-    <section className={styles.headBlock}>
+  /**
+   * 차량 머리 — 차량번호·구분 + 상태 한 줄 (2026-11-06 Sol 결정: 타임라인 3단계 → 상태 한 줄).
+   * 박스 없이 두어 아래 스캔 칸이 화면의 중심이 되게 한다.
+   */
+  const head = () => (
+    <section className={styles.vHead}>
       <span className={styles.idHead}>
-        <span className={styles.iconCircle}>
-          <Icon name="truck" size={18} />
-        </span>
+        <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
         <Pill tone={working ? tone : "green"}>{working ? LOAD_TYPE_LABEL[view.type] : "상차완료"}</Pill>
       </span>
-      {withSteps && steps}
+      <span className={styles.vStatus}>
+        {working ? (
+          <>
+            <b>상차 중</b> · {timeOf(view.createdAt)} 시작{firstInput ? ` · 마지막 입력 ${timeOf(view.inputs.find((i) => !i.canceled)?.inputAt ?? firstInput.inputAt)}` : ""}
+          </>
+        ) : (
+          <>
+            <b>상차완료</b> · {view.completedAt ? timeOf(view.completedAt) : "-"}
+          </>
+        )}
+        {" · "}
+        {view.centerName}
+      </span>
     </section>
-  );
-
-  const steps = (
-    <Steps
-      compact
-      steps={[
-        { label: "상차 시작", done: true, time: timeOf(view.createdAt) },
-        { label: "상차 중", done: !!firstInput || !working, time: firstInput ? timeOf(firstInput.inputAt) : null },
-        { label: "상차완료", done: !working, time: view.completedAt ? timeOf(view.completedAt) : null },
-      ]}
-    />
   );
 
   /* ═════════ 상차완료 뒤 — 상차확인서 번호·바코드 (참고 UI 완료 화면) ═════════ */
@@ -235,7 +237,7 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
   if (finishing) {
     return (
       <>
-        {head(false)}
+        {head()}
         <section className={styles.sheet}>
           <h2 className={styles.h2}>상차완료 확인</h2>
           <p className={styles.help}>상차완료는 차량당 한 번입니다. 완료하면 더는 입력할 수 없고, 이후 차이는 입고검수에서 처리합니다.</p>
@@ -315,10 +317,11 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
   /* ═════════ 작업 중 ═════════ */
   return (
     <>
-      {head(true)}
+      {head()}
       {notice && <p className={styles.warnText}>{notice}</p>}
 
-      <section className={styles.sheet}>
+      {/* 스캔 칸 — 화면의 중심, 목록을 내려도 위에 붙어 있다 (2026-11-06 Sol 결정) */}
+      <section className={styles.scanCard}>
         {!preview ? (
           <form
             onSubmit={(e) => {
@@ -367,7 +370,7 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
             <InfoRows
               tone="white"
               rows={[
-                ["품목코드", <span key="c" className="mono">{preview.itemCode}</span>],
+                ["품목코드", <span key="c" className="mono">{preview.itemClientCode ?? preview.itemCode}</span>],
                 ["스캔 단위", <span key="u" className="mono">{preview.unit}{preview.unit !== preview.baseUnit ? ` (= ${preview.factor} ${preview.baseUnit})` : ""}</span>],
                 ...(ordered
                   ? ([["지시", preview.orderBase ? qtyInUnit(preview.orderBase, preview.showUnit, preview.showFactor, preview.baseUnit) : <span key="x" className={styles.warnInline}><Icon name="alert" size={15} /> 지시 외</span>]] as [string, React.ReactNode][])
@@ -430,10 +433,91 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
 
       <Lines view={view} />
 
+      {/* 내 입력 — 접힌 줄, 눌러서 정정·취소 (2026-11-06 Sol 결정: 정보 줄이기) */}
+      <details className={styles.fold}>
+        <summary className={styles.foldHead}>
+          내 입력 <span className={styles.count}>{myInputs.length}</span>
+          <span className={styles.detailSum}>{myInputs[0] ? `마지막 ${timeOf(myInputs[0].inputAt)}` : "없음"}</span>
+          <span className={styles.detailChev}>
+            <Icon name="chevD" size={16} />
+          </span>
+        </summary>
+        <div className={styles.foldBody}>
+      {myInputs.length === 0 ? (
+        <p className={styles.empty}>아직 입력한 수량이 없습니다.</p>
+      ) : (
+        <ol className={styles.timeline}>
+          {myInputs.slice(0, 30).map((i) =>
+            editing?.id === i.id ? (
+              <li key={i.id} className={styles.editRow}>
+                <span>
+                  {i.itemName} <span className={styles.dim}>({i.unit})</span>
+                </span>
+                <div className={styles.qtyRow}>
+                  <input
+                    className={`${styles.field} ${styles.qty} mono`}
+                    value={editing.qty}
+                    onChange={(e) => setEditing({ ...editing, qty: e.target.value.replace(/\D/g, ""), warn: null })}
+                    inputMode="numeric"
+                    autoFocus
+                    aria-label="정정할 수량"
+                    disabled={pending}
+                  />
+                  <button type="button" className={styles.primary} onClick={() => onCorrect(false)} disabled={pending || !(Number(editing.qty) > 0) || !!editing.warn}>
+                    정정
+                  </button>
+                </div>
+                {editing.warn && (
+                  <div className={styles.confirm} role="alert">
+                    <p>{editing.warn}</p>
+                    <button type="button" className={styles.primary} onClick={() => onCorrect(true)} disabled={pending}>
+                      그래도 정정
+                    </button>
+                  </div>
+                )}
+                <button type="button" className={styles.link} onClick={() => setEditing(null)} disabled={pending}>
+                  그만두기
+                </button>
+              </li>
+            ) : (
+              <li key={i.id}>
+                <span className={styles.tlTime}>
+                  <b className="mono">{timeOf(i.inputAt)}</b>
+                  {i.corrected && <small>정정</small>}
+                </span>
+                <span className={styles.tlDot} aria-hidden="true">
+                  <Icon name="check" size={11} stroke={2.8} />
+                </span>
+                <span className={styles.tlBody}>
+                  <span>
+                    {i.itemName}
+                    <b className="mono">
+                      {" "}
+                      +{i.addQty.toLocaleString()} {i.unit}
+                    </b>
+                  </span>
+                  <span className={styles.inputBtns}>
+                    <button type="button" className={styles.small} onClick={() => setEditing({ id: i.id, qty: String(i.addQty), warn: null })} disabled={pending}>
+                      정정
+                    </button>
+                    <button type="button" className={styles.smallDanger} onClick={() => onCancelInput(i)} disabled={pending}>
+                      취소
+                    </button>
+                  </span>
+                </span>
+              </li>
+            ),
+          )}
+        </ol>
+      )}
+          <p className={styles.help}>본인이 입력한 건만 정정·취소할 수 있습니다.</p>
+        </div>
+      </details>
+
       {/* 상차 정보 — 기본은 접어 두고 눌러서 펼친다 (2026-11-05 Sol 승인) */}
-      <details className={styles.detail}>
-        <summary className={styles.detailHead}>
-          <Icon name="truck" size={17} /> 상차 정보
+      <details className={styles.fold}>
+        <summary className={styles.foldHead}>
+          상차 정보
           <span className={styles.detailSum}>{view.centerName}</span>
           <span className={styles.detailChev}>
             <Icon name="chevD" size={16} />
@@ -451,82 +535,10 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
         />
       </details>
 
-      <section className={styles.sheet}>
-        <h2 className={styles.h2}>
-          내 입력 <span className={styles.count}>{myInputs.length}</span>
-        </h2>
-        {myInputs.length === 0 ? (
-          <p className={styles.empty}>아직 입력한 수량이 없습니다.</p>
-        ) : (
-          <ol className={styles.timeline}>
-            {myInputs.slice(0, 30).map((i) =>
-              editing?.id === i.id ? (
-                <li key={i.id} className={styles.editRow}>
-                  <span>
-                    {i.itemName} <span className={styles.dim}>({i.unit})</span>
-                  </span>
-                  <div className={styles.qtyRow}>
-                    <input
-                      className={`${styles.field} ${styles.qty} mono`}
-                      value={editing.qty}
-                      onChange={(e) => setEditing({ ...editing, qty: e.target.value.replace(/\D/g, ""), warn: null })}
-                      inputMode="numeric"
-                      autoFocus
-                      aria-label="정정할 수량"
-                      disabled={pending}
-                    />
-                    <button type="button" className={styles.primary} onClick={() => onCorrect(false)} disabled={pending || !(Number(editing.qty) > 0) || !!editing.warn}>
-                      정정
-                    </button>
-                  </div>
-                  {editing.warn && (
-                    <div className={styles.confirm} role="alert">
-                      <p>{editing.warn}</p>
-                      <button type="button" className={styles.primary} onClick={() => onCorrect(true)} disabled={pending}>
-                        그래도 정정
-                      </button>
-                    </div>
-                  )}
-                  <button type="button" className={styles.link} onClick={() => setEditing(null)} disabled={pending}>
-                    그만두기
-                  </button>
-                </li>
-              ) : (
-                <li key={i.id}>
-                  <span className={styles.tlTime}>
-                    <b className="mono">{timeOf(i.inputAt)}</b>
-                    {i.corrected && <small>정정</small>}
-                  </span>
-                  <span className={styles.tlDot} aria-hidden="true">
-                    <Icon name="check" size={11} stroke={2.8} />
-                  </span>
-                  <span className={styles.tlBody}>
-                    <span>
-                      {i.itemName}
-                      <b className="mono">
-                        {" "}
-                        +{i.addQty.toLocaleString()} {i.unit}
-                      </b>
-                    </span>
-                    <span className={styles.inputBtns}>
-                      <button type="button" className={styles.small} onClick={() => setEditing({ id: i.id, qty: String(i.addQty), warn: null })} disabled={pending}>
-                        정정
-                      </button>
-                      <button type="button" className={styles.smallDanger} onClick={() => onCancelInput(i)} disabled={pending}>
-                        취소
-                      </button>
-                    </span>
-                  </span>
-                </li>
-              ),
-            )}
-          </ol>
-        )}
-        <p className={styles.help}>본인이 입력한 건만 정정·취소할 수 있습니다. 다른 작업자 입력은 합계에 함께 들어갑니다.</p>
-      </section>
 
       <div className={styles.bottomBar}>
-        <button type="button" className={styles.blackPill} onClick={openFinish} disabled={pending}>
+        {/* 품목을 1개 이상 실었을 때만 (2026-11-06 Sol) */}
+        <button type="button" className={styles.blackPill} onClick={openFinish} disabled={pending || loadedLines === 0}>
           상차완료
         </button>
       </div>
@@ -534,43 +546,57 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
   );
 }
 
-const STATE_TONE: Record<LoadLineView["state"], PillTone> = { match: "green", short: "gray", over: "amber", extra: "amber" };
-
-/** 품목별 지시·상차 합계 — 지시 상차는 일치 줄 수와 진행 막대를 함께 보여 준다 */
+/**
+ * 품목별 지시·상차 합계 — 박스 없이 줄 목록 (2026-11-06 Sol 결정: 스캔 중심 + 목록 평면화).
+ * 지시 상차는 줄마다 진행 막대, 상태는 색으로만: 일치 초록 · 부족 주황 · 초과·지시 외 빨강 · 아직 안 실음 회색.
+ * 코드는 상차담당(화주사)에게 익숙한 화주사 품목코드를 먼저 보여 준다.
+ */
 function Lines({ view }: { view: LoadView }) {
   const ordered = view.type === "ORDERED";
   const orderLines = view.lines.filter((l) => l.orderBase > 0);
   const matched = orderLines.filter((l) => l.state === "match").length;
   return (
-    <section className={styles.sheet}>
+    <section className={styles.flat}>
       <h2 className={styles.h2}>
         품목 <span className={styles.count}>{view.lines.length}</span>
-        <span className={styles.h2Sub}>{ordered ? `일치 ${matched} / ${orderLines.length}줄` : "상차 수량"}</span>
+        {ordered ? (
+          <span className={`${styles.progressTag} ${orderLines.length > 0 && matched === orderLines.length ? styles.progressDone : ""}`}>
+            일치 <b className="mono">{matched}</b> / {orderLines.length}줄
+          </span>
+        ) : (
+          <span className={styles.h2Sub}>상차 수량</span>
+        )}
       </h2>
-      {ordered && orderLines.length > 0 && (
-        <span className={styles.bar2} aria-hidden="true">
-          <span style={{ width: `${(matched / orderLines.length) * 100}%` }} />
-        </span>
-      )}
       {view.lines.length === 0 ? (
         <p className={styles.empty}>{ordered ? "지시 품목이 없습니다." : "아직 실은 품목이 없습니다. 오늘 ASN에 있는 품목만 실을 수 있습니다."}</p>
       ) : (
-        <ul className={styles.lines}>
-          {view.lines.map((l) => (
-            <li key={l.itemId} className={styles[`ln_${l.state}`]}>
-              <span className={styles.lineName}>
-                {l.itemName}
-                <span className={`${styles.dim} mono`}>{l.itemCode}</span>
-              </span>
-              <span className={styles.lineQty}>
-                <span>
-                  {ordered && <span className={styles.dim}>{l.orderBase ? fmt(l, l.orderBase) : "지시 없음"} / </span>}
-                  <b className="mono">{fmt(l, l.loadBase)}</b>
+        <ul className={styles.flatLines}>
+          {view.lines.map((l) => {
+            const st = l.loadBase === 0 && l.orderBase > 0 ? "none" : l.state;
+            const pct = l.orderBase > 0 ? Math.min(100, (l.loadBase / l.orderBase) * 100) : 100;
+            return (
+              <li key={l.itemId} className={styles[`st_${st}`]}>
+                <span className={styles.flatTop}>
+                  <span className={styles.lineName}>
+                    {l.itemName}
+                    <span className={`${styles.dim} mono`}>{l.itemClientCode ?? l.itemCode}</span>
+                  </span>
+                  <span className={styles.flatQty}>
+                    <b className="mono">{fmt(l, l.loadBase)}</b>
+                    {ordered && <span className={styles.dim}> / {l.orderBase ? fmt(l, l.orderBase) : "지시 없음"}</span>}
+                  </span>
                 </span>
-                {ordered && <Pill tone={STATE_TONE[l.state]}>{LINE_STATE_LABEL[l.state]}</Pill>}
-              </span>
-            </li>
-          ))}
+                {ordered && (
+                  <span className={styles.flatBottom}>
+                    <span className={styles.lnBar} aria-hidden="true">
+                      <span style={{ width: `${pct}%` }} />
+                    </span>
+                    <span className={styles.stText}>{st === "none" ? "아직 안 실음" : LINE_STATE_LABEL[l.state]}</span>
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

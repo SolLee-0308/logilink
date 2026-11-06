@@ -1,12 +1,29 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { IconSearch } from "@/components/icons";
 import styles from "./FilterBar.module.css";
 
-/** 조회조건 바 — surface 바탕, 한 줄, 넘치면 줄바꿈 */
+/**
+ * 조회조건 바 — surface 바탕, 한 줄, 넘치면 줄바꿈.
+ * 목록을 내려도 화면 위에 붙어 있다(위치 고정, 2026-11-06 Sol 결정). 높이를 --filterbar-h로 알려
+ * 오른쪽 상세 패널이 바 아래에 붙게 한다.
+ */
 export function FilterBar({ children, label = "조회조건" }: { children: React.ReactNode; label?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const root = document.documentElement;
+    const ro = new ResizeObserver(() => root.style.setProperty("--filterbar-h", `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--filterbar-h");
+    };
+  }, []);
   return (
-    <div className={styles.bar} role="search" aria-label={label}>
+    <div ref={ref} className={styles.bar} role="search" aria-label={label}>
       {children}
     </div>
   );

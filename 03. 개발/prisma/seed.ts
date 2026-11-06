@@ -10,6 +10,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, type Prisma } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/server/auth/password";
 import { PASSWORD_RULE_TEXT, isValidPassword } from "../src/domain/validators";
+import { composeItemCode } from "../src/domain/item-code";
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DIRECT_URL! }) });
 const SYS = "시스템";
@@ -328,13 +329,21 @@ async function main() {
   }
   for (const u of users) if (isShipperUser(u)) await createUser(u);
 
+  // 시드 품목의 code는 화주사 품목코드로 넣고, 품목코드는 {화주사코드}-{순번 5자리}로 채번한다 (2026-11-06 Sol 결정)
   const itemId: Record<string, number> = {};
+  const itemCodeOf: Record<string, string> = {};
+  const serialOf: Record<string, number> = {};
   for (const it of ITEMS) {
     const cid = clientId[it.client];
+    const clientCode = CLIENTS.find((c) => c.key === it.client)!.code;
+    serialOf[it.client] = (serialOf[it.client] ?? 0) + 1;
+    const code = composeItemCode(clientCode, serialOf[it.client]);
+    itemCodeOf[it.code] = code;
     const row = await db.item.create({
       data: {
         clientId: cid,
-        code: it.code,
+        code,
+        clientCode: it.code,
         name: it.name,
         baseUnit: it.base,
         storageTemp: it.temp,
@@ -403,23 +412,36 @@ async function main() {
     },
   });
   created("tb_setting", "UNCLOSED_ALERT_DAYS", { value: "3" });
+  await db.setting.create({
+    data: {
+      key: "MIN_EXPIRY_DAYS",
+      label: "최소 잔여 소비기한",
+      value: "7",
+      unit: "일",
+      minValue: 0,
+      maxValue: 365,
+      description: "입고예정에 넣는 소비기한은 입고예정일 + 이 일수 이후여야 합니다. 유통할 기간을 남겨 두기 위한 기준입니다.",
+      updatedBy: SYS,
+    },
+  });
+  created("tb_setting", "MIN_EXPIRY_DAYS", { value: "7" });
 
   // 품목 등록 요청
   const reqs = [
     {
-      requestNo: "IR-20261102-0003", client: "OF", itemCode: "OF-2230", itemName: "새우살 500g", unit: "BOX" as U,
+      requestNo: "IR-20261102-0003", client: "OF", clientCode: "OF-2230", itemName: "새우살 500g", unit: "BOX" as U,
       barcode: "8803300022301", source: "AI" as const, sourceNote: "이미지 판독값: '새우살 500g × 20' (신뢰도 0.62, 유사 품목 없음)", storageTemp: "FROZEN" as const, expiryManaged: true, lotManaged: true,
       status: "WAITING" as const, requestedBy: "정서준", requestedAt: t("2026-11-02T07:40"),
       hist: [{ action: "REQUEST" as const, actor: "정서준", at: t("2026-11-02T07:40") }],
     },
     {
-      requestNo: "IR-20261102-0002", client: "GM", itemCode: "GM-0745", itemName: "키친타월 리필 4롤", unit: "BOX" as U,
+      requestNo: "IR-20261102-0002", client: "GM", clientCode: "GM-0745", itemName: "키친타월 리필 4롤", unit: "BOX" as U,
       barcode: "8802200007308", source: "EXCEL" as const, sourceNote: "엑셀 4행: '키친타월 리필 4롤 / 30 BOX' — 품목 마스터 미매칭",
       status: "WAITING" as const, requestedBy: "이도윤", requestedAt: t("2026-11-02T09:20"),
       hist: [{ action: "REQUEST" as const, actor: "이도윤", at: t("2026-11-02T09:20") }],
     },
     {
-      requestNo: "IR-20261101-0007", client: "HB", itemCode: "HB-1002", itemName: "국산콩 두부 300g 실속형", unit: "BOX" as U,
+      requestNo: "IR-20261101-0007", client: "HB", clientCode: "HB-1002", itemName: "국산콩 두부 300g 실속형", unit: "BOX" as U,
       barcode: "8801100010021", source: "DIRECT" as const, sourceNote: null,
       status: "WAITING" as const, resubmitCount: 1, version: 2, requestedBy: "박민지", requestedAt: t("2026-11-02T08:30"),
       hist: [
@@ -429,7 +451,7 @@ async function main() {
       ],
     },
     {
-      requestNo: "IR-20261101-0004", client: "DO", itemCode: "DO-0210", itemName: "욕실 슬리퍼", unit: "EA" as U,
+      requestNo: "IR-20261101-0004", client: "DO", clientCode: "DO-0210", itemName: "욕실 슬리퍼", unit: "EA" as U,
       barcode: "8804400002108", source: "DIRECT" as const, sourceNote: null,
       status: "REJECTED" as const, requestedBy: "최유나", requestedAt: t("2026-11-01T10:15"),
       processedBy: "김하늘", processedAt: t("2026-11-01T11:05"), rejectReasonCode: "I04", rejectReasonText: "사이즈(M·L)별로 품목코드와 바코드를 나눠 요청해 주세요.",
@@ -439,7 +461,7 @@ async function main() {
       ],
     },
     {
-      requestNo: "IR-20261031-0011", client: "OF", itemCode: "OF-2208", itemName: "손질 오징어 800g", unit: "BOX" as U,
+      requestNo: "IR-20261031-0011", client: "OF", clientCode: "OF-2208", itemName: "손질 오징어 800g", unit: "BOX" as U,
       barcode: "8803300022080", source: "AI" as const, sourceNote: "이미지 판독값: '손질오징어 800 × 35' (신뢰도 0.71)",
       status: "REGISTERED" as const, requestedBy: "정서준", requestedAt: t("2026-10-31T15:10"),
       processedBy: "김하늘", processedAt: t("2026-10-31T16:00"), item: "OF-2208",
@@ -570,7 +592,7 @@ async function main() {
           data: {
             planId: plan.id, revisionNo: rev, version: ver, planDate: plan.planDate, memo: plan.memo,
             reasonCode: h.reason![0], reasonName: h.reason![1], reasonText: h.reason![2] ?? null, rejectedBy: h.by, rejectedAt: hoursAgo(h.h),
-            lines: { create: snap.map((l) => ({ ...l, itemCode: ITEMS.find((i) => itemId[i.code] === l.itemId)!.code, itemName: ITEMS.find((i) => itemId[i.code] === l.itemId)!.name })) },
+            lines: { create: snap.map((l) => ({ ...l, itemCode: itemCodeOf[ITEMS.find((i) => itemId[i.code] === l.itemId)!.code], itemName: ITEMS.find((i) => itemId[i.code] === l.itemId)!.name })) },
           },
         });
       }

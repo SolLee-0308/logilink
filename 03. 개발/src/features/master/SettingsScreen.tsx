@@ -65,7 +65,7 @@ function SettingCard({ row }: { row: SettingRow }) {
         <>
           <PanelTitle>{row.label}</PanelTitle>
           <span className={styles.headAction}>
-            <Button size="sm" onClick={startEdit} disabled={opening}>
+            <Button size="sm" variant="editSoft" onClick={startEdit} disabled={opening}>
               수정
             </Button>
           </span>

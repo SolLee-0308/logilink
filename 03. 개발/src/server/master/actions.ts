@@ -12,6 +12,7 @@ import { BARCODE_PATTERN, ITEM_REQ_REJECT_GROUP, ITEM_UNITS, ROLE_META, STORAGE_
 import type { Prisma } from "@/generated/prisma/client";
 import type { UserRole } from "@/domain/master";
 import { CLIENT_PREFIX_PATTERN, PREFIX_EXHAUSTED_MSG, composeClientCode, nextClientSerial } from "@/domain/client-code";
+import { ITEM_SERIAL_MAX, cleanClientCode, composeItemCode, nextItemSerial } from "@/domain/item-code";
 import { deactivateBlock, removeCenterBlock } from "@/domain/unclosed";
 import { countUnclosed } from "@/server/master/unclosed";
 import { fetchPublicHolidays } from "@/server/master/public-holidays";
@@ -93,6 +94,8 @@ async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<
     // 확인과 갱신 사이에 다른 처리가 끼어든 경우 — 트랜잭션은 이미 롤백됨
     if (e instanceof Error && e.message === "CONFLICT_RACE")
       return fail("CONFLICT", "다른 사용자가 먼저 처리했습니다. 최신 내용을 불러온 뒤 다시 처리하세요.");
+    if (e instanceof Error && e.message.startsWith("ITEM_CODE_EXHAUSTED"))
+      return fail("STATE", "이 화주사의 품목코드 번호(99,999번)를 모두 썼습니다. 관리자에게 문의하세요.");
     console.error(e);
     const code = (e as { code?: string }).code;
     if (code === "P2002") return fail("VALIDATION", "같은 값이 이미 등록되어 있습니다.");
@@ -288,7 +291,8 @@ const itemSchema = z
     id: z.number().int().positive().optional(),
     version: z.number().int().positive().optional(),
     clientId: z.number({ error: "화주사를 선택하세요." }).int().positive("화주사를 선택하세요."),
-    code: z.string().trim().min(1, "품목코드를 입력하세요.").max(40, "품목코드는 40자 이내로 입력하세요."),
+    /** 화주사 품목코드(선택). 품목코드는 등록할 때 시스템이 채번한다 */
+    clientCode: z.string().trim().max(40, "화주사 품목코드는 40자 이내로 입력하세요.").nullish().transform((x) => cleanClientCode(x)),
     name: trimmed(200, "품목명"),
     baseUnit: z.enum(ITEM_UNITS, { error: "기준 단위를 선택하세요." }),
     storageTemp: z.enum(STORAGE_TEMPS, { error: "보관 온도대를 선택하세요." }),
@@ -327,18 +331,18 @@ const itemSchema = z
 
 type ItemInput = z.output<typeof itemSchema>;
 
-/** 같은 화주사 안에서 품목코드·바코드·별칭 중복 확인 */
+/** 같은 화주사 안에서 화주사 품목코드·바코드·별칭 중복 확인 */
 async function itemDuplicates(
   tx: Tx,
   clientId: number,
-  v: { code?: string; barcodes?: string[]; aliases?: string[] },
+  v: { clientCode?: string | null; barcodes?: string[]; aliases?: string[] },
   exceptItemId?: number,
 ) {
   const errs: Record<string, string> = {};
   const not = exceptItemId ? { NOT: { id: exceptItemId } } : {};
-  if (v.code) {
-    const byCode = await tx.item.findFirst({ where: { clientId, code: v.code, ...not } });
-    if (byCode) errs.code = `이미 등록된 품목코드입니다 (${byCode.name}).`;
+  if (v.clientCode) {
+    const byCode = await tx.item.findFirst({ where: { clientId, clientCode: v.clientCode, ...not } });
+    if (byCode) errs.clientCode = `이미 ${byCode.code} ${byCode.name}이(가) 쓰는 화주사 품목코드입니다.`;
   }
   if (v.barcodes?.length) {
     const hit = await tx.itemBarcode.findFirst({
@@ -384,7 +388,8 @@ const barcodeText = (b: { unit: string; barcode: string; isPrimary: boolean }[])
 const aliasText = (a: string[]) => [...a].sort().join(", ");
 
 /** 이력에 남기는 품목 값 */
-const itemSnapshot = (v: Omit<ItemInput, "id" | "version" | "clientId" | "code">) => ({
+const itemSnapshot = (v: Omit<ItemInput, "id" | "version" | "clientId">) => ({
+  clientCode: v.clientCode,
   name: v.name,
   baseUnit: v.baseUnit,
   storageTemp: v.storageTemp,
@@ -396,11 +401,24 @@ const itemSnapshot = (v: Omit<ItemInput, "id" | "version" | "clientId" | "code">
   aliases: aliasText(v.aliases),
 });
 
-/** 품목 1건 등록 (단건 등록·엑셀 일괄 등록 공용) — 중복 확인은 호출하는 쪽에서 */
-async function createItemTx(tx: Tx, v: ItemInput, actor: string, logExtra: Record<string, unknown> = {}) {
+/**
+ * 품목코드 채번 — {화주사코드}-{순번 5자리}를 count개 연속으로 (2026-11-06 Sol 결정).
+ * 같은 화주사에 동시에 등록해도 번호가 겹치지 않게 화주사 행을 잠근 뒤 센다.
+ */
+async function allocItemCodes(tx: Tx, clientId: number, count: number): Promise<string[]> {
+  await tx.$queryRaw`SELECT id FROM tb_client WHERE id = ${clientId} FOR UPDATE`;
+  const client = await tx.client.findUniqueOrThrow({ where: { id: clientId }, select: { code: true } });
+  const used = await tx.item.findMany({ where: { clientId, code: { startsWith: `${client.code}-` } }, select: { code: true } });
+  const first = nextItemSerial(client.code, used.map((u) => u.code));
+  if (first + count - 1 > ITEM_SERIAL_MAX) throw new Error(`ITEM_CODE_EXHAUSTED:${client.code}`);
+  return Array.from({ length: count }, (_, i) => composeItemCode(client.code, first + i));
+}
+
+/** 품목 1건 등록 (단건 등록·엑셀 일괄 등록 공용) — 중복 확인·채번은 호출하는 쪽에서 */
+async function createItemTx(tx: Tx, v: ItemInput, code: string, actor: string, logExtra: Record<string, unknown> = {}) {
   const row = await tx.item.create({
     data: {
-      clientId: v.clientId, code: v.code, name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp,
+      clientId: v.clientId, code, clientCode: v.clientCode, name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp,
       expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, isActive: v.isActive, createdBy: actor, updatedBy: actor,
     },
   });
@@ -425,9 +443,10 @@ export async function saveItem(input: z.input<typeof itemSchema>): Promise<Actio
       if (!v.id) {
         const client = await tx.client.findUnique({ where: { id: v.clientId } });
         if (!client?.isActive) return fail("VALIDATION", "입력 내용을 확인하세요.", { clientId: "사용 중인 화주사를 선택하세요." });
-        const dup = await itemDuplicates(tx, v.clientId, { code: v.code, barcodes: v.barcodes.map((b) => b.barcode), aliases: v.aliases });
+        const dup = await itemDuplicates(tx, v.clientId, { clientCode: v.clientCode, barcodes: v.barcodes.map((b) => b.barcode), aliases: v.aliases });
         if (Object.keys(dup).length) return fail("VALIDATION", "입력 내용을 확인하세요.", dup);
-        const row = await createItemTx(tx, v, actor);
+        const [code] = await allocItemCodes(tx, v.clientId, 1);
+        const row = await createItemTx(tx, v, code, actor);
         return done(`품목 ${row.code}을(를) 등록했습니다.`, { id: row.id });
       }
 
@@ -435,10 +454,11 @@ export async function saveItem(input: z.input<typeof itemSchema>): Promise<Actio
       if (!cur) return fail("NOT_FOUND", "품목을 찾을 수 없습니다.");
       if (outOfScope(me, cur.clientId)) return forbidden();
       if (cur.version !== v.version) return conflict();
-      // 화주사·품목코드는 전표가 참조하므로 바꾸지 않는다
-      const dup = await itemDuplicates(tx, cur.clientId, { barcodes: v.barcodes.map((b) => b.barcode), aliases: v.aliases }, cur.id);
+      // 화주사·품목코드는 전표가 참조하므로 바꾸지 않는다 (화주사 품목코드는 고칠 수 있음)
+      const dup = await itemDuplicates(tx, cur.clientId, { clientCode: v.clientCode, barcodes: v.barcodes.map((b) => b.barcode), aliases: v.aliases }, cur.id);
       if (Object.keys(dup).length) return fail("VALIDATION", "입력 내용을 확인하세요.", dup);
       const before = {
+        clientCode: cur.clientCode,
         name: cur.name, baseUnit: cur.baseUnit, storageTemp: cur.storageTemp, expiryManaged: cur.expiryManaged,
         lotManaged: cur.lotManaged, isActive: cur.isActive, uoms: uomText(cur.uoms), barcodes: barcodeText(cur.barcodes),
         aliases: aliasText(cur.aliases.map((a) => a.alias)),
@@ -448,7 +468,7 @@ export async function saveItem(input: z.input<typeof itemSchema>): Promise<Actio
       const r = await tx.item.updateMany({
         where: { id: v.id, version: v.version },
         data: {
-          name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp, expiryManaged: v.expiryManaged,
+          clientCode: v.clientCode, name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp, expiryManaged: v.expiryManaged,
           lotManaged: v.lotManaged, isActive: v.isActive, updatedBy: actor, version: { increment: 1 },
         },
       });
@@ -465,7 +485,7 @@ export async function saveItem(input: z.input<typeof itemSchema>): Promise<Actio
 const registerSchema = z.object({
   id: z.number().int().positive(),
   version: z.number().int().positive(),
-  itemCode: z.string().trim().min(1, "품목코드를 입력하세요.").max(40, "품목코드는 40자 이내로 입력하세요."),
+  clientCode: z.string().trim().max(40, "화주사 품목코드는 40자 이내로 입력하세요.").nullish().transform((x) => cleanClientCode(x)),
   itemName: trimmed(200, "품목명"),
   unit: z.enum(ITEM_UNITS, { error: "단위를 선택하세요." }),
   barcode: z.string().trim().regex(BARCODE_PATTERN, "바코드는 숫자 8~14자리로 입력하세요."),
@@ -476,7 +496,12 @@ const registerSchema = z.object({
   keepRequestNameAsAlias: z.boolean(),
 });
 
-const FIELD_LABEL: Record<string, string> = { itemCode: "품목코드", itemName: "품목명", unit: "단위", barcode: "바코드" };
+const FIELD_LABEL: Record<string, string> = { clientCode: "화주사 품목코드", itemName: "품목명", unit: "단위", barcode: "바코드" };
+const REQ_FIELDS = ["clientCode", "itemName", "unit", "barcode"] as const;
+type ReqFieldValues = Record<(typeof REQ_FIELDS)[number], string | null>;
+/** 요청값과 바뀐 항목 — 이력 메모용 ("없음" = 비운 값) */
+const changedFields = (before: ReqFieldValues, after: ReqFieldValues) =>
+  REQ_FIELDS.filter((k) => (before[k] ?? null) !== (after[k] ?? null)).map((k) => `${FIELD_LABEL[k]} '${before[k] ?? "없음"}' → '${after[k] ?? "없음"}'`);
 
 /** 등록 — version이 같고 등록대기일 때만. 3PL이 고친 값이 있으면 이력 메모로 남긴다 */
 export async function registerItemRequest(input: z.input<typeof registerSchema>): Promise<ActionResult<{ itemId: number }>> {
@@ -499,21 +524,20 @@ export async function registerItemRequest(input: z.input<typeof registerSchema>)
 
       const nameChanged = normalizeAlias(req.itemName) !== normalizeAlias(v.itemName);
       const aliases = v.keepRequestNameAsAlias && nameChanged ? [req.itemName] : [];
-      const dup = await itemDuplicates(tx, req.clientId, { code: v.itemCode, barcodes: [v.barcode], aliases });
+      const dup = await itemDuplicates(tx, req.clientId, { clientCode: v.clientCode, barcodes: [v.barcode], aliases });
       if (Object.keys(dup).length)
         return fail("VALIDATION", "이미 등록된 품목과 겹칩니다. 값을 고치거나 반려하세요.", {
-          ...(dup.code ? { itemCode: dup.code } : {}),
+          ...(dup.clientCode ? { clientCode: dup.clientCode } : {}),
           ...(dup.barcodes ? { barcode: dup.barcodes } : {}),
           ...(dup.aliases ? { itemName: dup.aliases } : {}),
         });
 
-      const changed = (["itemCode", "itemName", "unit", "barcode"] as const)
-        .filter((k) => req[k] !== v[k])
-        .map((k) => `${FIELD_LABEL[k]} '${req[k]}' → '${v[k]}'`);
+      const changed = changedFields(req, v);
 
+      const [code] = await allocItemCodes(tx, req.clientId, 1);
       const item = await tx.item.create({
         data: {
-          clientId: req.clientId, code: v.itemCode, name: v.itemName, baseUnit: v.unit, storageTemp: v.storageTemp,
+          clientId: req.clientId, code, clientCode: v.clientCode, name: v.itemName, baseUnit: v.unit, storageTemp: v.storageTemp,
           expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, createdBy: actor, updatedBy: actor,
           uoms: { create: [{ unit: v.unit, qty: 1 }] },
         },
@@ -535,7 +559,7 @@ export async function registerItemRequest(input: z.input<typeof registerSchema>)
       ].filter(Boolean).join(" / ");
       await tx.itemRequestHistory.create({ data: { requestId: v.id, action: "REGISTER", actor, actorId: me.id, memo: memo || null } });
       await log(tx, "tb_item", String(item.id), "CREATE", actor, null, {
-        code: item.code, name: item.name, baseUnit: item.baseUnit, storageTemp: item.storageTemp,
+        code: item.code, clientCode: item.clientCode, name: item.name, baseUnit: item.baseUnit, storageTemp: item.storageTemp,
         expiryManaged: item.expiryManaged, lotManaged: item.lotManaged, isActive: true,
         uoms: `${v.unit}`, barcodes: `${v.barcode}(${v.unit}·대표)`, aliases: aliasText(aliases), fromRequest: req.requestNo,
       });
@@ -602,7 +626,7 @@ const requestSchema = z.object({
   /** 반려된 요청을 고쳐 다시 보낼 때 */
   id: z.number().int().positive().optional(),
   version: z.number().int().positive().optional(),
-  itemCode: z.string().trim().min(1, "품목코드를 입력하세요.").max(40, "품목코드는 40자 이내로 입력하세요."),
+  clientCode: z.string().trim().max(40, "화주사 품목코드는 40자 이내로 입력하세요.").nullish().transform((x) => cleanClientCode(x)),
   itemName: trimmed(200, "품목명"),
   unit: z.enum(ITEM_UNITS, { error: "단위를 선택하세요." }),
   barcode: z.string().trim().regex(BARCODE_PATTERN, "바코드는 숫자 8~14자리로 입력하세요."),
@@ -625,33 +649,33 @@ async function nextRequestNos(tx: Tx, count: number) {
 }
 
 /**
- * 요청 중복 확인 — 같은 화주사에 이미 등록된 품목, 또는 검토 중(등록대기·반려)인 다른 요청과 품목코드·바코드가 겹치면 막는다
- * 결과 키: itemCode / barcode
+ * 요청 중복 확인 — 같은 화주사에 이미 등록된 품목, 또는 검토 중(등록대기·반려)인 다른 요청과 화주사 품목코드·바코드가 겹치면 막는다
+ * 결과 키: clientCode / barcode (화주사 품목코드는 넣은 경우만)
  */
-async function requestDuplicates(tx: Tx, clientId: number, items: { itemCode: string; barcode: string }[], exceptRequestId?: number) {
-  const codes = items.map((i) => i.itemCode);
+async function requestDuplicates(tx: Tx, clientId: number, items: { clientCode: string | null; barcode: string }[], exceptRequestId?: number) {
+  const codes = items.map((i) => i.clientCode).filter((c): c is string => !!c);
   const barcodes = items.map((i) => i.barcode);
   const [itemByCode, itemByBarcode, reqs] = await Promise.all([
-    tx.item.findMany({ where: { clientId, code: { in: codes } }, select: { code: true, name: true } }),
+    tx.item.findMany({ where: { clientId, clientCode: { in: codes } }, select: { code: true, clientCode: true, name: true } }),
     tx.itemBarcode.findMany({ where: { clientId, barcode: { in: barcodes } }, select: { barcode: true, item: { select: { code: true } } } }),
     tx.itemRequest.findMany({
       where: {
         clientId,
         status: { in: ["WAITING", "REJECTED"] },
-        OR: [{ itemCode: { in: codes } }, { barcode: { in: barcodes } }],
+        OR: [{ clientCode: { in: codes } }, { barcode: { in: barcodes } }],
         ...(exceptRequestId ? { NOT: { id: exceptRequestId } } : {}),
       },
-      select: { requestNo: true, itemCode: true, barcode: true },
+      select: { requestNo: true, clientCode: true, barcode: true },
     }),
   ]);
   return items.map((i) => {
     const e: Record<string, string> = {};
-    const ic = itemByCode.find((x) => x.code === i.itemCode);
-    if (ic) e.itemCode = `이미 등록된 품목코드입니다 (${ic.name}).`;
+    const ic = i.clientCode ? itemByCode.find((x) => x.clientCode === i.clientCode) : undefined;
+    if (ic) e.clientCode = `이미 등록된 품목(${ic.code} ${ic.name})의 화주사 품목코드입니다.`;
     const ib = itemByBarcode.find((x) => x.barcode === i.barcode);
     if (ib) e.barcode = `이미 ${ib.item.code} 품목이 쓰는 바코드입니다.`;
-    const rc = reqs.find((x) => x.itemCode === i.itemCode);
-    if (rc && !e.itemCode) e.itemCode = `검토 중인 요청 ${rc.requestNo}과(와) 품목코드가 같습니다.`;
+    const rc = i.clientCode ? reqs.find((x) => x.clientCode === i.clientCode) : undefined;
+    if (rc && !e.clientCode) e.clientCode = `검토 중인 요청 ${rc.requestNo}과(와) 화주사 품목코드가 같습니다.`;
     const rb = reqs.find((x) => x.barcode === i.barcode);
     if (rb && !e.barcode) e.barcode = `검토 중인 요청 ${rb.requestNo}과(와) 바코드가 같습니다.`;
     return e;
@@ -668,7 +692,7 @@ export async function submitItemRequest(input: z.input<typeof requestSchema>): P
   const v = p.data;
   const actor = me.name;
   const fields = {
-    itemCode: v.itemCode, itemName: v.itemName, unit: v.unit, barcode: v.barcode, storageTemp: v.storageTemp,
+    clientCode: v.clientCode, itemName: v.itemName, unit: v.unit, barcode: v.barcode, storageTemp: v.storageTemp,
     expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, sourceNote: v.note || null,
   };
 
@@ -693,7 +717,7 @@ export async function submitItemRequest(input: z.input<typeof requestSchema>): P
         data: { ...fields, status: "WAITING", resubmitCount: { increment: 1 }, version: { increment: 1 }, requestedBy: actor, requestedAt: new Date() },
       });
       if (r.count === 0) throw new Error("CONFLICT_RACE");
-      const changed = (["itemCode", "itemName", "unit", "barcode"] as const).filter((k) => cur[k] !== v[k]).map((k) => `${FIELD_LABEL[k]} '${cur[k]}' → '${v[k]}'`);
+      const changed = changedFields(cur, v);
       await tx.itemRequestHistory.create({
         data: { requestId: cur.id, action: "RESUBMIT", actor, actorId: me.id, memo: changed.length ? `수정: ${changed.join(", ")}` : null },
       });
@@ -728,12 +752,12 @@ async function checkBulk(tx: Tx, kind: BulkKind, clientId: number, rows: { rowNo
       return { ...r, errors: [] as string[], item: z.data };
     });
     const ok = parsed.filter((p) => p.item);
-    const inFile = fileDuplicates(ok.map((p) => ({ rowNo: p.rowNo, code: p.item!.code, barcodes: p.item!.barcodes.map((b) => b.barcode), aliases: p.item!.aliases })));
-    const codes = ok.map((p) => p.item!.code);
+    const inFile = fileDuplicates(ok.map((p) => ({ rowNo: p.rowNo, clientCode: p.item!.clientCode, barcodes: p.item!.barcodes.map((b) => b.barcode), aliases: p.item!.aliases })));
+    const codes = ok.map((p) => p.item!.clientCode).filter((c): c is string => !!c);
     const barcodes = ok.flatMap((p) => p.item!.barcodes.map((b) => b.barcode));
     const aliases = ok.flatMap((p) => p.item!.aliases.map(normalizeAlias));
     const [byCode, byBarcode, byAlias] = await Promise.all([
-      tx.item.findMany({ where: { clientId, code: { in: codes } }, select: { code: true, name: true } }),
+      tx.item.findMany({ where: { clientId, clientCode: { in: codes } }, select: { code: true, clientCode: true, name: true } }),
       tx.itemBarcode.findMany({ where: { clientId, barcode: { in: barcodes } }, select: { barcode: true, item: { select: { code: true } } } }),
       tx.itemAlias.findMany({ where: { clientId, normalized: { in: aliases } }, select: { alias: true, normalized: true, item: { select: { code: true } } } }),
     ]);
@@ -741,8 +765,8 @@ async function checkBulk(tx: Tx, kind: BulkKind, clientId: number, rows: { rowNo
       if (!p.item) return { rowNo: p.rowNo, raw: p.raw, errors: p.errors };
       const item = p.item;
       const e = [...(inFile.get(p.rowNo) ?? [])];
-      const c = byCode.find((x) => x.code === item.code);
-      if (c) e.push(`이미 등록된 품목코드입니다 (${c.name}).`);
+      const c = item.clientCode ? byCode.find((x) => x.clientCode === item.clientCode) : undefined;
+      if (c) e.push(`화주사 품목코드 ${item.clientCode}은(는) 이미 ${c.code} ${c.name}이(가) 쓰고 있습니다.`);
       for (const b of item.barcodes) {
         const hit = byBarcode.find((x) => x.barcode === b.barcode);
         if (hit) e.push(`바코드 ${b.barcode}은(는) ${hit.item.code} 품목이 쓰고 있습니다.`);
@@ -760,8 +784,8 @@ async function checkBulk(tx: Tx, kind: BulkKind, clientId: number, rows: { rowNo
     return p.ok ? { ...r, errors: [] as string[], request: p.value } : { ...r, errors: p.errors };
   });
   const ok = parsed.filter((p) => p.request);
-  const inFile = fileDuplicates(ok.map((p) => ({ rowNo: p.rowNo, code: p.request!.code, barcodes: [p.request!.barcode] })));
-  const dups = await requestDuplicates(tx, clientId, ok.map((p) => ({ itemCode: p.request!.code, barcode: p.request!.barcode })));
+  const inFile = fileDuplicates(ok.map((p) => ({ rowNo: p.rowNo, clientCode: p.request!.clientCode, barcodes: [p.request!.barcode] })));
+  const dups = await requestDuplicates(tx, clientId, ok.map((p) => ({ clientCode: p.request!.clientCode, barcode: p.request!.barcode })));
   const dupBy = new Map(ok.map((p, i) => [p.rowNo, dups[i]]));
   return parsed.map((p): BulkChecked => {
     if (!p.request) return { rowNo: p.rowNo, raw: p.raw, errors: p.errors };
@@ -831,7 +855,8 @@ export async function commitItemBulk(input: { clientId: number; rows: { rowNo: n
           );
 
         if (kind === "ITEM") {
-          for (const c of checked) await createItemTx(tx, c.item!, actor, { fromExcel: true });
+          const codes = await allocItemCodes(tx, client.id, checked.length);
+          for (const [i, c] of checked.entries()) await createItemTx(tx, c.item!, codes[i], actor, { fromExcel: true });
           return done(`${client.name} 품목 ${checked.length.toLocaleString()}건을 등록했습니다.`, { count: checked.length });
         }
 
@@ -840,7 +865,7 @@ export async function commitItemBulk(input: { clientId: number; rows: { rowNo: n
           data: checked.map((c, i) => {
             const r = c.request!;
             return {
-              requestNo: nos[i], clientId: client.id, itemCode: r.code, itemName: r.name, unit: r.unit, barcode: r.barcode,
+              requestNo: nos[i], clientId: client.id, clientCode: r.clientCode, itemName: r.name, unit: r.unit, barcode: r.barcode,
               storageTemp: r.storageTemp, expiryManaged: r.expiryManaged, lotManaged: r.lotManaged, sourceNote: r.note,
               source: "ITEM_EXCEL" as const, requestedBy: actor,
             };

@@ -42,8 +42,97 @@ export function ClientFilter({ id, value, onChange }: { id: string; value: Picke
   );
 }
 
+type ClientSearch = (input: { q: string; offset: number }) => Promise<{ items: ClientPick[]; total: number } | null>;
+
+/** 기본 검색 — 서버에서 3PL 소속 센터 이용 화주사를 찾는다 (승인·조회 화면) */
+const serverSearch: ClientSearch = async (input) => {
+  const r = await searchApprovalClients(input);
+  return r.ok ? r.data! : null;
+};
+
+/** 화면이 이미 가진 화주사 목록에서 찾는다 (기준정보 화면 — 지금 드롭다운과 같은 범위) */
+function localSearch(list: ClientPick[]): ClientSearch {
+  return async ({ q, offset }) => {
+    const k = q.trim().toLowerCase();
+    const hit = k ? list.filter((c) => c.name.toLowerCase().includes(k) || c.code.toLowerCase().includes(k) || c.bizNo.includes(k)) : list;
+    return { items: hit.slice(offset, offset + 50), total: hit.length };
+  };
+}
+
+/**
+ * 기준정보용 화주사 선택 칸 — 드롭다운 대신 [찾기] 창 (2026-11-06 Sol 결정, 화주사가 많아져도 고를 수 있게)
+ * value는 화주사 id 문자열("" = 없음). 조회조건은 placeholder "전체" + × 지우기, 입력 화면은 "화주사를 선택하세요".
+ */
+export function ClientPicker({
+  id,
+  value,
+  onChange,
+  clients,
+  placeholder = "전체",
+  clearable = true,
+  disabled,
+  autoFocus,
+  block = false,
+}: {
+  id: string;
+  value: string;
+  onChange: (id: string) => void;
+  clients: { id: number; code: string; name: string; isActive: boolean; bizNo?: string }[];
+  placeholder?: string;
+  clearable?: boolean;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  /** 입력 화면: 다른 입력칸처럼 칸 너비를 꽉 채운다 */
+  block?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const picked = value ? clients.find((c) => String(c.id) === value) : undefined;
+  const search = localSearch(clients.map((c) => ({ id: c.id, code: c.code, name: c.name, isActive: c.isActive, bizNo: c.bizNo ?? "" })));
+  return (
+    <div className={`${styles.field} ${block ? styles.block : ""}`}>
+      <button
+        type="button"
+        id={id}
+        className={styles.picker}
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        disabled={disabled}
+        autoFocus={autoFocus}
+      >
+        <span className={picked ? styles.value : styles.placeholder}>
+          {picked ? `${picked.name}${picked.isActive ? "" : " (사용 안 함)"}` : placeholder}
+        </span>
+        <span className={styles.find}>찾기</span>
+      </button>
+      {picked && clearable && !disabled && (
+        <button type="button" className={styles.clear} onClick={() => onChange("")} aria-label={`화주사 ${picked.name} 지우기`} title="지우기">
+          ×
+        </button>
+      )}
+      {open && (
+        <ClientFinderModal
+          search={search}
+          onClose={() => setOpen(false)}
+          onPick={(c) => {
+            onChange(String(c.id));
+            setOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /** 화주사 찾기 창 — 화주사명·코드·사업자번호 검색, 50개씩, 행을 누르면 선택 */
-export function ClientFinderModal({ onClose, onPick }: { onClose: () => void; onPick: (c: PickedClient) => void }) {
+export function ClientFinderModal({
+  onClose,
+  onPick,
+  search = serverSearch,
+}: {
+  onClose: () => void;
+  onPick: (c: PickedClient) => void;
+  search?: ClientSearch;
+}) {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<ClientPick[]>([]);
   const [total, setTotal] = useState(0);
@@ -53,12 +142,12 @@ export function ClientFinderModal({ onClose, onPick }: { onClose: () => void; on
   async function load(offset: number) {
     const my = ++seq.current;
     setLoading(true);
-    const r = await searchApprovalClients({ q, offset });
+    const r = await search({ q, offset });
     if (my !== seq.current) return;
     setLoading(false);
-    if (!r.ok) return;
-    setItems((prev) => (offset === 0 ? r.data!.items : [...prev, ...r.data!.items]));
-    setTotal(r.data!.total);
+    if (!r) return;
+    setItems((prev) => (offset === 0 ? r.items : [...prev, ...r.items]));
+    setTotal(r.total);
   }
 
   useEffect(() => {
@@ -110,7 +199,7 @@ export function ClientFinderModal({ onClose, onPick }: { onClose: () => void; on
               >
                 <td className="mono">{c.code}</td>
                 <td>{c.name}</td>
-                <td className="mono">{c.bizNo}</td>
+                <td className="mono">{c.bizNo || "-"}</td>
                 <td className={c.isActive ? undefined : styles.off}>{c.isActive ? "사용" : "사용 안 함"}</td>
               </tr>
             ))}

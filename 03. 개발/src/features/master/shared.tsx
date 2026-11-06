@@ -39,7 +39,7 @@ export function MasterHeader({
 }
 
 /**
- * 기준정보 하위 화면 머리(상세·등록·엑셀 일괄 등록): 경로에 목록 화면을 넣고, 제목 왼쪽에 [← 목록]
+ * 하위 화면 머리(상세·등록·엑셀 일괄 등록): 첫 줄 왼쪽에 [← 목록], 같은 줄 오른쪽 끝에 메뉴 경로 (2026-11-06 Sol 결정)
  * backHref는 기본 주소이고, 목록이 기억해 둔 조회조건 주소(storageKey)가 있으면 그쪽으로 돌아간다.
  */
 export function SubHeader({
@@ -77,10 +77,19 @@ export function SubHeader({
   }, [backHref, storageKey]);
   return (
     <>
-      <Link href={href} className={styles.back}>
-        ← {section} 목록
-      </Link>
-      <PageHeader crumbs={[...group, section, title]} title={title} badges={badges} onHelp={rules ? () => setHelp(true) : undefined} actions={actions} />
+      <PageHeader
+        crumbs={[...group, section, title]}
+        title={title}
+        back={
+          <Link href={href} className={styles.back}>
+            ← {section} 목록
+          </Link>
+        }
+        badges={badges}
+        onHelp={rules ? () => setHelp(true) : undefined}
+        actions={actions}
+        divided
+      />
       {rules && (
         <Sheet open={help} onClose={() => setHelp(false)} title="이 화면의 업무 규칙">
           <RuleList rules={rules} source={RULE_SOURCE} />

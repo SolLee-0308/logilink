@@ -51,10 +51,10 @@ export function Full({ children }: { children: React.ReactNode }) {
   return <div className={styles.full}>{children}</div>;
 }
 
-/** 패널 상단 오른쪽 [수정] 버튼 */
+/** [수정] 버튼 — 옅은 보라(editSoft) */
 export function EditButton({ onClick, label = "수정" }: { onClick: () => void; label?: string }) {
   return (
-    <Button size="sm" onClick={onClick}>
+    <Button size="sm" variant="editSoft" onClick={onClick}>
       {label}
     </Button>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import styles from "./PdaFrame.module.css";
 
@@ -9,15 +10,14 @@ const SCREEN_H = 720;
 /** 몸체 위·아래·옆 두께 + 아래 안내 글 자리 */
 const DEVICE_H = SCREEN_H + 36 + 44;
 const STAGE_PAD = 64;
-const SPLASH_KEY = "ll_pda_splash";
-const SPLASH_MS = 1600;
+const SPLASH_MS = 2500; // 2026-11-06 Sol: 2~3초
 
 /**
  * 시연용 PDA 테두리 (2026-11-05 Sol 요청)
  * - 넓은 화면(PC·시연): 산업용 PDA 몸체 안에 실제 PDA 크기(360 × 720) 화면을 넣고, 모니터 높이에 맞게 통째로 확대·축소한다.
  *   배치는 실제 단말과 같고 크기만 커진다.
  * - 실제 PDA·휴대폰(좁은 화면): 테두리 없이 화면 전체 — CSS 미디어 쿼리로만 나눈다.
- * - SPLASH: PDA에 들어올 때(브라우저 세션당 1번) 잠깐 보여 주고, 누르면 바로 넘어간다.
+ * - SPLASH: 로그인 화면을 열 때마다 2.5초 보여 주고, 누르면 바로 넘어간다.
  */
 export function PdaFrame({ children }: { children: React.ReactNode }) {
   const [zoom, setZoom] = useState(1);
@@ -53,25 +53,24 @@ export function PdaFrame({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** SPLASH — public/brand/pda-splash.jpg. 세션에 본 적이 있으면 바로 숨긴다 */
+/**
+ * SPLASH — 로그인 화면(/pda/login)을 열 때마다 2.5초 보여 주고, 누르면 바로 넘어간다 (2026-11-06 Sol 결정: B안).
+ * 예전에는 브라우저 세션당 1번(sessionStorage)이었는데, 개발 서버의 엄격 모드가 효과를 두 번 실행하면서
+ * 두 번째 실행이 "이미 봤음"으로 판단해 곧바로 지워지던 문제가 있어 저장소 기록을 없앴다.
+ */
 function Splash() {
-  const [state, setState] = useState<"show" | "fade" | "gone">("show");
+  const onLogin = usePathname() === "/pda/login";
+  const [state, setState] = useState<"show" | "fade" | "gone">(onLogin ? "show" : "gone");
   useEffect(() => {
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem(SPLASH_KEY) === "1";
-      sessionStorage.setItem(SPLASH_KEY, "1");
-    } catch {
-      /* 저장소를 못 쓰면 매번 보여 준다 */
-    }
-    if (seen) {
+    if (!onLogin) {
       setState("gone");
       return;
     }
+    setState("show");
     const a = setTimeout(() => setState("fade"), SPLASH_MS);
     const b = setTimeout(() => setState("gone"), SPLASH_MS + 350);
     return () => (clearTimeout(a), clearTimeout(b));
-  }, []);
+  }, [onLogin]);
   if (state === "gone") return null;
   return (
     <div className={`${styles.splash} ${state === "fade" ? styles.splashFade : ""}`} onClick={() => setState("gone")} role="presentation" data-testid="pda-splash">

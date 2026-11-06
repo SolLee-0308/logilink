@@ -124,7 +124,7 @@ export function LoadOrderSheet({ data: d, auto }: { data: LoadOrderPrint; auto: 
               <th scope="col">입고예정번호</th>
               <th scope="col">품목코드 · 품목명</th>
               <th scope="col">품목 바코드</th>
-              <th scope="col">유통기한 · 로트</th>
+              <th scope="col">소비기한 · 로트</th>
               <th scope="col">단위</th>
               <th scope="col" className={styles.num}>
                 지시수량

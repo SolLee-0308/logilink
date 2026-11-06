@@ -55,7 +55,7 @@ export async function pdaLogin(_prev: FormState, form: FormData): Promise<FormSt
 async function loginAs(channel: "Web" | "PDA", form: FormData): Promise<FormState> {
   const input = String(form.get("loginId") ?? "").trim();
   const password = String(form.get("password") ?? "");
-  const next = safeNext(form.get("next"), channel === "PDA" ? "/pda" : "/");
+  const next = safeNext(form.get("next"), channel === "PDA" ? "/pda/dashboard" : "/"); // PDA 첫 화면 = 대시보드 (2026-11-06 Sol)
   if (channel === "PDA" && !next.startsWith("/pda")) return { error: "잘못된 접근입니다" };
   if (!input || !password) {
     return {

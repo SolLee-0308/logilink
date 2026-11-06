@@ -2,7 +2,7 @@ import Link from "next/link";
 import { forwardRef } from "react";
 import styles from "./Button.module.css";
 
-type Variant = "primary" | "secondary" | "danger" | "dangerSoft" | "create";
+type Variant = "primary" | "secondary" | "danger" | "dangerSoft" | "create" | "editSoft";
 type Size = "md" | "sm";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

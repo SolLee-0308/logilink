@@ -13,10 +13,23 @@ export const AI_MAX_IMAGES = 3;
 /** AI 판독 신뢰도가 이보다 낮으면 "확인 필요" */
 export const LOW_CONFIDENCE = 0.8;
 
+/**
+ * 소비기한 하한 — 입고예정일 + 최소 잔여일수(운영 설정 MIN_EXPIRY_DAYS)보다 이른 날짜는 입력할 수 없다.
+ * 유통할 기간을 남겨 두기 위한 기준 (2026-11-06 Sol 결정, 기본 7일은 임시안)
+ */
+export const MIN_EXPIRY_KEY = "MIN_EXPIRY_DAYS";
+export const DEFAULT_MIN_EXPIRY_DAYS = 7;
+export const minExpiryDate = (planDate: string, days: number) =>
+  new Date(Date.parse(`${planDate}T00:00:00Z`) + Math.max(days, 0) * 86_400_000).toISOString().slice(0, 10);
+export const expiryTooEarlyMsg = (min: string, days: number) => `소비기한은 ${min} 이후로 입력하세요 (입고예정일 + ${days}일).`;
+
 /** 매칭에 쓰는 화주사 품목 (사용 중인 품목만) */
 export interface CatalogItem {
   id: number;
+  /** 품목코드 (시스템 채번) */
   code: string;
+  /** 화주사 품목코드 (화주사 자체 코드, 선택) */
+  clientCode?: string | null;
   name: string;
   baseUnit: ItemUnit;
   /** 단위별 기준 단위 환산 수량 (기준 단위는 1) */
@@ -30,9 +43,10 @@ export interface CatalogItem {
   storageTemp?: StorageTemp;
 }
 
-export type MatchedBy = "code" | "barcode" | "name" | "alias" | "ai";
+export type MatchedBy = "code" | "clientCode" | "barcode" | "name" | "alias" | "ai";
 export const MATCHED_BY_LABEL: Record<MatchedBy, string> = {
   code: "품목코드 일치",
+  clientCode: "화주사 품목코드 일치",
   barcode: "바코드 일치",
   name: "품목명 일치",
   alias: "별칭 일치",
@@ -108,16 +122,18 @@ export interface CatalogIndex {
   items: CatalogItem[];
   byId: Map<number, CatalogItem>;
   byCode: Map<string, CatalogItem>;
+  byClientCode: Map<string, CatalogItem>;
   byBarcode: Map<string, { item: CatalogItem; unit: ItemUnit }>;
   byName: Map<string, CatalogItem>;
   byAlias: Map<string, CatalogItem>;
 }
 
 export function buildIndex(items: CatalogItem[]): CatalogIndex {
-  const idx: CatalogIndex = { items, byId: new Map(), byCode: new Map(), byBarcode: new Map(), byName: new Map(), byAlias: new Map() };
+  const idx: CatalogIndex = { items, byId: new Map(), byCode: new Map(), byClientCode: new Map(), byBarcode: new Map(), byName: new Map(), byAlias: new Map() };
   for (const it of items) {
     idx.byId.set(it.id, it);
     idx.byCode.set(it.code.toUpperCase(), it);
+    if (it.clientCode) idx.byClientCode.set(it.clientCode.toUpperCase(), it);
     for (const b of it.barcodes) idx.byBarcode.set(b.barcode, { item: it, unit: b.unit });
     idx.byName.set(normalizeAlias(it.name), it);
     for (const a of it.aliases) idx.byAlias.set(a, it);
@@ -125,13 +141,15 @@ export function buildIndex(items: CatalogItem[]): CatalogIndex {
   return idx;
 }
 
-/** 품목코드 → 바코드 → 품목명 → 별칭 순으로 정확히 같은 품목을 찾는다 (추측 매칭은 하지 않는다) */
+/** 품목코드 → 화주사 품목코드 → 바코드 → 품목명 → 별칭 순으로 정확히 같은 품목을 찾는다 (추측 매칭은 하지 않는다) */
 export function matchItem(
   idx: CatalogIndex,
   src: { code?: string | null; barcode?: string | null; name?: string | null },
 ): { item: CatalogItem; by: MatchedBy; unit?: ItemUnit } | null {
   const code = src.code?.trim().toUpperCase();
   if (code && idx.byCode.has(code)) return { item: idx.byCode.get(code)!, by: "code" };
+  // 화주사 엑셀·이미지에는 화주사 자체 코드가 적혀 오는 경우가 많다 (2026-11-06 Sol 결정)
+  if (code && idx.byClientCode.has(code)) return { item: idx.byClientCode.get(code)!, by: "clientCode" };
   const bc = src.barcode?.replace(/\s/g, "");
   if (bc && idx.byBarcode.has(bc)) {
     const hit = idx.byBarcode.get(bc)!;
@@ -163,7 +181,7 @@ export function candidatesFor(idx: CatalogIndex, text: string, limit = 5): numbe
     return (2 * hit) / (qg.size + g.size || 1);
   };
   return idx.items
-    .map((it) => ({ id: it.id, s: Math.max(score(normalizeAlias(it.name)), score(it.code.toLowerCase()), ...it.aliases.map(score)) }))
+    .map((it) => ({ id: it.id, s: Math.max(score(normalizeAlias(it.name)), score(it.code.toLowerCase()), score((it.clientCode ?? "").toLowerCase()), ...it.aliases.map(score)) }))
     .filter((x) => x.s >= 0.3)
     .sort((a, b) => b.s - a.s)
     .slice(0, limit)
@@ -213,7 +231,7 @@ export function toDraftLine(
     issues.push(`수량 '${src.qty}'을(를) 읽지 못했습니다. 1 이상의 정수로 입력하세요.`);
   else if (qty === null) issues.push("수량을 입력하세요.");
   const expiry = parseDate(src.expiry);
-  if (src.expiry?.trim() && !expiry) issues.push(`유통기한 '${src.expiry}'을(를) 날짜로 읽지 못했습니다.`);
+  if (src.expiry?.trim() && !expiry) issues.push(`소비기한 '${src.expiry}'을(를) 날짜로 읽지 못했습니다.`);
   return {
     origin: src.origin,
     text: text || "(품목 정보 없음)",
@@ -232,12 +250,12 @@ export function toDraftLine(
 /* ───────── 엑셀 양식 ───────── */
 
 export const PLAN_COLUMNS: BulkColumn[] = [
-  { key: "code", header: "품목코드", required: false, width: 16, note: "품목코드·바코드·품목명 중 하나는 꼭 입력. 품목코드가 가장 정확합니다", example: "HB-1001" },
+  { key: "code", header: "품목코드", required: false, width: 16, note: "품목코드·바코드·품목명 중 하나는 꼭 입력. 품목코드(HB01-00001 형식) 또는 화주사 자체 품목코드 모두 됩니다", example: "HB-1001" },
   { key: "barcode", header: "바코드", required: false, width: 18, note: "품목에 등록된 바코드. 단위별 바코드면 단위를 비워도 됩니다", example: "" },
   { key: "name", header: "품목명", required: false, width: 28, note: "품목명 또는 별칭. 코드·바코드가 없을 때 이름으로 찾습니다", example: "국산콩 두부 300g" },
   { key: "unit", header: "단위", required: false, width: 8, note: "EA / BOX / PLT (품목에 등록된 단위)", list: ITEM_UNITS, example: "BOX" },
   { key: "qty", header: "수량", required: true, width: 10, note: "1 이상의 정수", example: "20" },
-  { key: "expiry", header: "유통기한", required: false, width: 12, note: "유통기한 관리 품목만. 예: 2026-12-31", example: "2026-12-31" },
+  { key: "expiry", header: "소비기한", required: false, width: 12, note: "소비기한 관리 품목만. 예: 2026-12-31", example: "2026-12-31" },
   { key: "lot", header: "로트", required: false, width: 14, note: "로트 관리 품목만, 40자 이내", example: "" },
 ];
 
@@ -260,19 +278,25 @@ export interface EditorLineValue {
   confirmed?: boolean;
 }
 
-export function lineErrors(line: EditorLineValue, item: CatalogItem | undefined): Partial<Record<"itemId" | "unit" | "qty" | "expiryDate" | "lotNo", string>> {
+export function lineErrors(
+  line: EditorLineValue,
+  item: CatalogItem | undefined,
+  /** 소비기한 하한 (입고예정일 + 최소 잔여일수) */
+  minExpiry?: { date: string; days: number },
+): Partial<Record<"itemId" | "unit" | "qty" | "expiryDate" | "lotNo", string>> {
   const e: Partial<Record<"itemId" | "unit" | "qty" | "expiryDate" | "lotNo", string>> = {};
   if (!line.itemId || !item) e.itemId = "품목을 매칭하세요.";
   if (!line.unit) e.unit = "단위를 고르세요.";
   else if (item && !item.uoms.some((u) => u.unit === line.unit)) e.unit = `${item.name}에 등록되지 않은 단위입니다.`;
   if (!line.qty || line.qty < 1) e.qty = "수량은 1 이상이어야 합니다.";
   else if (line.lowConfidence && !line.confirmed) e.qty = "판독 신뢰도가 낮은 수량입니다. 원본 이미지와 대조한 뒤 '원본과 대조함'에 체크하세요.";
-  if (item?.expiryManaged && !line.expiryDate) e.expiryDate = "유통기한 관리 품목입니다.";
+  if (item?.expiryManaged && !line.expiryDate) e.expiryDate = "소비기한 관리 품목입니다.";
+  else if (item?.expiryManaged && line.expiryDate && minExpiry && line.expiryDate < minExpiry.date) e.expiryDate = expiryTooEarlyMsg(minExpiry.date, minExpiry.days);
   if (item?.lotManaged && !line.lotNo?.trim()) e.lotNo = "로트 관리 품목입니다.";
   return e;
 }
 
-/** 같은 품목·단위·유통기한·로트 라인 (서버 C1 중복 규칙과 같음) — 중복된 라인 번호(0부터) */
+/** 같은 품목·단위·소비기한·로트 라인 (서버 C1 중복 규칙과 같음) — 중복된 라인 번호(0부터) */
 export function duplicateLines(lines: EditorLineValue[], items: Map<number, CatalogItem>): Set<number> {
   const seen = new Map<string, number>();
   const dup = new Set<number>();

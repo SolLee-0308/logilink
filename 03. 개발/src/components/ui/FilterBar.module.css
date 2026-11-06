@@ -1,4 +1,9 @@
 .bar {
+  /* 위치 고정: 화면 맨 위에 붙고, 둘레의 흰 띠가 아래로 지나가는 목록을 가린다 */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 0 0 8px var(--bg);
   background: var(--surface);
   border: 1px solid var(--card-line);
   border-radius: var(--r-box);

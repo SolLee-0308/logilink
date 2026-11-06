@@ -6,7 +6,7 @@ import { ActiveBadge, Tag } from "@/components/ui/Badges";
 import { LinkButton, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
-import { Select } from "@/components/ui/Form";
+import { ClientPicker } from "@/features/plans/ClientFinder";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
 import { ALIAS_SOURCE_LABEL, STORAGE_TEMP_LABEL, STORAGE_TEMPS, type StorageTemp } from "@/domain/master";
@@ -28,7 +28,7 @@ export const LABELS = {
   name: "품목명",
   baseUnit: "기준 단위",
   storageTemp: "보관 온도대",
-  expiryManaged: "유통기한 관리",
+  expiryManaged: "소비기한 관리",
   lotManaged: "로트 관리",
   isActive: "사용 여부",
   uoms: "단위 환산",
@@ -123,7 +123,7 @@ export function ItemsScreen({
           (!clientId || r.clientId === Number(clientId)) &&
           (temp === "all" || r.storageTemp === temp) &&
           matchActive(active, r.isActive) &&
-          includesText([r.code, r.name, ...r.barcodes.map((b) => b.barcode), ...r.aliases.map((a) => a.alias)], q),
+          includesText([r.code, r.clientCode ?? "", r.name, ...r.barcodes.map((b) => b.barcode), ...r.aliases.map((a) => a.alias)], q),
       ),
     [rows, clientId, temp, active, q],
   );
@@ -143,7 +143,16 @@ export function ItemsScreen({
   }, [clientId, temp, active, q, activeId]);
 
   const columns: Column<ItemRow>[] = [
-    { key: "code", header: "품목코드", render: (r) => <span className="mono">{r.code}</span> },
+    {
+      key: "code",
+      header: "품목코드",
+      render: (r) => (
+        <>
+          <span className="mono">{r.code}</span>
+          {r.clientCode && <small className="muted mono" style={{ display: "block" }}>{r.clientCode}</small>}
+        </>
+      ),
+    },
     {
       key: "name",
       header: "품목명",
@@ -174,7 +183,7 @@ export function ItemsScreen({
       header: "관리",
       render: (r) => (
         <span className="cell-tags">
-          {r.expiryManaged && <Tag tone="neutral">유통기한</Tag>}
+          {r.expiryManaged && <Tag tone="neutral">소비기한</Tag>}
           {r.lotManaged && <Tag tone="neutral">로트</Tag>}
           {!r.expiryManaged && !r.lotManaged && <span className="muted">–</span>}
         </span>
@@ -198,17 +207,12 @@ export function ItemsScreen({
         {!singleClient && (
           <>
             <FilterField label="화주사" htmlFor="f-client">
-              <Select id="f-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-                <option value="">전체</option>
-                {clients
-                  .filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                      {c.isActive ? "" : " (사용 안 함)"}
-                    </option>
-                  ))}
-              </Select>
+              <ClientPicker
+                id="f-client"
+                value={clientId}
+                onChange={setClientId}
+                clients={clients.filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)}
+              />
             </FilterField>
             <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>
@@ -243,6 +247,7 @@ export function ItemsScreen({
       )}
 
       <SplitView
+        collapsible
         list={
           <>
             <ListToolbar total={list.length} />
@@ -280,18 +285,15 @@ function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) 
         <>
           <PanelTitle mono>{row.code}</PanelTitle>
           <ActiveBadge active={row.isActive} />
-          {canEdit && (
-            <span className={recordStyles.headAction}>
-              <LinkButton size="sm" href={`/master/items/${row.id}/edit`}>
-                수정
-              </LinkButton>
-            </span>
-          )}
         </>
       }
       sub={`${row.clientName} · ${row.name}`}
       footer={
-        <LastChanged by={row.updatedBy} at={row.updatedAt} title={row.name} entries={row.history} created={{ at: row.createdAt, by: row.createdBy }} labels={LABELS} format={fmtHistory} />
+        <>
+          <LastChanged by={row.updatedBy} at={row.updatedAt} title={row.name} entries={row.history} created={{ at: row.createdAt, by: row.createdBy }} labels={LABELS} format={fmtHistory} />
+          {/* 수정은 패널 아래 오른쪽 (2026-11-06 Sol 결정: 위쪽 접기 아이콘과 나눔) */}
+          {canEdit && <LinkButton size="sm" variant="editSoft" href={`/master/items/${row.id}/edit`}>수정</LinkButton>}
+        </>
       }
     >
       <ViewSection
@@ -299,13 +301,14 @@ function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) 
         items={[
           ["화주사", row.clientName],
           ["품목코드", <span key="c" className="mono">{row.code}</span>],
+          ["화주사 품목코드", row.clientCode ? <span key="cc" className="mono">{row.clientCode}</span> : <span key="cc" className="muted">없음</span>],
           ["품목명", row.name],
           ["보관 온도대", STORAGE_TEMP_LABEL[row.storageTemp]],
           [
             "관리",
             row.expiryManaged || row.lotManaged ? (
               <span key="m" className="cell-tags">
-                {row.expiryManaged && <Tag tone="neutral">유통기한</Tag>}
+                {row.expiryManaged && <Tag tone="neutral">소비기한</Tag>}
                 {row.lotManaged && <Tag tone="neutral">로트</Tag>}
               </span>
             ) : (

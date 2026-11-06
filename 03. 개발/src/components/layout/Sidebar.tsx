@@ -24,7 +24,7 @@ export interface Viewer {
 const isOn = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
 /** serverCounts: 서버가 매 요청마다 계산한 건수. 화면이 직접 갱신한 값(NavCounts)이 있으면 그것을 쓴다 */
-export function Sidebar({ serverCounts = {}, viewer }: { serverCounts?: Counts; viewer: Viewer }) {
+export function Sidebar({ serverCounts = {}, viewer, onCollapse }: { serverCounts?: Counts; viewer: Viewer; onCollapse?: () => void }) {
   const pathname = usePathname();
   // 권한이 없는 하위 메뉴는 숨긴다 (서버에서도 다시 검사)
   const groups = NAV_GROUPS.map((g) => ({
@@ -46,7 +46,7 @@ export function Sidebar({ serverCounts = {}, viewer }: { serverCounts?: Counts; 
   const counts: Counts = { ...serverCounts, ...clientCounts };
 
   return (
-    <aside className={styles.side} aria-label="메뉴">
+    <aside id="app-sidebar" className={styles.side} aria-label="메뉴">
       <div className={styles.brand}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/logilink-symbol.svg" width={34} height={34} alt="" />
@@ -58,6 +58,14 @@ export function Sidebar({ serverCounts = {}, viewer }: { serverCounts?: Counts; 
             {viewer.orgLabel}
           </small>
         </div>
+        {onCollapse && (
+          /* 메뉴 접기 — 로고 줄 오른쪽 끝 (2026-11-06 Sol 결정). 펼치기는 화면 왼쪽 가장자리 손잡이 */
+          <button type="button" className={styles.collapse} onClick={onCollapse} aria-expanded aria-controls="app-sidebar" aria-label="메뉴 접기" title="메뉴 접기">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M5.5 3 2.5 6 5.5 9M9.5 3 6.5 6 9.5 9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <nav className={styles.nav}>

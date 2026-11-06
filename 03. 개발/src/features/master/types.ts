@@ -60,6 +60,8 @@ export interface ClientOption {
   code: string;
   name: string;
   isActive: boolean;
+  /** 사업자번호 (화주사 찾기 창 검색·표시) */
+  bizNo?: string;
   /** 이용 센터 id (사용자 기본 센터 고르기) */
   centerIds?: number[];
 }
@@ -87,7 +89,10 @@ export interface ItemRow extends Audit {
   id: number;
   clientId: number;
   clientName: string;
+  /** 품목코드 (시스템 채번) */
   code: string;
+  /** 화주사 품목코드 (선택) */
+  clientCode: string | null;
   name: string;
   baseUnit: ItemUnit;
   storageTemp: StorageTemp;
@@ -105,6 +110,7 @@ export interface ItemKey {
   id: number;
   clientId: number;
   code: string;
+  clientCode: string | null;
   name: string;
   isActive: boolean;
   barcodes: string[];
@@ -127,7 +133,8 @@ export interface ItemRequestRow {
   requestNo: string;
   clientId: number;
   clientName: string;
-  itemCode: string;
+  /** 화주사 품목코드 (선택) — 품목코드는 3PL이 등록할 때 시스템이 채번 */
+  clientCode: string | null;
   itemName: string;
   unit: ItemUnit;
   barcode: string;

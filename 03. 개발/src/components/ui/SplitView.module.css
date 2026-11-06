@@ -25,8 +25,9 @@
 /* 2분할 안의 패널만 따라 내려온다 */
 .body > .panel {
   position: sticky;
-  top: var(--gap-shell);
-  max-height: calc(100vh - var(--gap-shell) * 4);
+  /* 위치 고정된 조회조건 바(--filterbar-h) 아래에 붙는다 */
+  top: calc(var(--filterbar-h, 0px) + var(--gap-shell) + 8px);
+  max-height: calc(100vh - var(--filterbar-h, 0px) - var(--gap-shell) * 4);
 }
 
 .head {
@@ -35,8 +36,8 @@
   padding: 16px 18px 12px;
   border-bottom: 1px solid var(--card-line);
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .titleRow {
@@ -150,5 +151,89 @@
   .body > .panel {
     position: static;
     max-height: none;
+  }
+}
+
+/* ── 오른쪽 패널 접기 (collapsible) ── */
+/* 머리: 왼쪽 제목·보조 줄 + 오른쪽 끝 접기 아이콘 */
+.headMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.headBare {
+  padding: 8px 10px;
+  justify-content: flex-end;
+}
+
+.foldBtn {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.foldBtn:hover {
+  border-color: var(--line-hover);
+  color: var(--fg);
+}
+
+/* 접힌 상태 열기 — 본문 오른쪽 가장자리 손잡이 (메뉴 열기 손잡이와 같은 모양) */
+.edgeOpen {
+  position: fixed;
+  z-index: 20;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink-line);
+  border-radius: 8px 0 0 8px;
+  background: var(--ink-2);
+  color: var(--ink-text);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.edgeOpen:hover {
+  background: var(--violet-600);
+  border-color: var(--violet-600);
+  color: #fff;
+}
+
+.foldBtn:focus-visible,
+.edgeOpen:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+/* 접으면 패널을 숨기고 목록이 오른쪽 끝까지 (넓은 화면만) */
+@media (min-width: 1241px) {
+  .folded {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .folded > .panel {
+    display: none;
+  }
+}
+
+/* 패널이 목록 아래로 내려가는 폭에서는 접지 않는다 */
+@media (max-width: 1240px) {
+  .foldBtn,
+  .edgeOpen {
+    display: none;
   }
 }

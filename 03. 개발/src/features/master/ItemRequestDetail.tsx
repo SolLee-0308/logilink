@@ -135,7 +135,7 @@ export function ItemRequestDetailScreen({
               <ViewSection
                 title="요청 품목"
                 items={[
-                  ["품목코드", <span key="c" className="mono">{row.itemCode}</span>],
+                  ["화주사 품목코드", row.clientCode ? <span key="c" className="mono">{row.clientCode}</span> : <span key="c" className="muted">없음</span>],
                   ["품목명", row.itemName],
                   ["단위", <span key="u" className="mono">{row.unit}</span>],
                   ["바코드", <span key="b" className="mono">{row.barcode}</span>],
@@ -145,7 +145,7 @@ export function ItemRequestDetailScreen({
                 title="보관·관리"
                 items={[
                   ["보관 온도대", row.storageTemp ? STORAGE_TEMP_LABEL[row.storageTemp] : "모름 (3PL이 정함)"],
-                  ["유통기한 관리", tri(row.expiryManaged)],
+                  ["소비기한 관리", tri(row.expiryManaged)],
                   ["로트 관리", tri(row.lotManaged)],
                 ]}
               />
@@ -249,7 +249,7 @@ function ResultCard({ row, canReview }: { row: ItemRequestRow; canReview: boolea
 function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; queue: ItemRequestQueue; itemKeys: ItemKey[]; reasons: CodeOption[] }) {
   const router = useRouter();
   const act = useAction();
-  const [code, setCode] = useState(row.itemCode);
+  const [code, setCode] = useState(row.clientCode ?? "");
   const [name, setName] = useState(row.itemName);
   const [unit, setUnit] = useState<ItemUnit>(row.unit);
   const [barcode, setBarcode] = useState(row.barcode);
@@ -264,7 +264,7 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
 
   const dup = findDuplicates(itemKeys, row.clientId, code, barcode);
   const hasDup = !!(dup.code || dup.barcode);
-  const edited = code !== row.itemCode || name !== row.itemName || unit !== row.unit || barcode !== row.barcode;
+  const edited = code.trim() !== (row.clientCode ?? "") || name !== row.itemName || unit !== row.unit || barcode !== row.barcode;
   const orig = (v: string, now: string) => (v !== now ? `요청값: ${v}` : undefined);
   const nameChanged = normalizeAlias(name) !== normalizeAlias(row.itemName);
   const fromShipper = "화주사 입력값";
@@ -283,7 +283,7 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
         const r = await registerItemRequest({
           id: row.id,
           version: row.version,
-          itemCode: code,
+          clientCode: code.trim() || null,
           itemName: name,
           unit,
           barcode,
@@ -329,12 +329,17 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
         {hasDup && (
           <NoteBox tone="warn">
             <strong>이미 등록된 품목과 겹칩니다.</strong>
-            {dup.code && <> 품목코드는 {dup.code.code} {dup.code.name}이(가) 쓰고 있습니다.</>}
+            {dup.code && <> 화주사 품목코드는 {dup.code.code} {dup.code.name}이(가) 쓰고 있습니다.</>}
             {dup.barcode && <> 바코드는 {dup.barcode.code} {dup.barcode.name}이(가) 쓰고 있습니다.</>} 값을 고치거나 반려하세요.
           </NoteBox>
         )}
         <FormSection title="기본 정보">
-          <FormField label="품목코드" htmlFor="r-code" required hint={orig(row.itemCode, code)} error={act.fieldErrors.itemCode ?? (dup.code ? "이미 등록된 품목코드입니다." : undefined)}>
+          <FormField
+            label="화주사 품목코드"
+            htmlFor="r-code"
+            hint={orig(row.clientCode ?? "없음", code.trim() || "없음") ?? "품목코드는 등록할 때 시스템이 매깁니다."}
+            error={act.fieldErrors.clientCode ?? (dup.code ? "이미 다른 품목이 쓰는 화주사 품목코드입니다." : undefined)}
+          >
             <Input id="r-code" className="mono" value={code} onChange={(e) => setCode(e.target.value)} maxLength={40} autoComplete="off" />
           </FormField>
           <FormField label="단위" htmlFor="r-unit" required hint={orig(row.unit, unit)} error={act.fieldErrors.unit}>
@@ -373,7 +378,7 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
             </Select>
           </FormField>
           <div className={styles.checks}>
-            <FormCheck id="r-expiry" label="유통기한 관리" checked={expiryManaged} onChange={setExpiryManaged} hint={row.expiryManaged !== null ? fromShipper : undefined} />
+            <FormCheck id="r-expiry" label="소비기한 관리" checked={expiryManaged} onChange={setExpiryManaged} hint={row.expiryManaged !== null ? fromShipper : undefined} />
             <FormCheck id="r-lot" label="로트 관리" checked={lotManaged} onChange={setLotManaged} hint={row.lotManaged !== null ? fromShipper : undefined} />
           </div>
           {nameChanged && (

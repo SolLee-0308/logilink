@@ -6,7 +6,7 @@ import { Badge, Tag } from "@/components/ui/Badges";
 import { CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
-import { Select } from "@/components/ui/Form";
+import { ClientPicker } from "@/features/plans/ClientFinder";
 import { ListToolbar } from "@/components/ui/SplitView";
 import { Tabs } from "@/components/ui/Tabs";
 import { ITEM_REQUEST_STATUS_META, SOURCE_LABEL, STORAGE_TEMP_LABEL } from "@/domain/master";
@@ -28,10 +28,12 @@ const inTab = (r: ItemRequestRow, t: ReqTab, reviewer: boolean) =>
   t === "wait" ? r.status === "WAITING" : t === "rej" ? r.status === "REJECTED" : reviewer ? r.doneByMeToday !== null : r.status === "REGISTERED";
 
 /** 같은 화주사의 기존 품목과 품목코드·바코드가 겹치는지 */
-export function findDuplicates(itemKeys: ItemKey[], clientId: number, code: string, barcode: string) {
+/** 같은 화주사에 이미 있는 화주사 품목코드·바코드 (화주사 품목코드는 넣은 경우만) */
+export function findDuplicates(itemKeys: ItemKey[], clientId: number, clientCode: string | null, barcode: string) {
   const same = itemKeys.filter((k) => k.clientId === clientId);
+  const cc = (clientCode ?? "").trim();
   return {
-    code: same.find((k) => k.code === code.trim()),
+    code: cc ? same.find((k) => k.clientCode === cc) : undefined,
     barcode: same.find((k) => k.barcodes.includes(barcode.trim())),
   };
 }
@@ -102,7 +104,7 @@ export function ItemRequestsScreen({
             inTab(r, tab, canReview) &&
             (!clientId || r.clientId === Number(clientId)) &&
             (source === "all" || r.source === source) &&
-            includesText([r.requestNo, r.itemName, r.itemCode, r.barcode], q),
+            includesText([r.requestNo, r.itemName, r.clientCode ?? "", r.barcode], q),
         )
         // 대기는 오래된 요청부터(상세의 [다음 요청] 순서와 같다), 반려는 최근 반려부터, 오늘 처리는 최근 처리부터
         .sort((a, b) =>
@@ -120,7 +122,7 @@ export function ItemRequestsScreen({
       key: "no",
       header: "요청번호",
       render: (r) => {
-        const dup = r.status === "WAITING" ? findDuplicates(itemKeys, r.clientId, r.itemCode, r.barcode) : null;
+        const dup = r.status === "WAITING" ? findDuplicates(itemKeys, r.clientId, r.clientCode, r.barcode) : null;
         return (
           <span className="cell-tags">
             <span className="mono">{r.requestNo}</span>
@@ -131,7 +133,7 @@ export function ItemRequestsScreen({
       },
     },
     ...(clients.length > 1 ? [{ key: "client", header: "화주사", render: (r: ItemRequestRow) => r.clientName }] : []),
-    { key: "code", header: "품목코드", render: (r) => <span className="mono">{r.itemCode}</span> },
+    { key: "code", header: "화주사 품목코드", render: (r) => (r.clientCode ? <span className="mono">{r.clientCode}</span> : <span className="muted">–</span>) },
     { key: "name", header: "품목명", wrap: true, render: (r) => r.itemName },
     { key: "unit", header: "단위", render: (r) => <span className="mono">{r.unit}</span> },
     { key: "barcode", header: "바코드", render: (r) => <span className="mono">{r.barcode}</span> },
@@ -176,17 +178,12 @@ export function ItemRequestsScreen({
         {clients.length > 1 && (
           <>
             <FilterField label="화주사" htmlFor="f-client">
-              <Select id="f-client" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-                <option value="">전체</option>
-                {clients
-                  .filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                      {c.isActive ? "" : " (사용 안 함)"}
-                    </option>
-                  ))}
-              </Select>
+              <ClientPicker
+                id="f-client"
+                value={clientId}
+                onChange={setClientId}
+                clients={clients.filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)}
+              />
             </FilterField>
             <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>

@@ -287,7 +287,7 @@ export async function correctRcvInput(me: PlanActor, input: { inputId: number; q
   );
 }
 
-/* ═════════ 0(미도착) 확인 · 사유 · 유통기한·로트 ═════════ */
+/* ═════════ 0(미도착) 확인 · 사유 · 소비기한·로트 ═════════ */
 
 /** 검수자가 확인하고 0으로 입력 (D15). 입력이 있는 품목은 0으로 할 수 없다 — 입력을 먼저 취소한다 */
 export async function setRcvZero(me: PlanActor, input: { rcvId: number; itemId: number; on: boolean }): Promise<ActionResult> {
@@ -322,7 +322,7 @@ export async function setRcvLineInfo(
   if (!canInspect(me)) return forbidden();
   const text = input.reasonText?.trim() ?? "";
   if (text.length > 500) return fail("VALIDATION", "상세 내용은 500자 이내로 입력하세요.", { reasonText: "500자 이내" });
-  if (input.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.expiryDate)) return fail("VALIDATION", "유통기한을 날짜로 입력하세요.", { expiryDate: "날짜" });
+  if (input.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.expiryDate)) return fail("VALIDATION", "소비기한을 날짜로 입력하세요.", { expiryDate: "날짜" });
   const lot = input.lotNo?.trim() ?? "";
   if (lot.length > 40) return fail("VALIDATION", "로트는 40자 이내로 입력하세요.", { lotNo: "40자 이내" });
   return guarded(() =>

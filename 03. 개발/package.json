@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"src/**/*.test.ts\""
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "dev:test": "node scripts/with-test-db.mjs next dev --port 3001",
+    "db:test:reset": "node scripts/with-test-db.mjs \"prisma migrate reset --force && prisma db seed\"",
+    "check:test": "node scripts/with-test-db.mjs tsx --conditions=react-server"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",

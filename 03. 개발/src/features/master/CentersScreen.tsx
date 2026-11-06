@@ -75,6 +75,7 @@ export function CentersScreen({ rows, candidates, canEdit }: { rows: CenterRow[]
         </FilterField>
       </FilterBar>
       <SplitView
+        collapsible
         list={
           <>
             <ListToolbar total={list.length} />
@@ -135,26 +136,23 @@ function CenterView({
         <>
           <PanelTitle mono>{row.code}</PanelTitle>
           <ActiveBadge active={row.isActive} />
-          {canEdit && (
-            <span className={styles.headAction}>
-              <Button size="sm" onClick={onEdit} disabled={opening}>
-                수정
-              </Button>
-            </span>
-          )}
         </>
       }
       sub={row.name}
       footer={
-        <LastChanged
-          by={row.updatedBy}
-          at={row.updatedAt}
-          title={row.name}
-          entries={row.history}
-          created={{ at: row.createdAt, by: row.createdBy }}
-          labels={LABELS}
-          format={(k, v) => fmtValue(k, v, candidates)}
-        />
+        <>
+          <LastChanged
+            by={row.updatedBy}
+            at={row.updatedAt}
+            title={row.name}
+            entries={row.history}
+            created={{ at: row.createdAt, by: row.createdBy }}
+            labels={LABELS}
+            format={(k, v) => fmtValue(k, v, candidates)}
+          />
+          {/* 수정은 패널 아래 오른쪽 (2026-11-06 Sol 결정: 위쪽 접기 아이콘과 나눔) */}
+          {canEdit && <Button size="sm" variant="editSoft" onClick={onEdit} disabled={opening}>수정</Button>}
+        </>
       }
     >
       <ViewSection

@@ -196,7 +196,7 @@ export function ApprovalDetailScreen({
                   <th>#</th>
                   <th>품목</th>
                   <th>단위</th>
-                  {managed && <th>유통기한 · 로트</th>}
+                  {managed && <th>소비기한 · 로트</th>}
                   {compare && <th className={styles.num}>직전</th>}
                   <th className={styles.num}>수량</th>
                   <th className={styles.num}>기준 환산</th>

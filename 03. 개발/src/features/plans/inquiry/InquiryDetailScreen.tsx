@@ -65,7 +65,7 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
     { key: "no", header: "#", align: "right", render: (l) => <span className="mono">{l.lineNo}</span> },
     { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
     { key: "name", header: "품목명", wrap: true, render: (l) => l.itemName },
-    { key: "exp", header: "유통기한·로트", render: (l) => (l.expiryDate || l.lotNo ? <span className="mono">{[l.expiryDate, l.lotNo].filter(Boolean).join(" · ")}</span> : <span className="muted">–</span>) },
+    { key: "exp", header: "소비기한·로트", render: (l) => (l.expiryDate || l.lotNo ? <span className="mono">{[l.expiryDate, l.lotNo].filter(Boolean).join(" · ")}</span> : <span className="muted">–</span>) },
     { key: "qty", header: "승인", align: "right", render: (l) => <span className="mono">{qf(l, l.baseQty)}</span> },
     {
       key: "incoming",

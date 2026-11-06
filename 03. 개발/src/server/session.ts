@@ -107,7 +107,7 @@ export async function requirePdaUser(): Promise<SessionUser> {
     const path = await currentPath();
     redirect(path.startsWith("/pda/") ? `/pda/login?next=${encodeURIComponent(path)}` : "/pda/login");
   }
-  if (u.mustChangePw) redirect("/change-password?next=/pda");
+  if (u.mustChangePw) redirect("/change-password?next=/pda/dashboard");
   return u;
 }
 
@@ -115,7 +115,7 @@ export async function requirePdaUser(): Promise<SessionUser> {
 export async function getPdaActor(): Promise<SessionUser> {
   const u = await getPdaSessionUser();
   if (!u) redirect("/pda/login");
-  if (u.mustChangePw) redirect("/change-password?next=/pda");
+  if (u.mustChangePw) redirect("/change-password?next=/pda/dashboard");
   return u;
 }
 

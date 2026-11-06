@@ -7,8 +7,9 @@ import styles from "./Pda.module.css";
 
 /**
  * PDA 화면 틀 — 흰 바탕 + 위 머리 + (메뉴 화면이면) 아래 메뉴 띠
- * - 메뉴 화면: 이름 첫 글자 원 + 이름·소속, 오른쪽 둥근 로그아웃 / 아래 역할별 메뉴 (menu.ts)
- * - 작업 화면(back): ← 둥근 버튼 + 가운데 화면명 + 둥근 로그아웃, 아래 메뉴 없음(작업 화면 아래에는 [상차완료])
+ * - 메뉴 화면: 이름 첫 글자 원 + 이름·소속, 오른쪽은 화면별 행위(action, 예: 상차등록의 [무지시 상차]) / 아래 역할별 메뉴 + 로그아웃
+ * - 작업 화면(back): ← 둥근 버튼 + 가운데 화면명, 아래 메뉴 없음(작업 화면 아래에는 [상차완료])
+ * 2026-11-06 Sol: 로그아웃을 머리에서 메뉴 띠 맨 오른쪽으로
  */
 export function PdaShell({
   user,
@@ -17,6 +18,7 @@ export function PdaShell({
   tab,
   back,
   title,
+  action,
   children,
 }: {
   user: string;
@@ -27,15 +29,10 @@ export function PdaShell({
   /** 작업 화면: 돌아갈 곳 */
   back?: string;
   title?: string;
+  /** 메뉴 화면 머리 오른쪽 행위 */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const logout = (
-    <form action={pdaLogout}>
-      <button type="submit" className={styles.roundBtn} aria-label="로그아웃" title="로그아웃">
-        <Icon name="logout" size={17} />
-      </button>
-    </form>
-  );
   const tabs = back ? [] : pdaTabs(roles);
   return (
     <div className={styles.app}>
@@ -46,7 +43,7 @@ export function PdaShell({
               <Icon name="back" size={18} />
             </Link>
             <span className={styles.barTitle}>{title}</span>
-            {logout}
+            <span className={styles.barSpacer} aria-hidden="true" />
           </>
         ) : (
           <>
@@ -57,7 +54,7 @@ export function PdaShell({
               <b>{user}님</b>
               <small>{org ?? "3PL"}</small>
             </span>
-            {logout}
+            {action && <span className={styles.barAction}>{action}</span>}
           </>
         )}
       </header>
@@ -70,6 +67,12 @@ export function PdaShell({
               <span>{t.label}</span>
             </Link>
           ))}
+          <form action={pdaLogout} className={styles.tabForm}>
+            <button type="submit" className={styles.tab}>
+              <Icon name="logout" size={18} />
+              <span>로그아웃</span>
+            </button>
+          </form>
         </nav>
       )}
     </div>

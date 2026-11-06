@@ -31,7 +31,7 @@ export function ItemRequestForm({
   onSaved: () => void;
 }) {
   const initial = {
-    code: row?.itemCode ?? "",
+    code: row?.clientCode ?? "",
     name: row?.itemName ?? "",
     unit: (row?.unit ?? "EA") as ItemUnit,
     barcode: row?.barcode ?? "",
@@ -52,7 +52,7 @@ export function ItemRequestForm({
         submitItemRequest({
           id: row?.id,
           version: row?.version,
-          itemCode: f.code,
+          clientCode: f.code.trim() || null,
           itemName: f.name,
           unit: f.unit,
           barcode: f.barcode,
@@ -83,7 +83,7 @@ export function ItemRequestForm({
         </NoteBox>
       )}
       <FormSection title="요청 품목">
-        <FormField label="품목코드" htmlFor="q-code" required hint="화주사에서 쓰는 품목코드" error={act.fieldErrors.itemCode}>
+        <FormField label="화주사 품목코드" htmlFor="q-code" hint="화주사가 자기 시스템에서 쓰는 코드(선택). 품목코드는 3PL이 등록할 때 시스템이 매깁니다" error={act.fieldErrors.clientCode}>
           <Input id="q-code" className="mono" value={f.code} onChange={(e) => set("code", e.target.value)} maxLength={40} autoComplete="off" autoFocus />
         </FormField>
         <FormField label="품목명" htmlFor="q-name" required error={act.fieldErrors.itemName}>
@@ -121,7 +121,7 @@ export function ItemRequestForm({
             ))}
           </Select>
         </FormField>
-        <FormField label="유통기한 관리" htmlFor="q-expiry">
+        <FormField label="소비기한 관리" htmlFor="q-expiry">
           <Select id="q-expiry" value={f.expiry} onChange={(e) => set("expiry", e.target.value as Tri)}>
             <option value="">모름 (3PL이 정함)</option>
             <option value="Y">관리</option>
