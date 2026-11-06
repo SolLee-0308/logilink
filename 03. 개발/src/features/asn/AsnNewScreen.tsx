@@ -392,7 +392,7 @@ function PlanBlock({
             <tr>
               <th scope="col">품목코드</th>
               <th scope="col">품목명</th>
-              <th scope="col">유통기한 · 로트</th>
+              <th scope="col">소비기한 · 로트</th>
               <th scope="col">단위</th>
               <th scope="col" className={styles.num}>
                 승인

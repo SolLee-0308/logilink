@@ -71,7 +71,7 @@ export async function listClientOptions(): Promise<ClientOption[]> {
   const cid = await clientScope();
   const rows = await db.client.findMany({
     where: { id: cid },
-    select: { id: true, code: true, name: true, isActive: true, centers: { select: { center: { select: { id: true } } } } },
+    select: { id: true, code: true, name: true, bizNo: true, isActive: true, centers: { select: { center: { select: { id: true } } } } },
     orderBy: { code: "asc" },
   });
   return rows.map(({ centers, ...c }) => ({ ...c, centerIds: centers.map((x) => x.center.id) }));
@@ -151,6 +151,7 @@ export async function listItems(id?: number): Promise<ItemRow[]> {
     clientId: r.clientId,
     clientName: r.client.name,
     code: r.code,
+    clientCode: r.clientCode,
     name: r.name,
     baseUnit: r.baseUnit,
     storageTemp: r.storageTemp,
@@ -172,13 +173,13 @@ export async function listItemKeys(clientId?: number): Promise<ItemKey[]> {
   const rows = await db.item.findMany({
     where: { clientId: cid },
     select: {
-      id: true, clientId: true, code: true, name: true, isActive: true,
+      id: true, clientId: true, code: true, clientCode: true, name: true, isActive: true,
       barcodes: { select: { barcode: true } },
       aliases: { select: { normalized: true } },
     },
   });
   return rows.map((r) => ({
-    id: r.id, clientId: r.clientId, code: r.code, name: r.name, isActive: r.isActive,
+    id: r.id, clientId: r.clientId, code: r.code, clientCode: r.clientCode, name: r.name, isActive: r.isActive,
     barcodes: r.barcodes.map((b) => b.barcode),
     aliases: r.aliases.map((a) => a.normalized),
   }));
@@ -215,7 +216,7 @@ export async function listItemRequests(id?: number): Promise<ItemRequestRow[]> {
     requestNo: r.requestNo,
     clientId: r.clientId,
     clientName: r.client.name,
-    itemCode: r.itemCode,
+    clientCode: r.clientCode,
     itemName: r.itemName,
     unit: r.unit,
     barcode: r.barcode,

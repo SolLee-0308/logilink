@@ -119,4 +119,6 @@ export interface EntryOptions {
   items: CatalogItem[];
   holidays: { centerId: number; date: string; name: string }[];
   today: string;
+  /** 최소 잔여 소비기한(일) — 입고예정일 + 이 일수보다 이른 소비기한은 입력 불가 */
+  minExpiryDays: number;
 }

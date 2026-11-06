@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { FormCheck, FormError, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
+import { ClientPicker } from "@/features/plans/ClientFinder";
 import { ALIAS_SOURCE_LABEL, ITEM_UNITS, STORAGE_TEMP_LABEL, STORAGE_TEMPS, normalizeAlias, type AliasSource, type ItemUnit, type StorageTemp } from "@/domain/master";
 import { saveItem } from "@/server/master/actions";
 import { EditCard, Full, FormSection } from "./record";
@@ -54,7 +55,8 @@ export function ItemForm({
 }) {
   const defaultActiveClient = clients.find((c) => String(c.id) === defaultClientId && c.isActive);
   const [clientId, setClientId] = useState(row ? String(row.clientId) : defaultActiveClient ? defaultClientId : "");
-  const [code, setCode] = useState(row?.code ?? "");
+  const pickedClient = clients.find((c) => String(c.id) === clientId);
+  const [clientCode, setClientCode] = useState(row?.clientCode ?? "");
   const [name, setName] = useState(row?.name ?? "");
   const [storageTemp, setStorageTemp] = useState<StorageTemp | "">(row?.storageTemp ?? "");
   const [expiryManaged, setExpiryManaged] = useState(row?.expiryManaged ?? false);
@@ -73,9 +75,9 @@ export function ItemForm({
 
   // 처음 열었을 때의 값 — 달라진 것이 있어야 [저장]이 켜지고, 나갈 때 확인창을 띄운다
   const [initialSig] = useState(() =>
-    sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + (row ? "" : `|${clientId}|${code}`),
+    sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + `|${clientCode.trim()}` + (row ? "" : `|${clientId}`),
   );
-  const currentSig = sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + (row ? "" : `|${clientId}|${code}`);
+  const currentSig = sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + `|${clientCode.trim()}` + (row ? "" : `|${clientId}`);
   const dirty = currentSig !== initialSig || aliasInput.trim() !== "";
 
   const usedUnits = new Set(uoms.map((u) => u.unit));
@@ -107,7 +109,7 @@ export function ItemForm({
           id: row?.id,
           version: row?.version,
           clientId: Number(clientId) || 0,
-          code,
+          clientCode: clientCode.trim() || null,
           name,
           baseUnit,
           storageTemp: storageTemp as StorageTemp,
@@ -139,28 +141,39 @@ export function ItemForm({
           <>
             <FormStatic label="화주사">{row.clientName}</FormStatic>
             <FormStatic label="품목코드">
-              <span className="mono">{row.code}</span> <span className="muted">(등록 후 수정 불가)</span>
+              <span className="mono">{row.code}</span> <span className="muted">(시스템 채번 · 수정 불가)</span>
             </FormStatic>
           </>
         ) : (
           <>
             <FormField label="화주사" htmlFor="i-client" required error={act.fieldErrors.clientId}>
-              <Select id="i-client" value={clientId} onChange={(e) => setClientId(e.target.value)} autoFocus>
-                <option value="">화주사를 선택하세요</option>
-                {clients
-                  .filter((c) => c.isActive)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-              </Select>
+              <ClientPicker
+                id="i-client"
+                value={clientId}
+                onChange={setClientId}
+                clients={clients.filter((c) => c.isActive)}
+                placeholder="화주사를 선택하세요"
+                block
+                clearable={false}
+                autoFocus
+              />
             </FormField>
-            <FormField label="품목코드" htmlFor="i-code" required error={act.fieldErrors.code}>
-              <Input id="i-code" className="mono" value={code} onChange={(e) => setCode(e.target.value)} maxLength={40} autoComplete="off" />
-            </FormField>
+            <FormStatic label="품목코드">
+              {/* 품목코드는 저장할 때 시스템이 채번 (2026-11-06 Sol 결정) */}
+              <span className="muted">
+                저장하면 자동으로 매깁니다{pickedClient ? <> (<span className="mono">{pickedClient.code}-00001</span> 형식)</> : ""}
+              </span>
+            </FormStatic>
           </>
         )}
+        <FormField
+          label="화주사 품목코드"
+          htmlFor="i-client-code"
+          error={act.fieldErrors.clientCode}
+          hint="화주사가 자기 시스템에서 쓰는 코드가 있으면 넣으세요. 입고예정 엑셀·AI 판독에서 품목을 찾을 때 씁니다."
+        >
+          <Input id="i-client-code" className="mono" value={clientCode} onChange={(e) => setClientCode(e.target.value)} maxLength={40} autoComplete="off" />
+        </FormField>
         <FormField label="품목명" htmlFor="i-name" required error={act.fieldErrors.name}>
           <Input id="i-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} autoFocus={!!row} />
         </FormField>
@@ -176,11 +189,11 @@ export function ItemForm({
         </FormField>
         <Full>
           <div className={styles.checks}>
-            <FormCheck id="i-expiry" label="유통기한 관리" checked={expiryManaged} onChange={setExpiryManaged} />
+            <FormCheck id="i-expiry" label="소비기한 관리" checked={expiryManaged} onChange={setExpiryManaged} />
             <FormCheck id="i-lot" label="로트 관리" checked={lotManaged} onChange={setLotManaged} />
             <FormCheck id="i-active" label="사용" checked={isActive} onChange={setIsActive} />
           </div>
-          {(expiryManaged || lotManaged) && <p className="muted">유통기한·로트 관리 품목은 입고예정에 입력이 필수이고, 검수 때 실물과 다르면 현장에서 입력합니다.</p>}
+          {(expiryManaged || lotManaged) && <p className="muted">소비기한·로트 관리 품목은 입고예정에 입력이 필수이고, 검수 때 실물과 다르면 현장에서 입력합니다.</p>}
         </Full>
       </FormSection>
 

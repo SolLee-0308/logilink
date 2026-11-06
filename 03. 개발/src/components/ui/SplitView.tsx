@@ -1,14 +1,47 @@
+"use client";
+
+import { createContext, useContext, useState } from "react";
 import styles from "./SplitView.module.css";
 
-/** 본문 2분할: 왼쪽 목록 + 오른쪽 370px 패널(sticky). 1240px 미만에서는 패널이 목록 아래로 */
-export function SplitView({ list, panel }: { list: React.ReactNode; panel: React.ReactNode }) {
+/** 오른쪽 패널 접기 상태 — SplitView가 collapsible일 때만 SidePanel이 손잡이·접힌 띠를 그린다 */
+const PanelFold = createContext<{ collapsible: boolean; collapsed: boolean; toggle: () => void }>({
+  collapsible: false,
+  collapsed: false,
+  toggle: () => {},
+});
+
+/**
+ * 본문 2분할: 왼쪽 목록 + 오른쪽 370px 패널(sticky). 1240px 미만에서는 패널이 목록 아래로.
+ * collapsible: 패널을 접어 목록을 넓게 본다. 처음엔 늘 펼친 상태 (2026-11-06 Sol 결정)
+ */
+export function SplitView({ list, panel, collapsible = false }: { list: React.ReactNode; panel: React.ReactNode; collapsible?: boolean }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const fold = collapsible && collapsed;
   return (
-    <div className={styles.body}>
-      <div className={styles.listcol}>{list}</div>
-      {panel}
-    </div>
+    <PanelFold.Provider value={{ collapsible, collapsed: fold, toggle: () => setCollapsed((v) => !v) }}>
+      <div className={`${styles.body} ${fold ? styles.folded : ""}`}>
+        <div className={styles.listcol}>{list}</div>
+        {panel}
+        {fold && (
+          /* 접힌 상태: 본문 오른쪽 가장자리 손잡이 (메뉴 열기 손잡이와 같은 모양, 칸을 차지하지 않음) */
+          <button type="button" className={styles.edgeOpen} onClick={() => setCollapsed(false)} aria-expanded={false} aria-label="상세 펼치기" title="상세 펼치기">
+            <Chevron dir="left" />
+          </button>
+        )}
+      </div>
+    </PanelFold.Provider>
   );
 }
+
+const Chevron = ({ dir, double }: { dir: "left" | "right"; double?: boolean }) => (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+    {double ? (
+      <path d={dir === "right" ? "M2.5 3 5.5 6 2.5 9M6.5 3 9.5 6 6.5 9" : "M5.5 3 2.5 6 5.5 9M9.5 3 6.5 6 9.5 9"} fill="none" stroke="currentColor" strokeWidth="1.5" />
+    ) : (
+      <path d={dir === "right" ? "M4.5 3 7.5 6 4.5 9" : "M7.5 3 4.5 6 7.5 9"} fill="none" stroke="currentColor" strokeWidth="1.6" />
+    )}
+  </svg>
+);
 
 interface SidePanelProps {
   label: string;
@@ -24,12 +57,22 @@ interface SidePanelProps {
 }
 
 export function SidePanel({ label, title, sub, children, footer, onSubmit }: SidePanelProps) {
+  const fold = useContext(PanelFold);
+  // 접기: 패널 제목 줄 오른쪽 끝 아이콘 (2026-11-06 Sol 결정)
+  const foldBtn = fold.collapsible ? (
+    <button type="button" className={styles.foldBtn} onClick={fold.toggle} aria-expanded aria-label={`${label} 접기`} title="상세 접기">
+      <Chevron dir="right" double />
+    </button>
+  ) : null;
   const inner = (
     <>
-      {(title || sub) && (
-        <div className={styles.head}>
-          {title && <div className={styles.titleRow}>{title}</div>}
-          {sub && <div className={styles.sub}>{sub}</div>}
+      {(title || sub || foldBtn) && (
+        <div className={`${styles.head} ${title || sub ? "" : styles.headBare}`}>
+          <div className={styles.headMain}>
+            {title && <div className={styles.titleRow}>{title}</div>}
+            {sub && <div className={styles.sub}>{sub}</div>}
+          </div>
+          {foldBtn}
         </div>
       )}
       <div className={styles.pbody}>{children}</div>

@@ -164,7 +164,7 @@ export function ItemFinderModal({
                 </td>
                 <td className="mono">{it.uoms.map((u) => u.unit).join("·")}</td>
                 <td>{it.storageTemp ? STORAGE_TEMP_LABEL[it.storageTemp] : "–"}</td>
-                <td className={styles.flags}>{[it.expiryManaged && "유통기한", it.lotManaged && "로트"].filter(Boolean).join("·") || "–"}</td>
+                <td className={styles.flags}>{[it.expiryManaged && "소비기한", it.lotManaged && "로트"].filter(Boolean).join("·") || "–"}</td>
               </tr>
             ))}
           </tbody>

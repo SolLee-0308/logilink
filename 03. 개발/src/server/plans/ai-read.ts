@@ -24,7 +24,7 @@ const ReadSchema = z.object({
       itemCode: z.string().nullable().describe("아래 품목 목록에서 확실히 같은 품목일 때만 그 품목코드, 아니면 null"),
       qty: z.number().nullable().describe("수량 (정수). 읽을 수 없으면 null"),
       unit: z.string().nullable().describe("EA / BOX / PLT 중 하나. 표기가 없으면 null"),
-      expiryDate: z.string().nullable().describe("유통기한 YYYY-MM-DD. 없으면 null"),
+      expiryDate: z.string().nullable().describe("소비기한 YYYY-MM-DD. 없으면 null"),
       lotNo: z.string().nullable().describe("로트 번호. 없으면 null"),
       confidence: z.number().describe("이 줄의 품목과 수량을 정확히 읽었다는 확신 0~1"),
     }),
@@ -44,7 +44,7 @@ const SYSTEM = [
   "당신은 3PL 물류센터의 입고예정 등록을 돕는 판독기입니다.",
   "화주사가 카카오톡·이메일로 보낸 입고 지시 이미지(거래명세서, 발주서, 메신저 캡처, 손글씨 메모 등)에서 입고할 품목과 수량을 줄 단위로 읽습니다.",
   "이미지에 실제로 적힌 줄만 돌려주고, 합계·소계·배송비 같은 줄은 빼세요. 없는 줄을 만들지 마세요.",
-  "품목코드는 함께 주는 화주사 품목 목록에서 확실히 같은 품목일 때만 채우고, 조금이라도 애매하면 null로 두세요. 사람이 화면에서 직접 매칭합니다.",
+  "품목코드는 함께 주는 화주사 품목 목록(품목코드\t화주사 품목코드\t품목명\t단위)에서 확실히 같은 품목일 때만 첫 칸의 품목코드로 채우고, 조금이라도 애매하면 null로 두세요. 이미지에 적힌 코드가 화주사 품목코드와 같으면 그 줄의 품목코드를 쓰세요. 사람이 화면에서 직접 매칭합니다.",
   "글씨가 흐리거나 숫자가 겹쳐 수량을 확신하기 어려우면 confidence를 낮게 주세요.",
 ].join("\n");
 
@@ -52,7 +52,7 @@ function catalogText(items: CatalogItem[]) {
   // 품목이 아주 많으면 앞쪽 800개만 (나머지는 사람이 매칭)
   return items
     .slice(0, 800)
-    .map((i) => `${i.code}\t${i.name}\t${i.uoms.map((u) => u.unit).join("/")}`)
+    .map((i) => `${i.code}\t${i.clientCode ?? ""}\t${i.name}\t${i.uoms.map((u) => u.unit).join("/")}`)
     .join("\n");
 }
 

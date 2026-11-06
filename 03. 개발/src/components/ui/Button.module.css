@@ -80,3 +80,15 @@
   background: #5b4bd6;
   border-color: #5b4bd6;
 }
+
+/* 수정 — 편집 화면·창을 여는 버튼: 옅은 보라 바탕 + 보라 글자 (2026-11-06 Sol 결정, 보라 채움 = 새로 만들기와 구분) */
+.editSoft {
+  background: var(--violet-50);
+  border-color: var(--violet-100);
+  color: var(--violet-700);
+  font-weight: 500;
+}
+
+.editSoft:hover:not(:disabled) {
+  border-color: var(--violet-300);
+}

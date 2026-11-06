@@ -65,7 +65,7 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
       align: "right",
       render: (l) => (l.unit === l.baseUnit ? <span className="muted">–</span> : <span className="mono">{`${l.baseQty.toLocaleString()} ${l.baseUnit}`}</span>),
     },
-    { key: "exp", header: "유통기한", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">{l.expiryManaged ? "없음" : "–"}</span>) },
+    { key: "exp", header: "소비기한", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">{l.expiryManaged ? "없음" : "–"}</span>) },
     { key: "lot", header: "로트", render: (l) => (l.lotNo ? <span className="mono">{l.lotNo}</span> : <span className="muted">–</span>) },
     // 입고검수 확정 뒤 — 입고·반송·잔량 (입고예정 라인 단위로 묶어 표시, 기준 단위 누계)
     ...(received

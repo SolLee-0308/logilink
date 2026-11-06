@@ -208,7 +208,7 @@ function ExcelTab({ options, onSaved, onCancel }: { options: EntryOptions; onSav
 
   return (
     <div className={styles.body}>
-      <Step no={1} title="양식 내려받기" description="품목 1개를 1행에 씁니다. 품목코드·바코드·품목명 중 하나와 수량은 꼭 넣고, 유통기한·로트는 관리 품목만 씁니다.">
+      <Step no={1} title="양식 내려받기" description="품목 1개를 1행에 씁니다. 품목코드·바코드·품목명 중 하나와 수량은 꼭 넣고, 소비기한·로트는 관리 품목만 씁니다.">
         <a className={styles.download} href="/plans/entry/template" download>
           입고예정 양식 내려받기 (.xlsx)
         </a>

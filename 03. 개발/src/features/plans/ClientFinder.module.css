@@ -135,3 +135,24 @@
   gap: 8px;
   font-size: var(--fs-12);
 }
+
+.picker:disabled {
+  cursor: default;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+/* 입력 화면(FormField) 오류 표시 — 다른 입력칸과 같은 붉은 테두리 */
+:global([data-invalid]) .picker {
+  border-color: var(--st-rej-fg);
+}
+
+/* 입력 화면용 — 칸 너비 꽉 채움 */
+.block {
+  display: flex;
+  width: 100%;
+}
+
+.block .picker {
+  flex: 1;
+}

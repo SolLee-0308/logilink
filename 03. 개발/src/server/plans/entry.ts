@@ -8,7 +8,7 @@ import type { PlanActor } from "@/server/plans/service";
 import type { Prisma } from "@/generated/prisma/client";
 import { normalizeAlias, type ItemUnit, type StorageTemp } from "@/domain/master";
 import { can } from "@/domain/permissions";
-import { PLAN_COLUMNS, PLAN_MAX_LINES, buildIndex, isPlanExampleRow, missingItemColumn, toDraftLine, type CatalogItem, type DraftLine } from "@/domain/plan-entry";
+import { DEFAULT_MIN_EXPIRY_DAYS, MIN_EXPIRY_KEY, PLAN_COLUMNS, PLAN_MAX_LINES, buildIndex, isPlanExampleRow, missingItemColumn, toDraftLine, type CatalogItem, type DraftLine } from "@/domain/plan-entry";
 import { todayKst } from "@/lib/format";
 import { buildSheetTemplate, readSheet, type SheetSpec } from "@/server/master/excel";
 import type { EntryOptions, EntryRow, EntryTab } from "@/features/plans/types";
@@ -28,6 +28,7 @@ function toCatalog(rows: CatalogRow[]): CatalogItem[] {
   return rows.map((i) => ({
     id: i.id,
     code: i.code,
+    clientCode: i.clientCode,
     name: i.name,
     baseUnit: i.baseUnit,
     uoms: UNIT_ORDER.flatMap((u) => i.uoms.filter((x) => x.unit === u).map((x) => ({ unit: x.unit, qty: x.qty }))),
@@ -79,6 +80,7 @@ export async function searchCatalog(
     const n = normalizeAlias(q);
     where.OR = [
       { code: { contains: q, mode: "insensitive" } },
+      { clientCode: { contains: q, mode: "insensitive" } },
       { name: { contains: q, mode: "insensitive" } },
       { barcodes: { some: { barcode: { contains: q } } } },
       ...(n ? [{ aliases: { some: { normalized: { contains: n } } } }] : []),
@@ -96,7 +98,7 @@ export async function searchCatalog(
     db.item.count({ where }),
     q && offset === 0
       ? db.item.findMany({
-          where: { clientId, isActive: true, OR: [{ code: { equals: q, mode: "insensitive" } }, { barcodes: { some: { barcode: q } } }] },
+          where: { clientId, isActive: true, OR: [{ code: { equals: q, mode: "insensitive" } }, { clientCode: { equals: q, mode: "insensitive" } }, { barcodes: { some: { barcode: q } } }] },
           include: catalogInclude,
         })
       : Promise.resolve([]),
@@ -117,7 +119,7 @@ export async function findExactItem(clientId: number, text: string): Promise<{ i
   const t = text.trim();
   if (!t) return null;
   const rows = await db.item.findMany({
-    where: { clientId, isActive: true, OR: [{ code: { equals: t, mode: "insensitive" } }, { barcodes: { some: { barcode: t } } }] },
+    where: { clientId, isActive: true, OR: [{ code: { equals: t, mode: "insensitive" } }, { clientCode: { equals: t, mode: "insensitive" } }, { barcodes: { some: { barcode: t } } }] },
     include: catalogInclude,
     take: 2,
   });
@@ -154,7 +156,14 @@ export async function entryOptions(me: PlanActor): Promise<EntryOptions | null> 
     select: { centerId: true, date: true, name: true },
   });
   // 품목은 화면에서 찾을 때마다 서버에서 가져온다 (수정 화면은 기존 줄 품목만 따로 넣는다)
-  return { centers, defaultCenterId, items: [], holidays: holidays.map((h) => ({ centerId: h.centerId, date: ymd(h.date), name: h.name })), today };
+  return { centers, defaultCenterId, items: [], holidays: holidays.map((h) => ({ centerId: h.centerId, date: ymd(h.date), name: h.name })), today, minExpiryDays: await minExpiryDays() };
+}
+
+/** 최소 잔여 소비기한(일) — 운영 설정, 없거나 잘못된 값이면 기본 7일 */
+export async function minExpiryDays(): Promise<number> {
+  const s = await db.setting.findUnique({ where: { key: MIN_EXPIRY_KEY } });
+  const n = Number(s?.value);
+  return Number.isInteger(n) && n >= 0 ? n : DEFAULT_MIN_EXPIRY_DAYS;
 }
 
 /** 입고예정 등록 목록 — 승인 전(승인대기·반려) 전부 + 최근 승인·취소 */

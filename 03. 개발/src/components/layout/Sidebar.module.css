@@ -242,3 +242,27 @@ a.on:hover {
     padding: 3px 10px;
   }
 }
+
+/* 메뉴 접기 — 로고 줄 오른쪽 끝 */
+.collapse {
+  margin-left: auto;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--ink-text-dim);
+  cursor: pointer;
+}
+.collapse:hover {
+  background: var(--ink-hover);
+  color: #fff;
+}
+.collapse:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}

@@ -4,6 +4,23 @@
   gap: 6px;
 }
 
+/* 하위 화면: 머리(돌아가기·경로·제목)와 내용 사이 가는 구분선 (2026-11-06 Sol 결정) */
+.divided {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+}
+
+.crumb {
+  margin-left: auto;
+}
+
 .crumb ol {
   list-style: none;
   margin: 0;

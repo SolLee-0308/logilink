@@ -38,12 +38,23 @@ export const buildTemplate = (kind: BulkKind) => buildSheetTemplate(itemSpec(kin
 export const readRows = (kind: BulkKind, data: ArrayBuffer) => readSheet(itemSpec(kind), data);
 
 
+/**
+ * 엑셀 열 너비 — 머리글이 잘리지 않게 글자 폭으로 넓힌다 (한글·전각은 2칸, 굵은 머리글 여유 +3).
+ * 2026-11-06 Sol: '화주사 품목코드' 머리글이 잘려 보이던 문제
+ */
+const WIDE_CHAR = /[ᄀ-ᇿ　-鿿가-힯＀-￯]/;
+export const textWidth = (t: string) => [...t].reduce((w, ch) => w + (WIDE_CHAR.test(ch) ? 2 : 1), 0);
+const fitWidth = (min: number, ...texts: string[]) => Math.max(min, ...texts.map((t) => textWidth(t) + 3));
+
 export async function buildSheetTemplate(spec: SheetSpec): Promise<Buffer> {
   const cols = spec.columns;
   const wb = new ExcelJS.Workbook();
   wb.creator = "LogiLink";
   const ws = wb.addWorksheet(spec.title, { views: [{ state: "frozen", ySplit: 1 }] });
-  ws.columns = cols.map((c) => ({ header: c.required ? `${c.header}*` : c.header, key: c.key, width: c.width }));
+  ws.columns = cols.map((c) => {
+    const header = c.required ? `${c.header}*` : c.header;
+    return { header, key: c.key, width: fitWidth(c.width, header, c.example) };
+  });
 
   const head = ws.getRow(1);
   head.height = 22;
@@ -79,7 +90,7 @@ export async function buildSheetTemplate(spec: SheetSpec): Promise<Buffer> {
 
   const guide = wb.addWorksheet("작성 안내");
   guide.columns = [
-    { header: "항목", key: "h", width: 16 },
+    { header: "항목", key: "h", width: fitWidth(16, ...cols.map((c) => c.header)) },
     { header: "필수", key: "r", width: 8 },
     { header: "작성 방법", key: "n", width: 80 },
   ];

@@ -27,7 +27,7 @@ const centerId = async (code: string) => (await db.center.findUniqueOrThrow({ wh
 /** 화주사·품목코드·상태로 입고예정 라인 찾기 */
 async function planLine(clientCode: string, itemCode: string, status: string, centerCode = "YI1") {
   const l = await db.inboundPlanLine.findFirst({
-    where: { item: { code: itemCode }, plan: { client: { code: clientCode }, status: status as never, center: { code: centerCode } } },
+    where: { item: { clientCode: itemCode }, plan: { client: { code: clientCode }, status: status as never, center: { code: centerCode } } },
     orderBy: { id: "asc" },
   });
   if (!l) throw new Error(`라인 없음 ${clientCode} ${itemCode} ${status} ${centerCode}`);
@@ -37,6 +37,8 @@ const today = todayKst();
 const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 async function main() {
+  // 시드 품목: 화주사 품목코드 → 품목코드(시스템 채번)
+  const C: Record<string, string> = Object.fromEntries((await db.item.findMany({ select: { code: true, clientCode: true } })).map((i) => [i.clientCode, i.code]));
   const hb = await actor("hb.minji");
   const gm = await actor("gm.doyun");
   const kim = await actor("kim.haneul");
@@ -112,7 +114,7 @@ async function main() {
   ok((await getAsnDetail(gm, a.id)) === null && (await getLoadOrderPrint(gm, a.id)) === null, "다른 화주사는 상세·상차지시서를 볼 수 없다");
   const print = await getLoadOrderPrint(hb, a.id);
   ok(print?.sender.bizNo === "214-86-50011" && print.receiver.name.length > 0 && print.lines.every((l) => l.planNo.startsWith("IP-")), "상차지시서: 발송인(화주사 법인)·센터·입고예정번호", print?.sender);
-  ok(!!print?.lines.find((l) => l.itemCode === "HB-1001")?.barcode, "상차지시서 품목 바코드");
+  ok(!!print?.lines.find((l) => l.itemCode === C["HB-1001"])?.barcode, "상차지시서 품목 바코드");
   ok((await listMyAsns(hb)).some((x) => x.id === a.id && x.tab === "wait"), "목록 상차 대기 탭");
   ok((await countUnclosed([hb.clientId!])).get(hb.clientId!)!.asn === 3, "미종결 ASN 3건(등록) — 취소 건 제외");
 

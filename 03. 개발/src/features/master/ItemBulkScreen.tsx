@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/Badges";
 import { Button } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup } from "@/components/ui/FilterBar";
-import { FormField, Select } from "@/components/ui/Form";
+import { FormField } from "@/components/ui/Form";
+import { ClientPicker } from "@/features/plans/ClientFinder";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar } from "@/components/ui/SplitView";
 import { useToast } from "@/components/ui/Toast";
@@ -233,8 +234,9 @@ export function ItemBulkScreen({
         title="작성한 파일 올리기"
         state={preview ? "done" : fileName ? "current" : "todo"}
         description={`.xlsx 파일 1개, 한 번에 최대 ${BULK_MAX_ROWS.toLocaleString()}행. [파일 확인]을 누르면 행마다 검사 결과를 먼저 보여 주고, 아직 저장하지 않습니다.`}
+        // [파일 확인]은 화주사 선택(3PL)·파일 올리기가 모두 끝났을 때만 켠다 (2026-11-06 Sol 결정)
         footer={
-          <Button variant={preview ? "secondary" : "primary"} onClick={check} disabled={busy || !fileName}>
+          <Button variant={preview ? "secondary" : "primary"} onClick={check} disabled={busy || !fileName || (isItem && !clientId)}>
             {checking ? "확인 중…" : preview ? "다시 확인" : "파일 확인"}
           </Button>
         }
@@ -242,22 +244,19 @@ export function ItemBulkScreen({
         {isItem ? (
           <div className={styles.uploadRow}>
             <FormField label="화주사" htmlFor="b-client" required error={errors.clientId}>
-              <Select
+              <ClientPicker
                 id="b-client"
                 value={clientId}
-                onChange={(e) => {
-                  setClientId(e.target.value);
+                onChange={(v) => {
+                  setClientId(v);
                   setPreview(null);
                 }}
+                clients={clients}
+                placeholder="화주사를 선택하세요"
+                block
+                clearable={false}
                 disabled={busy}
-              >
-                <option value="">화주사를 선택하세요</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </FormField>
           </div>
         ) : (

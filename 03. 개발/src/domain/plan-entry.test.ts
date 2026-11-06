@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildIndex, candidatesFor, duplicateLines, lineErrors, matchItem, parseDate, parseQty, parseUnit, toDraftLine, type CatalogItem } from "./plan-entry";
+import { buildIndex, candidatesFor, minExpiryDate, duplicateLines, lineErrors, matchItem, parseDate, parseQty, parseUnit, toDraftLine, type CatalogItem } from "./plan-entry";
 
 const tofu: CatalogItem = {
   id: 1, code: "HB-1001", name: "국산콩 두부 300g", baseUnit: "EA",
@@ -72,4 +72,14 @@ test("편집기 라인 검사·중복", () => {
     items,
   );
   assert.deepEqual([...dup].sort(), [0, 1]);
+});
+
+test("소비기한 하한: 입고예정일 + 최소 잔여일수보다 이르면 오류", () => {
+  const managed: CatalogItem = { ...tofu, expiryManaged: true };
+  const min = { date: minExpiryDate("2026-11-10", 7), days: 7 };
+  assert.equal(min.date, "2026-11-17");
+  const base = { itemId: managed.id, unit: managed.baseUnit, qty: 1, lotNo: managed.lotManaged ? "L1" : null };
+  assert.match(lineErrors({ ...base, expiryDate: "2026-11-16" }, managed, min).expiryDate ?? "", /2026-11-17 이후/);
+  assert.equal(lineErrors({ ...base, expiryDate: "2026-11-17" }, managed, min).expiryDate, undefined);
+  assert.equal(lineErrors({ ...base, expiryDate: "2026-11-01" }, managed).expiryDate, undefined, "하한을 안 주면 검사하지 않음");
 });

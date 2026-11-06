@@ -35,7 +35,7 @@ const ld = (n: number) => `LD-${ymd}-000${n}`;
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 0xff, 0xd9]).toString("base64");
 
 async function boxBarcode(code: string) {
-  const b = await db.itemBarcode.findFirstOrThrow({ where: { unit: "BOX", item: { code } } });
+  const b = await db.itemBarcode.findFirstOrThrow({ where: { unit: "BOX", item: { clientCode: code } } });
   return b.barcode;
 }
 
@@ -48,7 +48,7 @@ async function main() {
   const outsider: PlanActor = { ...seoyeon, id: woojin.id, name: "이천 검수자", centerId: ic2.id };
   const bx0730 = await boxBarcode("GM-0730");
   const bx0501 = await boxBarcode("GM-0501");
-  const ea0512 = (await db.itemBarcode.findFirstOrThrow({ where: { unit: "EA", item: { code: "GM-0512" } } })).barcode;
+  const ea0512 = (await db.itemBarcode.findFirstOrThrow({ where: { unit: "EA", item: { clientCode: "GM-0512" } } })).barcode;
 
   /* 첫 화면 */
   const home = (await pdaRcvHome(seoyeon))!;
@@ -132,7 +132,7 @@ async function main() {
   ok(!r.ok && r.code === "VALIDATION" && r.error.includes("상세"), "'기타' 사유는 상세 내용 필수", r);
   await setRcvLineInfo(seoyeon, { rcvId: rcvA, itemId: v.lines[0].itemId, reasonCode: "V03" });
 
-  const before0730 = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { code: "GM-0730" }, plan: { client: { code: "GM01" }, status: "APPROVED", asnLines: { some: {} } } }, include: { plan: true }, orderBy: { id: "asc" } });
+  const before0730 = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { clientCode: "GM-0730" }, plan: { client: { code: "GM01" }, status: "APPROVED", asnLines: { some: {} } } }, include: { plan: true }, orderBy: { id: "asc" } });
   r = (await confirmRcv(woojin, { rcvId: rcvA, lastInputId: v.lastInputId })) as typeof r;
   ok(r.ok, "검수 확정 (검수자 B가 확정해도 된다)", r);
 
@@ -175,7 +175,7 @@ async function main() {
   ok(a.ok, "정상 2 BOX", a);
   ok((await setRcvZero(seoyeon, { rcvId: rcvB, itemId: vb.lines[0].itemId, on: true })).ok === false, "입력이 있는 품목은 0으로 할 수 없다");
   vb = (await getPdaRcv(seoyeon, rcvB))!;
-  const pl0501 = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { code: "GM-0501" }, plan: { client: { code: "GM01" }, centerId: lA.centerId, status: { in: ["APPROVED", "PARTIAL"] } } }, orderBy: { id: "asc" } });
+  const pl0501 = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { clientCode: "GM-0501" }, plan: { client: { code: "GM01" }, centerId: lA.centerId, status: { in: ["APPROVED", "PARTIAL"] } } }, orderBy: { id: "asc" } });
   r = (await confirmRcv(seoyeon, { rcvId: rcvB, lastInputId: vb.lastInputId })) as typeof r;
   ok(r.ok, "무지시 차량 검수 확정", r);
   const ab = await db.rcvAlloc.findMany({ where: { rcvId: rcvB } });

@@ -14,6 +14,8 @@ import { CANCEL_GROUP, PLAN_REJECT_GROUP } from "@/domain/master";
 import { PLAN_STATUS_META, type PlanStatus } from "@/domain/plan-status";
 import { CONFLICT_MSG, SAVE_CONFLICT_MSG, canReview, canShipperEdit, nextPlanNo, planNoPrefix } from "@/domain/plan-rules";
 import { approvedCancelBlock } from "@/domain/inquiry-rules";
+import { expiryTooEarlyMsg, minExpiryDate } from "@/domain/plan-entry";
+import { minExpiryDays } from "@/server/plans/entry";
 import { todayKst } from "@/lib/format";
 
 /** 승인 건 취소 시점 version 불일치 (그사이 검수 배분 등으로 바뀜) */
@@ -99,6 +101,9 @@ export async function savePlan(me: PlanActor, input: SavePlanInput): Promise<Act
         // 품목: 이 화주사의 사용 중 품목 + 등록된 단위 (C1: 마스터 미매칭 0건)
         const items = await tx.item.findMany({ where: { id: { in: v.lines.map((l) => l.itemId) }, clientId }, include: { uoms: true } });
         const byId = new Map(items.map((i) => [i.id, i]));
+        // 소비기한 하한 = 입고예정일 + 최소 잔여일수 (운영 설정)
+        const minDays = await minExpiryDays();
+        const minExpiry = minExpiryDate(v.planDate, minDays);
         const fe: Record<string, string> = {};
         const seen = new Set<string>();
         const lines = v.lines.map((l, i) => {
@@ -112,10 +117,11 @@ export async function savePlan(me: PlanActor, input: SavePlanInput): Promise<Act
           if (!uom) at("unit", `${item.name}에 등록되지 않은 단위입니다.`);
           const expiry = l.expiryDate || null;
           const lot = l.lotNo?.trim() || null;
-          if (item.expiryManaged && !expiry) at("expiryDate", "유통기한 관리 품목은 유통기한을 입력하세요.");
+          if (item.expiryManaged && !expiry) at("expiryDate", "소비기한 관리 품목은 소비기한을 입력하세요.");
+          else if (item.expiryManaged && expiry && expiry < minExpiry) at("expiryDate", expiryTooEarlyMsg(minExpiry, minDays));
           if (item.lotManaged && !lot) at("lotNo", "로트 관리 품목은 로트를 입력하세요.");
           const key = `${l.itemId}:${l.unit}:${expiry}:${lot}`;
-          if (seen.has(key)) at("itemId", "같은 품목·단위·유통기한·로트가 중복되었습니다. 한 줄로 합치세요.");
+          if (seen.has(key)) at("itemId", "같은 품목·단위·소비기한·로트가 중복되었습니다. 한 줄로 합치세요.");
           seen.add(key);
           return {
             lineNo: i + 1,

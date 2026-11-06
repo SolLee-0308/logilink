@@ -12,6 +12,7 @@ import { useUnsavedChanges, useUnsavedGuard } from "@/components/ui/UnsavedGuard
 import type { ItemUnit } from "@/domain/master";
 import {
   MATCHED_BY_LABEL,
+  minExpiryDate,
   PLAN_MAX_LINES,
   duplicateLines,
   lineErrors,
@@ -106,6 +107,8 @@ export function PlanEditor({
   const guard = useUnsavedGuard();
   const [centerId, setCenterId] = useState(initial.centerId || options.defaultCenterId);
   const [planDate, setPlanDate] = useState(initial.planDate);
+  /** 소비기한 하한 — 입고예정일(없으면 오늘) + 최소 잔여일수 */
+  const minExpiry = { date: minExpiryDate(planDate || options.today, options.minExpiryDays), days: options.minExpiryDays };
   const [memo, setMemo] = useState(initial.memo);
   // 처음 줄의 key는 서버·브라우저 렌더가 같도록 순번으로 (새로 추가하는 줄만 임의 key)
   const [lines, setLines] = useState<EditorLine[]>(() => (initial.lines.length ? initial.lines : [blankLine()]).map((l, i) => ({ ...l, key: `i${i}` })));
@@ -150,9 +153,9 @@ export function PlanEditor({
   }));
   const dups = duplicateLines(values, itemMap);
   const errorsOf = (i: number): Partial<Record<FieldKey, string>> => {
-    const e: Partial<Record<FieldKey, string>> = { ...lineErrors(values[i], values[i].itemId ? itemMap.get(values[i].itemId!) : undefined) };
+    const e: Partial<Record<FieldKey, string>> = { ...lineErrors(values[i], values[i].itemId ? itemMap.get(values[i].itemId!) : undefined, minExpiry) };
     if (lines[i].qty.trim() && values[i].qty === null) e.qty = "수량은 1 이상의 정수로 입력하세요.";
-    if (dups.has(i)) e.itemId ??= "같은 품목·단위·유통기한·로트 줄이 있습니다. 한 줄로 합치세요.";
+    if (dups.has(i)) e.itemId ??= "같은 품목·단위·소비기한·로트 줄이 있습니다. 한 줄로 합치세요.";
     for (const k of ["itemId", "unit", "qty", "expiryDate", "lotNo"] as const) {
       const s = serverErrors[`lines.${i}.${k}`];
       if (s) e[k] ??= s;
@@ -405,7 +408,7 @@ export function PlanEditor({
                   수량 <span className={styles.req}>*</span>
                 </th>
                 <th scope="col" className={styles.cDate}>
-                  유통기한
+                  소비기한
                 </th>
                 <th scope="col" className={styles.cLot}>
                   로트
@@ -424,6 +427,7 @@ export function PlanEditor({
                   line={l}
                   item={l.itemId ? itemMap.get(l.itemId) : undefined}
                   itemMap={itemMap}
+                  minExpiry={minExpiry.date}
                   errors={visible(i) ? lineErrs[i] : {}}
                   flagged={hasErr(i) && visible(i)}
                   autoFocus={focusKey === l.key}
@@ -499,6 +503,7 @@ function LineRow({
   line,
   item,
   itemMap,
+  minExpiry,
   errors,
   flagged,
   autoFocus,
@@ -513,6 +518,8 @@ function LineRow({
   line: EditorLine;
   item: CatalogItem | undefined;
   itemMap: Map<number, CatalogItem>;
+  /** 고를 수 있는 가장 이른 소비기한 */
+  minExpiry: string;
   errors: Partial<Record<FieldKey, string>>;
   flagged: boolean;
   autoFocus: boolean;
@@ -617,7 +624,9 @@ function LineRow({
           {item?.expiryManaged ? (
             <Input
               type="date"
-              aria-label={`${no}번째 줄 유통기한`}
+              aria-label={`${no}번째 줄 소비기한`}
+              min={minExpiry}
+              title={`${minExpiry} 이후 날짜 (입고예정일 + 최소 잔여일수)`}
               value={line.expiryDate}
               onChange={(e) => onChange({ expiryDate: e.target.value })}
               aria-invalid={!!errors.expiryDate || undefined}

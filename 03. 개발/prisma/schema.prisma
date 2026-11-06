@@ -181,11 +181,14 @@ model ClientCenter {
 model Item {
   id            Int         @id @default(autoincrement())
   clientId      Int         @map("client_id")
+  /// 품목코드 — 시스템 채번 {화주사코드}-{순번 5자리} (2026-11-06 Sol 결정), 등록 후 변경 불가
   code          String      @db.VarChar(40)
+  /// 화주사 품목코드 — 화주사가 자기 시스템에서 쓰는 코드(선택). 같은 화주사 안에서 유일, 엑셀·AI 판독 매칭에 사용
+  clientCode    String?     @map("client_item_code") @db.VarChar(40)
   name          String      @db.VarChar(200)
   baseUnit      ItemUnit    @map("base_unit")
   storageTemp   StorageTemp @map("storage_temp")
-  /// 유통기한 관리 품목이면 입고예정에 유통기한 입력 필수, 검수 시 실물과 다르면 현장 입력
+  /// 소비기한 관리 품목이면 입고예정에 소비기한 입력 필수, 검수 시 실물과 다르면 현장 입력
   expiryManaged Boolean     @default(false) @map("expiry_managed")
   /// 로트 관리 품목이면 입고예정에 로트 입력 필수, 검수 시 실물과 다르면 현장 입력
   lotManaged    Boolean     @default(false) @map("lot_managed")
@@ -209,6 +212,7 @@ model Item {
   rcvInputs   RcvInput[]
 
   @@unique([clientId, code])
+  @@unique([clientId, clientCode])
   @@map("tb_item")
 }
 
@@ -268,12 +272,13 @@ model ItemRequest {
   id               Int               @id @default(autoincrement())
   requestNo        String            @unique @map("request_no") @db.VarChar(20)
   clientId         Int               @map("client_id")
-  itemCode         String            @map("item_code") @db.VarChar(40)
+  /// 화주사 품목코드(선택) — 품목코드는 3PL이 등록할 때 시스템이 채번한다
+  clientCode       String?           @map("client_item_code") @db.VarChar(40)
   itemName         String            @map("item_name") @db.VarChar(200)
   unit             ItemUnit
   barcode          String            @db.VarChar(40)
   source           ItemRequestSource
-  /// 화주사가 함께 보낸 보관 온도대·유통기한·로트 관리 여부 (없으면 3PL이 등록 시 정함)
+  /// 화주사가 함께 보낸 보관 온도대·소비기한·로트 관리 여부 (없으면 3PL이 등록 시 정함)
   storageTemp      StorageTemp?      @map("storage_temp")
   expiryManaged    Boolean?          @map("expiry_managed")
   lotManaged       Boolean?          @map("lot_managed")
@@ -588,7 +593,7 @@ model InboundPlanLine {
   qty        Int
   /// 기준 단위 환산 수량 — 검수·배분·잔량 계산 기준
   baseQty    Int       @map("base_qty")
-  /// 유통기한·로트 관리 품목만 (U10)
+  /// 소비기한·로트 관리 품목만 (U10)
   expiryDate DateTime? @map("expiry_dt") @db.Date
   lotNo      String?   @map("lot_no") @db.VarChar(40)
   /// 이하 기준 단위 누계 (검수·배분 단계에서 채움)

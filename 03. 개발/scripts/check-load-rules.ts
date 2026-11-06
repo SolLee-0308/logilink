@@ -30,6 +30,8 @@ const ymd = todayKst().replaceAll("-", "");
 const lo = (n: number) => `LO-${ymd}-000${n}`;
 
 async function main() {
+  // 시드 품목: 화주사 품목코드 → 품목코드(시스템 채번)
+  const C: Record<string, string> = Object.fromEntries((await db.item.findMany({ select: { code: true, clientCode: true } })).map((i) => [i.clientCode, i.code]));
   const jiho = await actor("hb.jiho"); // 한빛식품 상차담당
   // 같은 화주사의 두 번째 상차담당 (동시 작업 점검용 — 처리자 정보만 다르게)
   const minjiUser = await db.user.findUniqueOrThrow({ where: { loginId: "hb.minji" } });
@@ -76,7 +78,7 @@ async function main() {
 
   /* 스캔 미리 보기 · 입력 */
   let p = await previewScan(jiho, { loadId, scan: "8801100022109\r\n" });
-  ok(p.ok && p.data?.unit === "EA" && p.data.itemCode === "HB-2210", "바코드 스캔(줄바꿈 포함) → 품목·스캔 단위(EA)", p);
+  ok(p.ok && p.data?.unit === "EA" && p.data.itemCode === C["HB-2210"], "바코드 스캔(줄바꿈 포함) → 품목·스캔 단위(EA)", p);
   p = await previewScan(jiho, { loadId, scan: "hb-2210" });
   ok(p.ok && p.data?.by === "code", "품목코드 손 입력도 찾는다(대소문자 무시)", p);
   p = await previewScan(jiho, { loadId, scan: "0000000000000" });
@@ -84,7 +86,7 @@ async function main() {
   p = await previewScan(jiho, { loadId, scan: "18801100010011" }); // 두부 BOX — 아직 오늘 ASN에 없음
   ok(!p.ok && p.code === "STATE" && p.error.includes("오늘 ASN에 없는"), "오늘 ASN에 없는 품목은 지시 상차에서도 차단(C5)", p);
   // 화주사 담당자가 두부를 담은 ASN을 오늘 하나 더 등록하면(정의서 ③ 추가 등록) 지시 외 품목으로 실을 수 있다
-  const tofuLine = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { code: "HB-1001" }, plan: { client: { code: "HB01" }, status: "APPROVED", center: { code: "YI1" } } }, orderBy: { id: "asc" } });
+  const tofuLine = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { clientCode: "HB-1001" }, plan: { client: { code: "HB01" }, status: "APPROVED", center: { code: "YI1" } } }, orderBy: { id: "asc" } });
   const extraAsn = await createAsn(minji, { centerId: yi1, shipDate: todayKst(), vehicleNo: "60다 3030", lines: [{ planLineId: tofuLine.id, qty: 10 }] });
   ok(extraAsn.ok, "한빛식품 오늘 ASN 추가 등록(두부 10BOX)", extraAsn);
   const extraOrderNo = extraAsn.ok ? extraAsn.data!.orderNo : "";
@@ -109,8 +111,8 @@ async function main() {
   ok(a.ok, "경고를 확인하면 지시 외 품목도 싣는다(두부 1BOX)", a);
   const extraInputId = a.ok ? a.data!.inputId : 0;
   v = (await getPdaLoad(jiho, loadId))!;
-  const water = v.lines.find((l) => l.itemCode === "HB-2210")!;
-  const tofu = v.lines.find((l) => l.itemCode === "HB-1001")!;
+  const water = v.lines.find((l) => l.itemCode === C["HB-2210"])!;
+  const tofu = v.lines.find((l) => l.itemCode === C["HB-1001"])!;
   ok(water.loadBase === 300 && water.state === "short" && tofu.loadBase === 20 && tofu.state === "extra", "품목별 합계 = 입력 행 합계(생수 300EA 부족, 두부 20EA 지시 외)", v.lines);
   ok(v.workers.length === 2 && v.inputs.filter((i) => i.mine).length === 2, "작업자 2명, 내 입력 2건");
 
@@ -122,7 +124,7 @@ async function main() {
   ok(x.ok, "본인 입력 취소(두부)", x);
   x = await cancelLoadInput(jiho, { inputId: extraInputId });
   ok(!x.ok && x.code === "STATE", "이미 취소한 입력은 다시 취소할 수 없다", x);
-  const myWater = v.inputs.find((i) => i.mine && i.itemCode === "HB-2210")!;
+  const myWater = v.inputs.find((i) => i.mine && i.itemCode === C["HB-2210"])!;
   let cr = await correctLoadInput(jiho, { inputId: myWater.id, qty: 200 });
   ok(!cr.ok && cr.code === "CONFIRM", "정정으로 지시수량을 넘으면 경고(160→200, 합계 340EA)", cr);
   cr = await correctLoadInput(jiho, { inputId: myWater.id, qty: 180 });
@@ -187,7 +189,7 @@ async function main() {
   ok(a.ok, "무지시 상차는 오늘 ASN 품목이면 경고 없이 입력(두부 3BOX)", a);
 
   // 그린마켓: 오늘 ASN 1건(세제) 등록 후 무지시 상차 → ASN에 없는 품목(종이타월)은 차단
-  const gmLine = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { code: "GM-0501" }, plan: { client: { code: "GM01" }, status: "APPROVED" } } });
+  const gmLine = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { clientCode: "GM-0501" }, plan: { client: { code: "GM01" }, status: "APPROVED" } } });
   const ca = await createAsn(doyun, { centerId: yi1, shipDate: todayKst(), vehicleNo: "70나1111", lines: [{ planLineId: gmLine.id, qty: 5 }] });
   ok(ca.ok, "그린마켓 오늘 ASN 등록(세제 5BOX)", ca);
   r = await startUnorderedLoad(sera, { centerId: yi1, vehicleNo: "70나2222" });

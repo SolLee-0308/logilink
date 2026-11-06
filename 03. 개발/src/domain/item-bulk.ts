@@ -27,7 +27,7 @@ const TEMP_NAMES = STORAGE_TEMPS.map((t) => STORAGE_TEMP_LABEL[t]);
 const YN = ["Y", "N"] as const;
 
 export const ITEM_COLUMNS: BulkColumn[] = [
-  { key: "code", header: "품목코드", required: true, width: 16, note: "같은 화주사 안에서 중복 불가, 40자 이내. 등록 후 수정 불가", example: "HB-1001" },
+  { key: "clientCode", header: "화주사 품목코드", required: false, width: 16, note: "화주사가 쓰는 자체 품목코드(선택), 같은 화주사 안에서 중복 불가, 40자 이내. 품목코드는 등록할 때 시스템이 매깁니다", example: "HB-1001" },
   { key: "name", header: "품목명", required: true, width: 28, note: "200자 이내", example: "국산콩 두부 300g" },
   { key: "storageTemp", header: "보관온도대", required: true, width: 11, note: "상온 / 냉장 / 냉동", list: TEMP_NAMES, example: "냉장" },
   { key: "baseUnit", header: "기준단위", required: true, width: 10, note: "수량 계산의 기준이 되는 가장 작은 단위: EA / BOX / PLT", list: ITEM_UNITS, example: "EA" },
@@ -36,18 +36,18 @@ export const ITEM_COLUMNS: BulkColumn[] = [
   { key: "eaBarcode", header: "EA바코드", required: false, width: 18, note: "숫자 8~14자리. 여러 개면 쉼표(,)로 구분", example: "8801234500011" },
   { key: "boxBarcode", header: "BOX바코드", required: false, width: 18, note: "숫자 8~14자리. 여러 개면 쉼표(,)로 구분", example: "18801234500018" },
   { key: "pltBarcode", header: "PLT바코드", required: false, width: 18, note: "숫자 8~14자리. 여러 개면 쉼표(,)로 구분", example: "" },
-  { key: "expiryManaged", header: "유통기한관리", required: false, width: 12, note: "Y / N (비우면 N)", list: YN, example: "Y" },
+  { key: "expiryManaged", header: "소비기한관리", required: false, width: 12, note: "Y / N (비우면 N)", list: YN, example: "Y" },
   { key: "lotManaged", header: "로트관리", required: false, width: 10, note: "Y / N (비우면 N)", list: YN, example: "N" },
   { key: "aliases", header: "별칭", required: false, width: 28, note: "AI 판독·엑셀 자동 매칭용 다른 표기. 여러 개면 쉼표(,)로 구분", example: "국산콩두부300, 두부 300g" },
 ];
 
 export const REQUEST_COLUMNS: BulkColumn[] = [
-  { key: "code", header: "품목코드", required: true, width: 16, note: "화주사에서 쓰는 품목코드, 40자 이내", example: "HB-1001" },
+  { key: "clientCode", header: "화주사 품목코드", required: false, width: 16, note: "화주사에서 쓰는 자체 품목코드(선택), 40자 이내. 품목코드는 3PL이 등록할 때 시스템이 매깁니다", example: "HB-1001" },
   { key: "name", header: "품목명", required: true, width: 28, note: "200자 이내", example: "국산콩 두부 300g" },
   { key: "unit", header: "단위", required: true, width: 8, note: "EA / BOX / PLT", list: ITEM_UNITS, example: "EA" },
   { key: "barcode", header: "바코드", required: true, width: 18, note: "숫자 8~14자리", example: "8801234500011" },
   { key: "storageTemp", header: "보관온도대", required: false, width: 11, note: "상온 / 냉장 / 냉동 (모르면 비워 두세요)", list: TEMP_NAMES, example: "냉장" },
-  { key: "expiryManaged", header: "유통기한관리", required: false, width: 12, note: "Y / N (모르면 비워 두세요)", list: YN, example: "Y" },
+  { key: "expiryManaged", header: "소비기한관리", required: false, width: 12, note: "Y / N (모르면 비워 두세요)", list: YN, example: "Y" },
   { key: "lotManaged", header: "로트관리", required: false, width: 10, note: "Y / N (모르면 비워 두세요)", list: YN, example: "" },
   { key: "note", header: "메모", required: false, width: 30, note: "3PL에 전달할 내용, 500자 이내", example: "11월 신상품" },
 ];
@@ -90,7 +90,8 @@ export function missingHeaderMessage(kind: BulkKind, headers: string[], missing:
 export type RawRow = Record<string, string>;
 
 export interface ItemDraft {
-  code: string;
+  /** 화주사 품목코드 (선택) */
+  clientCode: string | null;
   name: string;
   storageTemp: StorageTemp;
   baseUnit: ItemUnit;
@@ -102,7 +103,8 @@ export interface ItemDraft {
 }
 
 export interface RequestDraft {
-  code: string;
+  /** 화주사 품목코드 (선택) */
+  clientCode: string | null;
   name: string;
   unit: ItemUnit;
   barcode: string;
@@ -159,6 +161,13 @@ function parseQty(s: string, label: string, errors: string[]): number | null {
   return n;
 }
 
+/** 화주사 품목코드 — 선택, 40자 이내 */
+function clientCodeOf(r: RawRow, errors: string[]): string | null {
+  const v = cell(r, "clientCode");
+  if (v.length > 40) errors.push("화주사 품목코드는 40자 이내로 입력하세요.");
+  return v || null;
+}
+
 function textError(v: string, label: string, max: number) {
   if (!v) return `${label}을(를) 입력하세요.`;
   if (v.length > max) return `${label}은(는) ${max}자 이내로 입력하세요.`;
@@ -168,9 +177,10 @@ function textError(v: string, label: string, max: number) {
 /** 3PL 일괄 등록 한 행 */
 export function parseItemRow(r: RawRow): Parsed<ItemDraft> {
   const errors: string[] = [];
-  const code = cell(r, "code");
+  const clientCode = clientCodeOf(r, errors);
   const name = cell(r, "name");
-  for (const e of [textError(code, "품목코드", 40), textError(name, "품목명", 200)]) if (e) errors.push(e);
+  const nameErr = textError(name, "품목명", 200);
+  if (nameErr) errors.push(nameErr);
 
   const temp = parseTemp(cell(r, "storageTemp"));
   if (temp === null) errors.push("보관온도대를 입력하세요 (상온/냉장/냉동).");
@@ -232,7 +242,7 @@ export function parseItemRow(r: RawRow): Parsed<ItemDraft> {
 
   const expiry = parseYn(cell(r, "expiryManaged"));
   const lot = parseYn(cell(r, "lotManaged"));
-  if (expiry === undefined) errors.push("유통기한관리는 Y 또는 N으로 입력하세요.");
+  if (expiry === undefined) errors.push("소비기한관리는 Y 또는 N으로 입력하세요.");
   if (lot === undefined) errors.push("로트관리는 Y 또는 N으로 입력하세요.");
 
   const aliases: string[] = [];
@@ -251,16 +261,17 @@ export function parseItemRow(r: RawRow): Parsed<ItemDraft> {
   if (errors.length || !temp || !base) return { ok: false, errors };
   return {
     ok: true,
-    value: { code, name, storageTemp: temp, baseUnit: base, uoms, barcodes, expiryManaged: expiry ?? false, lotManaged: lot ?? false, aliases },
+    value: { clientCode, name, storageTemp: temp, baseUnit: base, uoms, barcodes, expiryManaged: expiry ?? false, lotManaged: lot ?? false, aliases },
   };
 }
 
 /** 화주사 일괄 요청 한 행 */
 export function parseRequestRow(r: RawRow): Parsed<RequestDraft> {
   const errors: string[] = [];
-  const code = cell(r, "code");
+  const clientCode = clientCodeOf(r, errors);
   const name = cell(r, "name");
-  for (const e of [textError(code, "품목코드", 40), textError(name, "품목명", 200)]) if (e) errors.push(e);
+  const nameErr = textError(name, "품목명", 200);
+  if (nameErr) errors.push(nameErr);
   const unit = parseUnit(cell(r, "unit"));
   if (unit === null) errors.push("단위를 입력하세요 (EA/BOX/PLT).");
   if (unit === undefined) errors.push(`단위 '${cell(r, "unit")}'은(는) EA/BOX/PLT 중 하나로 입력하세요.`);
@@ -271,25 +282,27 @@ export function parseRequestRow(r: RawRow): Parsed<RequestDraft> {
   if (temp === undefined) errors.push(`보관온도대 '${cell(r, "storageTemp")}'은(는) 상온/냉장/냉동 중 하나로 입력하세요.`);
   const expiry = parseYn(cell(r, "expiryManaged"));
   const lot = parseYn(cell(r, "lotManaged"));
-  if (expiry === undefined) errors.push("유통기한관리는 Y 또는 N으로 입력하세요.");
+  if (expiry === undefined) errors.push("소비기한관리는 Y 또는 N으로 입력하세요.");
   if (lot === undefined) errors.push("로트관리는 Y 또는 N으로 입력하세요.");
   const note = cell(r, "note");
   if (note.length > 500) errors.push("메모는 500자 이내로 입력하세요.");
   if (errors.length || !unit || temp === undefined || expiry === undefined || lot === undefined) return { ok: false, errors };
-  return { ok: true, value: { code, name, unit, barcode, storageTemp: temp, expiryManaged: expiry, lotManaged: lot, note: note || null } };
+  return { ok: true, value: { clientCode, name, unit, barcode, storageTemp: temp, expiryManaged: expiry, lotManaged: lot, note: note || null } };
 }
 
-/** 같은 파일 안의 품목코드·바코드·별칭 중복 — 엑셀 행 번호별 오류 (먼저 나온 행은 그대로 두고 뒤 행에 표시) */
-export function fileDuplicates(rows: { rowNo: number; code: string; barcodes: string[]; aliases?: string[] }[]) {
+/** 같은 파일 안의 화주사 품목코드·바코드·별칭 중복 — 엑셀 행 번호별 오류 (먼저 나온 행은 그대로 두고 뒤 행에 표시) */
+export function fileDuplicates(rows: { rowNo: number; clientCode: string | null; barcodes: string[]; aliases?: string[] }[]) {
   const errors = new Map<number, string[]>();
   const add = (rowNo: number, msg: string) => errors.set(rowNo, [...(errors.get(rowNo) ?? []), msg]);
   const codes = new Map<string, number>();
   const barcodes = new Map<string, number>();
   const aliases = new Map<string, number>();
   for (const r of rows) {
-    const c = codes.get(r.code);
-    if (c !== undefined) add(r.rowNo, `품목코드 ${r.code}이(가) 파일의 ${c}행과 겹칩니다.`);
-    else codes.set(r.code, r.rowNo);
+    if (r.clientCode) {
+      const c = codes.get(r.clientCode);
+      if (c !== undefined) add(r.rowNo, `화주사 품목코드 ${r.clientCode}이(가) 파일의 ${c}행과 겹칩니다.`);
+      else codes.set(r.clientCode, r.rowNo);
+    }
     for (const b of r.barcodes) {
       const p = barcodes.get(b);
       if (p !== undefined) add(r.rowNo, `바코드 ${b}이(가) 파일의 ${p}행과 겹칩니다.`);

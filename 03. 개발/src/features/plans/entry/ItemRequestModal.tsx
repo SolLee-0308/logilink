@@ -44,7 +44,7 @@ export function ItemRequestModal({
         act.run(
           () =>
             submitItemRequest({
-              itemCode: code,
+              clientCode: code.trim() || null,
               itemName: name,
               unit,
               barcode,
@@ -73,7 +73,7 @@ export function ItemRequestModal({
         판독 오류나 표기 차이로 못 찾은 경우가 많습니다. 품목 찾기에서 품목코드·바코드로 한 번 더 찾아본 뒤 요청하세요.
       </NoteBox>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px 16px" }}>
-        <FormField label="품목코드" htmlFor="rq-code" required hint="화주사에서 쓰는 품목코드" error={act.fieldErrors.itemCode}>
+        <FormField label="화주사 품목코드" htmlFor="rq-code" hint="화주사가 자기 시스템에서 쓰는 코드(선택). 품목코드는 3PL이 등록할 때 시스템이 매깁니다" error={act.fieldErrors.clientCode}>
           <Input id="rq-code" className="mono" value={code} onChange={(e) => setCode(e.target.value)} maxLength={40} autoComplete="off" autoFocus />
         </FormField>
         <FormField label="품목명" htmlFor="rq-name" required error={act.fieldErrors.itemName}>
