@@ -51,8 +51,8 @@ const viewInclude = {
       lines: { select: { itemId: true, unit: true } },
     },
   },
-  lines: { include: { item: { select: { code: true, name: true, baseUnit: true, uoms: { select: { unit: true, qty: true } } } } } },
-  inputs: { orderBy: { id: "desc" }, include: { item: { select: { code: true, name: true } } } },
+  lines: { include: { item: { select: { code: true, clientCode: true, name: true, baseUnit: true, uoms: { select: { unit: true, qty: true } } } } } },
+  inputs: { orderBy: { id: "desc" }, include: { item: { select: { code: true, clientCode: true, name: true } } } },
 } satisfies Prisma.LoadInclude;
 
 type LoadRow = Prisma.LoadGetPayload<{ include: typeof viewInclude }>;
@@ -71,6 +71,7 @@ function toView(l: LoadRow, meId: number | null): LoadView {
       return {
         itemId: d.itemId,
         itemCode: d.item.code,
+        itemClientCode: d.item.clientCode,
         itemName: d.item.name,
         baseUnit: d.item.baseUnit,
         showUnit,
@@ -120,6 +121,7 @@ function toView(l: LoadRow, meId: number | null): LoadView {
       id: i.id,
       itemId: i.itemId,
       itemCode: i.item.code,
+      itemClientCode: i.item.clientCode,
       itemName: i.item.name,
       unit: i.unit,
       addQty: i.addQty,

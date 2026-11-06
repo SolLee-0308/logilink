@@ -1411,3 +1411,289 @@
 .rcvSum .lineQty b {
   font-size: var(--fs-12);
 }
+
+/* ═════════ 상차 작업 화면 재구성 (2026-11-06 Sol 결정) ═════════
+ * 차량 머리는 박스 없이 상태 한 줄, 스캔 칸만 강조(위에 붙음), 품목은 줄 목록 + 진행 막대,
+ * 내 입력·상차 정보는 아래 접힌 줄. 상태는 색으로만 구분한다. */
+.vHead {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 2px 0;
+}
+
+.vStatus {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.vStatus b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.scanCard {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1.5px solid var(--violet-300);
+  border-radius: var(--r-sheet);
+  background: var(--bg);
+  box-shadow: 0 0 0 6px var(--bg), 0 2px 8px rgb(76 60 200 / 0.08);
+}
+
+.flat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.flatLines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.flatLines li {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-row);
+}
+
+.flatTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.flatQty {
+  white-space: nowrap;
+  font-size: var(--fs-13);
+}
+
+.flatQty b {
+  font-size: var(--fs-14);
+}
+
+.flatBottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lnBar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+
+.lnBar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--soft);
+}
+
+.stText {
+  flex: none;
+  min-width: 64px;
+  text-align: right;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 상태 색: 일치 초록 · 부족 주황 · 초과·지시 외 빨강 · 아직 안 실음 회색 */
+.st_match .lnBar span { background: var(--st-done-fg); }
+.st_match .stText { color: var(--st-done-fg); }
+.st_short .lnBar span { background: var(--warn-fg); }
+.st_short .stText { color: var(--warn-fg); }
+.st_over .lnBar span,
+.st_extra .lnBar span { background: var(--st-rej-fg); }
+.st_over .stText,
+.st_extra .stText,
+.st_over .flatQty b,
+.st_extra .flatQty b { color: var(--st-rej-fg); }
+.st_none .stText { color: var(--soft); }
+
+/* 아래 접힌 줄 (내 입력·상차 정보) */
+.fold {
+  border-top: 1px solid var(--line);
+}
+
+.fold:last-of-type {
+  border-bottom: 1px solid var(--line);
+}
+
+.foldHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 2px;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--fg);
+  list-style: none;
+  cursor: pointer;
+}
+
+.foldHead::-webkit-details-marker {
+  display: none;
+}
+
+.fold[open] .detailChev {
+  transform: rotate(180deg);
+}
+
+.fold > :global(dl),
+.foldBody {
+  margin-bottom: 10px;
+}
+
+.flatLines li:last-child {
+  border-bottom: 0;
+}
+
+/* ═════════ 머리·메뉴 띠·상차등록 첫 화면 (2026-11-06 Sol 결정) ═════════ */
+/* 작업 화면 머리: 로그아웃이 빠진 자리 — 화면명이 가운데 오도록 ← 버튼과 같은 너비 */
+.barSpacer {
+  flex: none;
+  width: 36px;
+}
+
+/* 메뉴 화면 머리 오른쪽 행위 (예전 로그아웃 자리) */
+.barAction {
+  margin-left: auto;
+}
+
+.barPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--card-head);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* 메뉴 띠 맨 오른쪽 로그아웃 — 다른 메뉴와 같은 모양 */
+.tabForm {
+  flex: 1;
+  display: flex;
+}
+
+.tabForm .tab {
+  flex: 1;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-11);
+  cursor: pointer;
+}
+
+/* 상차등록 검정 영역 — 둥근 상자 대신 화면 너비 끝까지 (좌우 여백 없음) */
+.hero {
+  margin: -2px -12px 0;
+  border-radius: 0;
+  padding: 14px 16px 16px;
+}
+
+/* 주요 버튼·선택된 메뉴 = 브랜드 보라 (2026-11-06 Sol 결정: PDA 본체가 검정이라 검정 버튼이 본체와 섞여 보임).
+ * 흰 글자는 violet-600 이상 위에만 (CI 규칙). 상차등록 위 검정 영역은 그대로 둔다. */
+.primary,
+.blackPill {
+  background: var(--violet-600);
+}
+
+.primary:active,
+.blackPill:active {
+  background: var(--violet-700);
+}
+
+.tabOn {
+  background: var(--violet-600);
+}
+
+/* 부족 = 밝은 주황 (2026-11-06 Sol 결정). 막대는 #F08C00, 글자는 흰 바탕에서 읽히도록 조금 진한 #E8590C */
+.st_short .lnBar span { background: #f08c00; }
+.st_short .stText { color: #e8590c; }
+
+/* 품목 바코드(스캔) 영역 — 화면 너비 끝까지 + 연보라 바탕 (2026-11-06 Sol 결정), 위에 붙는 것은 그대로 */
+.scanCard {
+  margin: 0 -12px;
+  padding: 12px 16px 14px;
+  border: 0;
+  border-radius: 0;
+  background: var(--violet-50);
+  box-shadow: none;
+}
+
+/* ═════════ 입고검수 화면 — 상차 작업과 같은 구성 (2026-11-06 Sol 결정) ═════════ */
+/* 품목 머리의 진행 표시('입력 n / m', '일치 n / m줄') 강조 — 보라 알약, 다 되면 초록 */
+.progressTag {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--violet-50);
+  color: var(--violet-700);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+
+.progressTag b {
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+.progressDone {
+  background: var(--st-done-bg);
+  color: var(--st-done-fg);
+}
+
+/* 품목 목록 — 박스 없이 줄 목록 */
+.rcvFlat {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.rcvFlat .rcvLine {
+  border-bottom: 1px solid var(--line-row);
+}
+
+.rcvFlat .rcvLine + .rcvLine {
+  border-top: 0;
+}
+
+.rcvFlat .rcvLine:last-child {
+  border-bottom: 0;
+}
+
+/* 품목 상태 글자색 — 상차 작업과 같은 규칙 */
+.rst_todo { color: var(--soft); }
+.rst_match { color: var(--st-done-fg); }
+.rst_short { color: #e8590c; }
+.rst_over,
+.rst_mismatch,
+.rst_problem { color: var(--st-rej-fg); }
+.rst_zero { color: var(--st-ok-fg); }

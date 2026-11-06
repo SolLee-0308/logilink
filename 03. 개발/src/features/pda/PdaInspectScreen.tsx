@@ -11,13 +11,12 @@ import {
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { RcvInputView, RcvLineView, RcvScanPreview, RcvView } from "@/features/rcv/types";
 import { deviceId, takeNotice } from "./device";
-import { Icon, InfoRows, Pill, Steps, type PillTone } from "./PdaParts";
+import { Icon, InfoRows, Pill } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 const POLL_MS = 5000;
 const hm = (iso: string | null) => fmtDateTime(iso).slice(11);
 const f = (l: Pick<RcvLineView, "showUnit" | "showFactor" | "baseUnit">, base: number) => qtyInUnit(base, l.showUnit, l.showFactor, l.baseUnit);
-const STATE_TONE: Record<RcvLineState, PillTone> = { todo: "gray", short: "amber", match: "green", over: "amber", zero: "blue", mismatch: "red" };
 
 /** 사진을 PDA에서 줄여 올린다 — 긴 변 1280px, JPEG 0.72 (장당 약 300KB 이하) */
 async function compress(file: File): Promise<string> {
@@ -43,7 +42,7 @@ async function compress(file: File): Promise<string> {
 /**
  * PDA 입고검수 (정의서 ⑥ · C7 · D15, 2026-11-05 Sol 결정 R2~R9)
  * 1) 품목 스캔 → 정상 / 훼손 반송 고르고 추가 수량 입력 (상차 실적에 없는 품목은 품목 불일치 반송으로만 기록)
- * 2) 품목마다 0(미도착) 확인·차이 사유·훼손 사진·유통기한·로트
+ * 2) 품목마다 0(미도착) 확인·차이 사유·훼손 사진·소비기한·로트
  * 3) 여러 검수자가 함께 입력, 본인 입력만 취소·정정, 다른 검수자 입력은 몇 초마다 반영
  * 4) 검수 확정: 검수자·품목 합계를 보고 확정, 미입력 품목은 [돌아가서 스캔] / [남은 품목 전부 0 처리] → 자동 배분
  */
@@ -172,33 +171,34 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
     });
 
   const myInputs = view.inputs.filter((i) => i.mine && !i.canceled);
-  const firstInput = [...view.inputs].reverse().find((i) => !i.canceled);
-  const todo = view.lines.filter((l) => l.state === "todo");
+  const anyEntered = view.lines.some((l) => l.state !== "todo");
   const attention = view.lines.filter((l) => lineProblem(l, reasons));
 
+  /**
+   * 차량 머리 — 상차 작업과 같은 모양 (2026-11-06 Sol 결정: 화면 구성 일관성).
+   * 차량번호·상태 알약 + 상태 한 줄(검수 중 · 시작 · 마지막 입력 · 화주사 · 상차확인서), 타임라인 없음.
+   */
+  const lastInput = view.inputs.find((i) => !i.canceled);
   const head = (
-    <section className={styles.headBlock}>
+    <section className={styles.vHead}>
       <span className={styles.idHead}>
-        <span className={styles.iconCircle}>
-          <Icon name="truck" size={18} />
-        </span>
+        <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
         <Pill tone={working ? "blue" : "green"}>{working ? "검수중" : "검수확정"}</Pill>
       </span>
-      <span className={styles.meta}>
-        <span>
-          {view.clientName} · {LOAD_TYPE_LABEL[view.load.type]}
-        </span>
-        <span className="mono">{view.load.loadNo}</span>
+      <span className={styles.vStatus}>
+        {working ? (
+          <>
+            <b>검수 중</b> · {hm(view.createdAt)} 시작{lastInput ? ` · 마지막 입력 ${hm(lastInput.inputAt)}` : ""}
+          </>
+        ) : (
+          <>
+            <b>검수확정</b> · {view.confirmedAt ? hm(view.confirmedAt) : "-"}
+          </>
+        )}
+        {" · "}
+        {view.clientName} · {LOAD_TYPE_LABEL[view.load.type]} · <span className="mono">{view.load.loadNo}</span>
       </span>
-      <Steps
-        compact
-        steps={[
-          { label: "상차완료", done: true, time: hm(view.load.completedAt) },
-          { label: "검수 중", done: !!firstInput || !working, time: firstInput ? hm(firstInput.inputAt) : null },
-          { label: "검수확정", done: !working, time: view.confirmedAt ? hm(view.confirmedAt) : null },
-        ]}
-      />
     </section>
   );
 
@@ -335,7 +335,8 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
       {head}
       {notice && <p className={styles.warnText}>{notice}</p>}
 
-      <section className={styles.sheet}>
+      {/* 스캔 칸 — 상차 작업과 같이 화면 너비 끝까지·위에 붙음 */}
+      <section className={styles.scanCard}>
         {!preview ? (
           <form
             onSubmit={(e) => {
@@ -454,82 +455,90 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
 
       <RcvLines view={view} reasons={reasons} pending={pending} onDone={after} editable />
 
-      <section className={styles.sheet}>
-        <h2 className={styles.h2}>
+      {/* 내 입력 — 상차 작업과 같이 아래 접힌 줄 */}
+      <details className={styles.fold}>
+        <summary className={styles.foldHead}>
           내 입력 <span className={styles.count}>{myInputs.length}</span>
-        </h2>
-        {myInputs.length === 0 ? (
-          <p className={styles.empty}>아직 입력한 수량이 없습니다.</p>
-        ) : (
-          <ol className={styles.timeline}>
-            {myInputs.slice(0, 30).map((i) =>
-              editing?.id === i.id ? (
-                <li key={i.id} className={styles.editRow}>
-                  <span>
-                    {i.itemName} <span className={styles.dim}>({RCV_KIND_LABEL[i.kind]} · {i.unit})</span>
-                  </span>
-                  <div className={styles.qtyRow}>
-                    <input
-                      className={`${styles.field} ${styles.qty} mono`}
-                      value={editing.qty}
-                      onChange={(e) => setEditing({ ...editing, qty: e.target.value.replace(/\D/g, "") })}
-                      inputMode="numeric"
-                      autoFocus
-                      aria-label="정정할 수량"
-                      disabled={pending}
-                    />
-                    <button type="button" className={styles.primary} onClick={onCorrect} disabled={pending || !(Number(editing.qty) > 0)}>
-                      정정
-                    </button>
-                  </div>
-                  <button type="button" className={styles.link} onClick={() => setEditing(null)} disabled={pending}>
-                    그만두기
-                  </button>
-                </li>
-              ) : (
-                <li key={i.id}>
-                  <span className={styles.tlTime}>
-                    <b className="mono">{hm(i.inputAt)}</b>
-                    {i.corrected && <small>정정</small>}
-                  </span>
-                  <span className={styles.tlDot} aria-hidden="true">
-                    <Icon name="check" size={11} stroke={2.8} />
-                  </span>
-                  <span className={styles.tlBody}>
-                    <span>
-                      {i.itemName}
-                      <b className="mono">
-                        {" "}
-                        +{i.addQty.toLocaleString()} {i.unit}
-                      </b>
-                      {i.kind !== "GOOD" && <span className={styles.metaWarn}> · {i.kind === "DAMAGED" ? "훼손" : "불일치"}</span>}
-                    </span>
-                    <span className={styles.inputBtns}>
-                      <button type="button" className={styles.small} onClick={() => setEditing({ id: i.id, qty: String(i.addQty) })} disabled={pending}>
-                        정정
+          <span className={styles.detailSum}>{myInputs[0] ? `마지막 ${hm(myInputs[0].inputAt)}` : "없음"}</span>
+          <span className={styles.detailChev}>
+            <Icon name="chevD" size={16} />
+          </span>
+        </summary>
+        <div className={styles.foldBody}>
+            {myInputs.length === 0 ? (
+              <p className={styles.empty}>아직 입력한 수량이 없습니다.</p>
+            ) : (
+              <ol className={styles.timeline}>
+                {myInputs.slice(0, 30).map((i) =>
+                  editing?.id === i.id ? (
+                    <li key={i.id} className={styles.editRow}>
+                      <span>
+                        {i.itemName} <span className={styles.dim}>({RCV_KIND_LABEL[i.kind]} · {i.unit})</span>
+                      </span>
+                      <div className={styles.qtyRow}>
+                        <input
+                          className={`${styles.field} ${styles.qty} mono`}
+                          value={editing.qty}
+                          onChange={(e) => setEditing({ ...editing, qty: e.target.value.replace(/\D/g, "") })}
+                          inputMode="numeric"
+                          autoFocus
+                          aria-label="정정할 수량"
+                          disabled={pending}
+                        />
+                        <button type="button" className={styles.primary} onClick={onCorrect} disabled={pending || !(Number(editing.qty) > 0)}>
+                          정정
+                        </button>
+                      </div>
+                      <button type="button" className={styles.link} onClick={() => setEditing(null)} disabled={pending}>
+                        그만두기
                       </button>
-                      <button type="button" className={styles.smallDanger} onClick={() => onCancelInput(i)} disabled={pending}>
-                        취소
-                      </button>
-                    </span>
-                  </span>
-                </li>
-              ),
+                    </li>
+                  ) : (
+                    <li key={i.id}>
+                      <span className={styles.tlTime}>
+                        <b className="mono">{hm(i.inputAt)}</b>
+                        {i.corrected && <small>정정</small>}
+                      </span>
+                      <span className={styles.tlDot} aria-hidden="true">
+                        <Icon name="check" size={11} stroke={2.8} />
+                      </span>
+                      <span className={styles.tlBody}>
+                        <span>
+                          {i.itemName}
+                          <b className="mono">
+                            {" "}
+                            +{i.addQty.toLocaleString()} {i.unit}
+                          </b>
+                          {i.kind !== "GOOD" && <span className={styles.metaWarn}> · {i.kind === "DAMAGED" ? "훼손" : "불일치"}</span>}
+                        </span>
+                        <span className={styles.inputBtns}>
+                          <button type="button" className={styles.small} onClick={() => setEditing({ id: i.id, qty: String(i.addQty) })} disabled={pending}>
+                            정정
+                          </button>
+                          <button type="button" className={styles.smallDanger} onClick={() => onCancelInput(i)} disabled={pending}>
+                            취소
+                          </button>
+                        </span>
+                      </span>
+                    </li>
+                  ),
+                )}
+              </ol>
             )}
-          </ol>
-        )}
-        <p className={styles.help}>본인이 입력한 건만 정정·취소할 수 있습니다. 다른 검수자 입력은 합계에 함께 들어갑니다.</p>
-      </section>
+          <p className={styles.help}>본인이 입력한 건만 정정·취소할 수 있습니다.</p>
+        </div>
+      </details>
 
       <div className={styles.bottomBar}>
-        {(todo.length > 0 || attention.length > 0) && (
-          <p className={styles.barNote}>
-            {todo.length > 0 && `미입력 ${todo.length}개`}
-            {todo.length > 0 && attention.length > 0 && " · "}
-            {attention.length > 0 && `확인 필요 ${attention.length}개`}
-          </p>
-        )}
-        <button type="button" className={styles.blackPill} onClick={() => start(async () => (setConflict(null), setError(null), await reload(), setFinishing(true)))} disabled={pending}>
+        {/* 미입력 개수는 표시하지 않는다 — 확정할 때 경고창으로 묻는다 (2026-11-06 Sol) */}
+        {attention.length > 0 && <p className={styles.barNote}>확인 필요 {attention.length}개</p>}
+        {/* 1개 이상 검수했을 때만 (2026-11-06 Sol) */}
+        <button
+          type="button"
+          className={styles.blackPill}
+          onClick={() => start(async () => (setConflict(null), setError(null), await reload(), setFinishing(true)))}
+          disabled={pending || !anyEntered}
+        >
           검수 확정
         </button>
       </div>
@@ -546,7 +555,7 @@ function lineProblem(l: RcvLineView, reasons: ReasonOption[]): string | null {
   return null;
 }
 
-/** 품목별 합계 — 누르면 0 확인·사유·유통기한·로트·사진 */
+/** 품목별 합계 — 누르면 0 확인·사유·소비기한·로트·사진 */
 function RcvLines({
   view,
   reasons,
@@ -563,19 +572,15 @@ function RcvLines({
   const planned = view.lines.filter((l) => !l.mismatch);
   const entered = planned.filter((l) => l.state !== "todo").length;
   return (
-    <section className={styles.sheet}>
+    <section className={styles.flat}>
       <h2 className={styles.h2}>
         품목 <span className={styles.count}>{view.lines.length}</span>
-        <span className={styles.h2Sub}>
-          입력 {entered} / {planned.length}
+        {/* 입력 진행 강조 (2026-11-06 Sol) */}
+        <span className={`${styles.progressTag} ${planned.length > 0 && entered === planned.length ? styles.progressDone : ""}`}>
+          입력 <b className="mono">{entered}</b> / {planned.length}
         </span>
       </h2>
-      {planned.length > 0 && (
-        <span className={styles.bar2} aria-hidden="true">
-          <span style={{ width: `${(entered / planned.length) * 100}%` }} />
-        </span>
-      )}
-      <ul className={styles.rcvLines}>
+      <ul className={`${styles.rcvLines} ${styles.rcvFlat}`}>
         {view.lines.map((l) => (
           <RcvLineItem key={l.itemId} view={view} line={l} reasons={reasons} pending={pending} onDone={onDone} editable={editable && view.status === "WORKING"} />
         ))}
@@ -629,7 +634,7 @@ function RcvLineItem({
           </span>
           <span className={styles.lineQty}>
             <b className="mono">{qtyText}</b>
-            <Pill tone={problem && editable ? "red" : STATE_TONE[l.state]}>{problem && editable ? "확인 필요" : RCV_LINE_STATE_LABEL[l.state]}</Pill>
+            <span className={`${styles.stText} ${problem && editable ? styles.rst_problem : styles[`rst_${l.state}`]}`}>{problem && editable ? "확인 필요" : RCV_LINE_STATE_LABEL[l.state]}</span>
           </span>
         </summary>
         <div className={styles.rcvBody}>
@@ -680,7 +685,7 @@ function RcvLineItem({
             <div className={styles.btnRow}>
               {l.expiryManaged && (
                 <label className={styles.miniField}>
-                  <span>유통기한</span>
+                  <span>소비기한</span>
                   <input
                     type="date"
                     className={styles.field}

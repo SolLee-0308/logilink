@@ -7,6 +7,8 @@ import type { CenterOption } from "@/features/plans/types";
 export interface LoadLineView {
   itemId: number;
   itemCode: string;
+  /** 화주사 품목코드 — 상차담당 PDA는 이 코드를 먼저 보여 준다 (2026-11-06 Sol) */
+  itemClientCode: string | null;
   itemName: string;
   baseUnit: ItemUnit;
   /** 보여 줄 단위 — ASN 지시 단위, 없으면 처음 스캔한 단위 */
@@ -22,6 +24,7 @@ export interface LoadInputView {
   id: number;
   itemId: number;
   itemCode: string;
+  itemClientCode: string | null;
   itemName: string;
   unit: ItemUnit;
   addQty: number;
@@ -142,6 +145,7 @@ export interface ScanPreview {
   scan: string;
   itemId: number;
   itemCode: string;
+  itemClientCode: string | null;
   itemName: string;
   unit: ItemUnit;
   factor: number;

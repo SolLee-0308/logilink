@@ -165,19 +165,24 @@ export async function startUnorderedLoad(me: PlanActor, input: z.input<typeof un
 
 /* ═════════ 스캔 → 품목 찾기 ═════════ */
 
-export type Resolved = { itemId: number; itemCode: string; itemName: string; unit: ItemUnit; factor: number; baseUnit: ItemUnit; by: "barcode" | "code" };
+export type Resolved = { itemId: number; itemCode: string; itemClientCode: string | null; itemName: string; unit: ItemUnit; factor: number; baseUnit: ItemUnit; by: "barcode" | "code" };
 
-/** 바코드(단위별)로 먼저 찾고, 없으면 품목코드로 찾는다(기준 단위). 같은 화주사 품목만 */
+/** 바코드(단위별)로 먼저 찾고, 없으면 품목코드·화주사 품목코드로 찾는다(기준 단위). 같은 화주사 품목만 */
 export async function resolveScan(tx: Tx | typeof db, clientId: number, raw: string): Promise<Resolved | null> {
   const scan = normalizeScan(raw);
   if (!scan) return null;
   const bc = await tx.itemBarcode.findUnique({
     where: { clientId_barcode: { clientId, barcode: scan } },
-    include: { item: { select: { id: true, code: true, name: true, baseUnit: true } }, uom: { select: { qty: true } } },
+    include: { item: { select: { id: true, code: true, clientCode: true, name: true, baseUnit: true } }, uom: { select: { qty: true } } },
   });
-  if (bc) return { itemId: bc.item.id, itemCode: bc.item.code, itemName: bc.item.name, unit: bc.unit, factor: bc.uom.qty, baseUnit: bc.item.baseUnit, by: "barcode" };
-  const item = await tx.item.findFirst({ where: { clientId, code: { equals: scan, mode: "insensitive" } }, select: { id: true, code: true, name: true, baseUnit: true } });
-  if (item) return { itemId: item.id, itemCode: item.code, itemName: item.name, unit: item.baseUnit, factor: 1, baseUnit: item.baseUnit, by: "code" };
+  if (bc) return { itemId: bc.item.id, itemCode: bc.item.code, itemClientCode: bc.item.clientCode, itemName: bc.item.name, unit: bc.unit, factor: bc.uom.qty, baseUnit: bc.item.baseUnit, by: "barcode" };
+  // 품목코드(시스템 채번) 또는 화주사 품목코드 손 입력 (2026-11-06)
+  const item = await tx.item.findFirst({
+    where: { clientId, OR: [{ code: { equals: scan, mode: "insensitive" } }, { clientCode: { equals: scan, mode: "insensitive" } }] },
+    orderBy: { id: "asc" },
+    select: { id: true, code: true, clientCode: true, name: true, baseUnit: true },
+  });
+  if (item) return { itemId: item.id, itemCode: item.code, itemClientCode: item.clientCode, itemName: item.name, unit: item.baseUnit, factor: 1, baseUnit: item.baseUnit, by: "code" };
   return null;
 }
 
@@ -329,7 +334,7 @@ export async function correctLoadInput(me: PlanActor, input: { inputId: number; 
       const after = line.loadBaseQty - cur.baseQty + newBase;
       const warn = overWarning({ ordered: load.loadType === "ORDERED", orderBase: line.orderBaseQty, loadBase: line.loadBaseQty - cur.baseQty, addBase: newBase });
       if (warn && newBase > cur.baseQty && !input.confirm) {
-        const r: Resolved = { itemId: cur.itemId, itemCode: item.code, itemName: item.name, unit: cur.unit, factor, baseUnit: item.baseUnit, by: "barcode" };
+        const r: Resolved = { itemId: cur.itemId, itemCode: item.code, itemClientCode: null, itemName: item.name, unit: cur.unit, factor, baseUnit: item.baseUnit, by: "barcode" };
         const { showUnit, showFactor } = await showUnitOf(tx, load.asnId, line.orderBaseQty, r);
         return fail("CONFIRM", warningText(warn, r, line.orderBaseQty, after, showUnit, showFactor));
       }
