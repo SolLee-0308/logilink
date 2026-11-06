@@ -754,6 +754,17 @@
   box-sizing: border-box;
 }
 
+/* PDA 드롭다운 — 웹과 같은 화살표·오른쪽 여백 (2026-11-06 Sol 피드백) */
+select.field {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27 fill=%27none%27 stroke=%27%236B6B76%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M3 4.5l3 3 3-3%27/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+}
+
 .field::placeholder {
   color: var(--placeholder);
 }

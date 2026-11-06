@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Tabs } from "@/components/ui/Tabs";
+import { ModeSwitch } from "@/components/ui/ModeSwitch";
 import { ItemBulkScreen } from "./ItemBulkScreen";
 import { ItemForm } from "./ItemForm";
 import { ItemRequestForm } from "./ItemRequestForm";
@@ -29,7 +29,7 @@ function useModeTab(defaultMode: ItemNewMode) {
 }
 
 /**
- * 3PL 품목 등록 화면 (/master/items/new) — [단건 등록] / [엑셀 일괄 등록] 탭.
+ * 3PL 품목 등록 화면 (/master/items/new) — 화면 제목 줄 오른쪽 '입력 방법' 스위치: [한 품목씩] / [엑셀로 여러 품목].
  * 두 탭 모두 마운트해 두어 탭을 바꿔도 입력·검사 결과가 남는다. 탭은 주소(?mode=excel)에 남긴다.
  * 단건은 저장하면 그 품목이 선택된 목록으로, 엑셀은 그 화주사 목록으로 돌아간다.
  */
@@ -47,18 +47,25 @@ export function ItemNewScreen({
 
   return (
     <>
-      <SubHeader section="품목 관리" title="품목 등록" backHref="/master/items" storageKey={ITEM_LIST_KEY} rules={RULES.items} />
-      <Tabs
-        label="등록 방법"
-        value={mode}
-        onChange={change}
-        panelId="item-new-body"
-        items={[
-          { key: "single", label: "단건 등록" },
-          { key: "excel", label: "엑셀 일괄 등록" },
-        ]}
+      <SubHeader
+        section="품목 관리"
+        title="품목 등록"
+        backHref="/master/items"
+        storageKey={ITEM_LIST_KEY}
+        rules={RULES.items}
+        actions={
+          <ModeSwitch
+            label="입력 방법"
+            value={mode}
+            onChange={change}
+            items={[
+              { key: "single", label: "한 품목씩", icon: "pencil" },
+              { key: "excel", label: "엑셀로 여러 품목", icon: "sheet" },
+            ]}
+          />
+        }
       />
-      <div id="item-new-body" role="tabpanel" aria-labelledby={`tab-${mode}`} className={styles.tabBody}>
+      <div className={styles.tabBody}>
         <div hidden={mode !== "single"}>
           <ItemForm
             row={null}
@@ -98,7 +105,7 @@ export function ItemEditScreen({ row }: { row: ItemRow }) {
 }
 
 /**
- * 화주사 품목 등록 요청 화면 (/master/item-requests/new) — [단건 요청] / [엑셀 일괄 요청] 탭.
+ * 화주사 품목 등록 요청 화면 (/master/item-requests/new) — 화면 제목 줄 오른쪽 '입력 방법' 스위치: [한 품목씩] / [엑셀로 여러 품목].
  * 보내면 요청 목록(등록대기)으로 돌아간다.
  */
 export function ItemRequestNewScreen({ clientName, defaultMode }: { clientName: string; defaultMode: ItemNewMode }) {
@@ -106,18 +113,26 @@ export function ItemRequestNewScreen({ clientName, defaultMode }: { clientName: 
   const [mode, change] = useModeTab(defaultMode);
   return (
     <>
-      <SubHeader section="품목 등록 요청" title="등록 요청" backHref="/master/item-requests" storageKey={REQ_LIST_KEY} rules={RULES.itemRequests} />
-      <Tabs
-        label="요청 방법"
-        value={mode}
-        onChange={change}
-        panelId="req-new-body"
-        items={[
-          { key: "single", label: "단건 요청" },
-          { key: "excel", label: "엑셀 일괄 요청" },
-        ]}
+      {/* 2026-11-06 시안: 별도 탭 영역 없이 화면 제목 줄 오른쪽에 입력 방법 전환 스위치 — 두 방법 모두 같은 자리 */}
+      <SubHeader
+        section="품목 등록 요청"
+        title="등록 요청"
+        backHref="/master/item-requests"
+        storageKey={REQ_LIST_KEY}
+        rules={RULES.itemRequests}
+        actions={
+          <ModeSwitch
+            label="입력 방법"
+            value={mode}
+            onChange={change}
+            items={[
+              { key: "single", label: "한 품목씩", icon: "pencil" },
+              { key: "excel", label: "엑셀로 여러 품목", icon: "sheet" },
+            ]}
+          />
+        }
       />
-      <div id="req-new-body" role="tabpanel" aria-labelledby={`tab-${mode}`} className={styles.tabBody}>
+      <div className={styles.tabBody}>
         <div hidden={mode !== "single"}>
           <ItemRequestForm clientName={clientName} onCancel={() => router.push(reqListUrl())} onSaved={() => router.push(reqListUrl("wait"))} />
         </div>

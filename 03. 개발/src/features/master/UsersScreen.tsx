@@ -11,7 +11,7 @@ import { NoteBox } from "@/components/ui/NoteBox";
 import { Modal } from "@/components/ui/Overlay";
 import { KeyValue, ListToolbar, PanelSection, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
 import { ORG_LABEL, ROLE_META, USER_ROLES, rolesLabel, sortRoles, type UserRole } from "@/domain/master";
-import { fmtDateTime, fmtShortDateTime, includesText } from "@/lib/format";
+import { fmtDateTime, includesText } from "@/lib/format";
 import { resetUserPassword, saveUser, unlockUser } from "@/server/master/actions";
 import { loadUser } from "@/server/master/loaders";
 import { EditModal, Full, FormSection, ViewSection, useEditTarget, type ViewItem } from "./record";
@@ -97,16 +97,6 @@ export function UsersScreen({
         <>
           {r.clientName ?? r.centerName}
           <CellSub>{ORG_LABEL[orgOf(r.roles) ?? "TPL"]}</CellSub>
-        </>
-      ),
-    },
-    {
-      key: "updated",
-      header: "최종 변경",
-      render: (r) => (
-        <>
-          <span className="mono">{fmtShortDateTime(r.updatedAt)}</span>
-          <CellSub>{r.updatedBy}</CellSub>
         </>
       ),
     },

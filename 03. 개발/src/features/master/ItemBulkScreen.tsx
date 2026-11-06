@@ -56,7 +56,7 @@ export function ItemBulkScreen({
   defaultClientId: string;
   /** 화주사 계정의 화주사명 */
   clientName: string;
-  /** 품목 등록 화면의 [엑셀 일괄 등록] 탭 안에 들어갈 때 — 머리(SubHeader)는 등록 화면이 그린다 */
+  /** 품목 등록·등록 요청 화면의 [엑셀로 여러 품목] 안에 들어갈 때 — 머리(SubHeader)는 등록 화면이 그린다 */
   embedded?: boolean;
 }) {
   const router = useRouter();

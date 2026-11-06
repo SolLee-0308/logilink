@@ -200,7 +200,7 @@ export function ItemsScreen({
         title={title}
         count={rows.length}
         rules={RULES.items}
-        // 단건·엑셀 일괄 등록은 등록 화면의 탭에서 고른다
+        // 단건·엑셀 일괄 등록은 등록 화면의 '입력 방법' 스위치에서 고른다
         actions={canEdit ? <CreateButton href={`/master/items/new${clientQuery}`}>등록</CreateButton> : undefined}
       />
       <FilterBar>

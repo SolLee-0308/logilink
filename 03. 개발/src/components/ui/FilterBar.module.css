@@ -26,8 +26,9 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
-  background: var(--bg);
-  border: 1px solid var(--line-2);
+  /* 연회색 묶음 + 흰 선택 칸 (2026-11-06 Sol 확정 — 검정 선택이 너무 진함) */
+  background: #f0f0f3;
+  border: 1px solid var(--line);
   border-radius: var(--r-control);
   padding: 3px;
 }
@@ -46,8 +47,10 @@
 }
 
 .chips button[aria-pressed="true"] {
-  background: var(--ink);
-  color: #fff;
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(22, 22, 22, 0.12), 0 0 0 1px rgba(22, 22, 22, 0.04);
 }
 
 .chk {

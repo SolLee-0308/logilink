@@ -8,7 +8,7 @@ import { NoteBox } from "@/components/ui/NoteBox";
 import { PanelTitle, SidePanel } from "@/components/ui/SplitView";
 import { useToast } from "@/components/ui/Toast";
 import { useUnsavedChanges, useUnsavedGuard } from "@/components/ui/UnsavedGuard";
-import { MSG, addressErrors, formatBizNo, formatPhone, isValidBizNo, isValidEmail, isValidPhone, textError } from "@/domain/validators";
+import { MSG, addressErrors, formatBizNo, formatPhone, bizNoError, isValidEmail, isValidPhone, textError } from "@/domain/validators";
 import { saveCompany } from "@/server/master/actions";
 import { loadCompany } from "@/server/master/loaders";
 import { LastChanged } from "./history";
@@ -47,7 +47,8 @@ function validate(f: Form) {
   const e: Record<string, string> = {};
   const name = textError(f.name, "회사명", 50);
   if (name) e.name = name;
-  if (!isValidBizNo(f.bizNo)) e.bizNo = MSG.bizNo;
+  const bizErr = bizNoError(f.bizNo);
+  if (bizErr) e.bizNo = bizErr;
   const ceo = textError(f.ceoName, "대표자명", 20);
   if (ceo) e.ceoName = ceo;
   Object.assign(e, addressErrors(f));

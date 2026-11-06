@@ -122,7 +122,13 @@ export function useAction() {
   const [error, setError] = useState<string | null>(null);
 
   /** onConflict가 있으면(편집 모달) 그쪽에서 최신 내용을 다시 불러오고, 없으면 화면 전체를 새로 그린다 */
-  function run<T>(fn: () => Promise<ActionResult<T>>, onOk?: (data: T | undefined) => void, onConflict?: () => void) {
+  /** onConfirm이 있으면 서버의 CONFIRM(경고 후 한 번 더 확인) 응답을 오류로 보이지 않고 그쪽으로 넘긴다 */
+  function run<T>(
+    fn: () => Promise<ActionResult<T>>,
+    onOk?: (data: T | undefined) => void,
+    onConflict?: () => void,
+    onConfirm?: (message: string) => void,
+  ) {
     start(async () => {
       const r = await fn();
       if (r.ok) {
@@ -130,6 +136,12 @@ export function useAction() {
         setError(null);
         toast.show(r.message);
         onOk?.(r.data);
+        return;
+      }
+      if (r.code === "CONFIRM" && onConfirm) {
+        setFieldErrors({});
+        setError(null);
+        onConfirm(r.error);
         return;
       }
       if (r.code === "CONFLICT") {

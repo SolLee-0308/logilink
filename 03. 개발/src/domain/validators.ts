@@ -5,6 +5,8 @@
 
 export const MSG = {
   bizNo: "올바른 사업자등록번호가 아닙니다",
+  bizNoLen: "사업자등록번호 숫자 10자리를 입력하세요",
+  bizNoCheck: "검증 숫자가 맞지 않습니다. 사업자등록증의 번호를 다시 확인하세요",
   phone: "전화번호 형식을 확인하세요",
   email: "이메일 형식을 확인하세요",
   addrSearch: "주소를 검색해 선택하세요",
@@ -33,6 +35,12 @@ export function isValidBizNo(v: string) {
   for (let i = 0; i < 9; i++) sum += n[i] * w[i];
   sum += Math.floor((n[8] * 5) / 10);
   return (10 - (sum % 10)) % 10 === n[9];
+}
+
+/** 사업자등록번호 오류 문구 — 자릿수 부족과 검증 숫자 불일치를 나눠 안내. 정상이면 null */
+export function bizNoError(v: string): string | null {
+  if (digits(v).length !== 10) return MSG.bizNoLen;
+  return isValidBizNo(v) ? null : MSG.bizNoCheck;
 }
 
 /* ───── 전화번호 ───── */

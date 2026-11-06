@@ -6,7 +6,7 @@ import { db } from "@/server/db";
 import { getActor, type SessionUser } from "@/server/session";
 import { hashPassword, tempPassword } from "@/server/auth/password";
 import { can, canReviewItemRequests, isShipperRole, type Op, type Resource } from "@/domain/permissions";
-import { MSG, addressErrors, formatBizNo, formatPhone, isValidBizNo, isValidEmail, isValidPhone, isValidTime, textError } from "@/domain/validators";
+import { MSG, addressErrors, formatBizNo, formatPhone, bizNoError, isValidEmail, isValidPhone, isValidTime, textError } from "@/domain/validators";
 import { fail, type ActionResult } from "@/server/action-result";
 import { BARCODE_PATTERN, ITEM_REQ_REJECT_GROUP, ITEM_UNITS, ROLE_META, STORAGE_TEMPS, USER_ROLES, isManagerCandidate, normalizeAlias, sortRoles } from "@/domain/master";
 import type { Prisma } from "@/generated/prisma/client";
@@ -127,6 +127,24 @@ interface ClientInput {
   contractStartDt: string;
   contractEndDt: string;
   isActive: boolean;
+  /** 다른 화주사와 사업자등록번호가 같다는 경고를 보고 [그래도 저장]을 눌렀음 */
+  confirmDupBizNo?: boolean;
+}
+
+/**
+ * 사업자등록번호 중복 — 같은 법인이 브랜드·사업부별로 계약할 수 있어 허용하되(11-03 결정),
+ * 입력 실수를 막기 위해 저장 전에 한 번 확인받는다 (2026-11-06 Sol 결정).
+ * 새로 등록하거나 번호를 바꿀 때만 묻는다.
+ */
+async function dupBizNoWarning(tx: Tx, bizNo: string, selfId?: number) {
+  const same = await tx.client.findMany({
+    where: { bizNo, ...(selfId ? { id: { not: selfId } } : {}) },
+    select: { code: true, name: true },
+    orderBy: { code: "asc" },
+  });
+  if (!same.length) return null;
+  const names = same.map((c) => `${c.name}(${c.code})`).join(", ");
+  return `${names}와(과) 사업자등록번호가 같습니다. 같은 법인의 다른 계약(브랜드·사업부)이 맞으면 [그래도 저장]을 누르세요. 다른 회사라면 번호를 다시 확인하세요.`;
 }
 
 const isYmd = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
@@ -138,13 +156,14 @@ function clientErrors(v: ClientInput, isNew: boolean) {
   if (isNew && !CLIENT_PREFIX_PATTERN.test((v.prefix ?? "").trim().toUpperCase())) e.prefix = "영문 대문자 2자를 입력하세요";
   const name = textError(v.name, "화주사명", 50);
   if (name) e.name = name;
-  if (!isValidBizNo(v.bizNo)) e.bizNo = MSG.bizNo;
+  const bizErr = bizNoError(v.bizNo);
+  if (bizErr) e.bizNo = bizErr;
   const ceo = textError(v.ceoName, "대표자명", 20);
   if (ceo) e.ceoName = ceo;
   Object.assign(e, addressErrors(v));
   if (v.tel.trim() && !isValidPhone(v.tel)) e.tel = MSG.phone;
   if (v.email.trim() && !isValidEmail(v.email.trim())) e.email = MSG.email;
-  const cn = textError(v.contactName, "화주사 담당자명", 20);
+  const cn = textError(v.contactName, "업무 연락 담당자", 20);
   if (cn) e.contactName = cn;
   if (!isValidPhone(v.contactTel)) e.contactTel = v.contactTel.trim() ? MSG.phone : "담당자 전화를 입력하세요";
   if (v.contactEmail.trim() && !isValidEmail(v.contactEmail.trim())) e.contactEmail = MSG.email;
@@ -213,6 +232,10 @@ export async function saveClient(input: ClientInput): Promise<ActionResult<{ id:
         const r = await db.$transaction(async (tx) => {
           const refs = await checkRefs(tx, []);
           if (!refs.ok) return fail("VALIDATION", "입력 내용을 확인하세요.", refs.errors);
+          if (!input.confirmDupBizNo) {
+            const warn = await dupBizNoWarning(tx, v.bizNo);
+            if (warn) return fail("CONFIRM", warn);
+          }
           const used = await tx.client.findMany({ where: { code: { startsWith: prefix } }, select: { code: true } });
           const serial = nextClientSerial(prefix, used.map((u) => u.code));
           if (serial === null) return fail("VALIDATION", "입력 내용을 확인하세요.", { prefix: PREFIX_EXHAUSTED_MSG });
@@ -240,6 +263,10 @@ export async function saveClient(input: ClientInput): Promise<ActionResult<{ id:
       const before = cur.centers.map((c) => c.centerCode).sort();
       const refs = await checkRefs(tx, before);
       if (!refs.ok) return fail("VALIDATION", "입력 내용을 확인하세요.", refs.errors);
+      if (v.bizNo !== cur.bizNo && !input.confirmDupBizNo) {
+        const warn = await dupBizNoWarning(tx, v.bizNo, cur.id);
+        if (warn) return fail("CONFIRM", warn);
+      }
 
       // 미종결 전표가 있으면 사용 안 함 전환·이용 센터 제외를 막는다
       if (cur.isActive && !v.isActive) {
@@ -1087,7 +1114,8 @@ function companyErrors(v: CompanyInput) {
   const e: Record<string, string> = {};
   const name = textError(v.name, "회사명", 50);
   if (name) e.name = name;
-  if (!isValidBizNo(v.bizNo)) e.bizNo = MSG.bizNo;
+  const bizErr = bizNoError(v.bizNo);
+  if (bizErr) e.bizNo = bizErr;
   const ceo = textError(v.ceoName, "대표자명", 20);
   if (ceo) e.ceoName = ceo;
   Object.assign(e, addressErrors(v));

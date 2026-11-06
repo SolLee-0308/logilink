@@ -128,7 +128,7 @@ export function ItemForm({
   return (
     <EditCard
       title={row ? `품목 수정 · ${row.code} ${row.name}` : "품목 등록"}
-      description={row ? undefined : "화주사와 품목코드는 등록 후 바꿀 수 없습니다. 여러 품목은 [엑셀 일괄 등록]으로 한 번에 넣을 수 있습니다."}
+      description={row ? undefined : "화주사와 품목코드는 등록 후 바꿀 수 없습니다. 여러 품목은 화면 오른쪽 위 [엑셀로 여러 품목]으로 한 번에 넣을 수 있습니다."}
       dirty={dirty}
       pending={act.pending}
       error={act.error}
