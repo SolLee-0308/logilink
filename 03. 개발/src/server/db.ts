@@ -13,7 +13,13 @@ function appConnectionString() {
 }
 
 function create() {
-  const adapter = new PrismaPg({ connectionString: appConnectionString(), max: 5 });
+  // 시험용 로컬 DB(prisma dev)는 동시 연결을 견디지 못해 .env.testdb에서 DB_POOL_MAX=1로 낮춘다. 운영은 5.
+  // 쉬는 연결을 오래 잡고 있으면 다른 프로그램(점검 스크립트)의 연결과 부딪혀 DB_IDLE_MS로 짧게 놓는다(시험 DB만).
+  const adapter = new PrismaPg({
+    connectionString: appConnectionString(),
+    max: Number(process.env.DB_POOL_MAX) || 5,
+    ...(process.env.DB_IDLE_MS ? { idleTimeoutMillis: Number(process.env.DB_IDLE_MS) } : {}),
+  });
   return new PrismaClient({ adapter });
 }
 
