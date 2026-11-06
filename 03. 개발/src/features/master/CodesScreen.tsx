@@ -3,12 +3,11 @@
 import { useMemo, useState } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
 import { Button, CreateButton } from "@/components/ui/Button";
-import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
+import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input } from "@/components/ui/Form";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
-import { fmtShortDateTime } from "@/lib/format";
 import { saveCommonCode } from "@/server/master/actions";
 import { loadCommonCode } from "@/server/master/loaders";
 import { EditModal, Full, FormSection, ViewSection, useEditTarget } from "./record";
@@ -44,16 +43,6 @@ export function CodesScreen({
     { key: "name", header: "코드명", wrap: true, render: (r) => r.name },
     { key: "order", header: "순서", align: "right", render: (r) => <span className="mono">{r.sortOrder}</span> },
     { key: "text", header: "상세 내용", render: (r) => (r.requiresText ? "필수" : "선택") },
-    {
-      key: "updated",
-      header: "최종 변경",
-      render: (r) => (
-        <>
-          <span className="mono">{fmtShortDateTime(r.updatedAt)}</span>
-          <CellSub>{r.updatedBy}</CellSub>
-        </>
-      ),
-    },
     { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 

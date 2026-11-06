@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { NoteBox } from "@/components/ui/NoteBox";
-import { Tabs } from "@/components/ui/Tabs";
+import { ModeSwitch } from "@/components/ui/ModeSwitch";
 import { useToast } from "@/components/ui/Toast";
 import { AI_MAX_IMAGES, PLAN_MAX_LINES, type CatalogItem } from "@/domain/plan-entry";
 import type { PlanInputMethod } from "@/domain/plan-status";
@@ -21,9 +21,9 @@ export type EntryMode = "direct" | "excel" | "ai";
 const METHOD: Record<EntryMode, PlanInputMethod> = { direct: "DIRECT", excel: "EXCEL", ai: "AI_IMAGE" };
 
 /**
- * 입고예정 등록 (/plans/entry/new) — [직접 입력] / [엑셀 업로드] / [이미지 AI 판독] 탭.
+ * 입고예정 등록 (/plans/entry/new) — 화면 제목 줄 오른쪽 '입력 방법' 스위치: [직접 입력] / [엑셀 업로드] / [이미지 AI 판독].
  * 엑셀·판독은 파일을 올리면 초안 라인이 편집기에 채워지고, 확인 필요 줄을 고친 뒤 저장한다.
- * 세 탭은 모두 마운트해 두어 탭을 바꿔도 입력이 남는다. 탭은 주소(?mode=)에 남긴다.
+ * 세 방법은 모두 마운트해 두어 방법을 바꿔도 입력이 남는다. 고른 방법은 주소(?mode=)에 남긴다.
  */
 export function EntryNewScreen({ options, defaultMode }: { options: EntryOptions; defaultMode: EntryMode }) {
   const router = useRouter();
@@ -42,19 +42,27 @@ export function EntryNewScreen({ options, defaultMode }: { options: EntryOptions
 
   return (
     <>
-      <SubHeader group={["입고 계획"]} section="입고예정 등록" title="새 입고예정" backHref="/plans/entry" storageKey={ENTRY_LIST_KEY} rules={ENTRY_RULES} />
-      <Tabs
-        label="등록 방식"
-        value={mode}
-        onChange={change}
-        panelId="entry-body"
-        items={[
-          { key: "direct", label: "직접 입력" },
-          { key: "excel", label: "엑셀 업로드" },
-          { key: "ai", label: "이미지 AI 판독" },
-        ]}
+      <SubHeader
+        group={["입고 계획"]}
+        section="입고예정 등록"
+        title="새 입고예정"
+        backHref="/plans/entry"
+        storageKey={ENTRY_LIST_KEY}
+        rules={ENTRY_RULES}
+        actions={
+          <ModeSwitch
+            label="입력 방법"
+            value={mode}
+            onChange={change}
+            items={[
+              { key: "direct", label: "직접 입력", icon: "pencil" },
+              { key: "excel", label: "엑셀 업로드", icon: "sheet" },
+              { key: "ai", label: "이미지 AI 판독", icon: "image" },
+            ]}
+          />
+        }
       />
-      <div id="entry-body" role="tabpanel" aria-labelledby={`tab-${mode}`} className={styles.body}>
+      <div className={styles.body}>
         <div hidden={mode !== "direct"}>
           <PlanEditor
             options={options}

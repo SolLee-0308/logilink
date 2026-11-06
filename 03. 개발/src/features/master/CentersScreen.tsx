@@ -4,13 +4,12 @@ import { useMemo, useState } from "react";
 import { AddressInput } from "@/components/ui/AddressInput";
 import { ActiveBadge } from "@/components/ui/Badges";
 import { Button, CreateButton } from "@/components/ui/Button";
-import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
+import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
 import { Modal } from "@/components/ui/Overlay";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
 import { MSG, addressErrors, formatPhone, isValidPhone, isValidTime, textError } from "@/domain/validators";
-import { fmtShortDateTime } from "@/lib/format";
 import { saveCenter } from "@/server/master/actions";
 import { loadCenter } from "@/server/master/loaders";
 import { LastChanged } from "./history";
@@ -48,16 +47,6 @@ export function CentersScreen({ rows, candidates, canEdit }: { rows: CenterRow[]
     { key: "tel", header: "입고 문의 전화", render: (r) => <span className="mono">{r.inboundTel}</span> },
     { key: "manager", header: "센터 담당자", render: (r) => r.managerName ?? <span className="muted">미지정</span> },
     { key: "close", header: "일마감 예정 시각", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
-    {
-      key: "updated",
-      header: "최종 변경",
-      render: (r) => (
-        <>
-          <span className="mono">{fmtShortDateTime(r.updatedAt)}</span>
-          <CellSub>{r.updatedBy}</CellSub>
-        </>
-      ),
-    },
     { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 

@@ -5,14 +5,15 @@ import { useEffect, useMemo, useState } from "react";
 import { AddressInput } from "@/components/ui/AddressInput";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
 import { Button, CreateButton } from "@/components/ui/Button";
-import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
+import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
+import { Modal } from "@/components/ui/Overlay";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
 import { suggestClientPrefix } from "@/domain/client-code";
 import { UNCLOSED_KINDS, UNCLOSED_LABEL, unclosedTotal } from "@/domain/unclosed";
-import { MSG, addressErrors, formatBizNo, formatPhone, isValidBizNo, isValidEmail, isValidPhone, textError } from "@/domain/validators";
-import { fmtShortDateTime, includesText } from "@/lib/format";
+import { MSG, addressErrors, formatBizNo, formatPhone, bizNoError, isValidEmail, isValidPhone, textError } from "@/domain/validators";
+import { includesText } from "@/lib/format";
 import { saveClient } from "@/server/master/actions";
 import { loadClient, previewClientCode } from "@/server/master/loaders";
 import { LastChanged } from "./history";
@@ -32,7 +33,7 @@ const LABELS = {
   addr2: "상세주소",
   tel: "대표 전화",
   email: "이메일",
-  contactName: "화주사 담당자명",
+  contactName: "업무 연락 담당자",
   contactTel: "담당자 전화",
   contactEmail: "담당자 이메일",
   manager: "3PL 담당 운영자",
@@ -78,16 +79,6 @@ export function ClientsScreen({
     { key: "manager", header: "3PL 담당", render: (r) => r.managerName },
     { key: "items", header: "품목", align: "right", render: (r) => <><span className="mono">{r.itemCount}</span>개</> },
     { key: "users", header: "사용자", align: "right", render: (r) => <><span className="mono">{r.userCount}</span>명</> },
-    {
-      key: "updated",
-      header: "최종 변경",
-      render: (r) => (
-        <>
-          <span className="mono">{fmtShortDateTime(r.updatedAt)}</span>
-          <CellSub>{r.updatedBy}</CellSub>
-        </>
-      ),
-    },
     { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
@@ -221,7 +212,7 @@ function ClientView({ row, canEdit, onEdit, opening }: { row: ClientRow | null; 
       <ViewSection
         title="연락처"
         items={[
-          ["담당자", row.contactName],
+          ["업무 연락 담당자", row.contactName],
           ["담당자 전화", <span key="t" className="mono">{row.contactTel}</span>],
           ["담당자 이메일", row.contactEmail],
           ["3PL 담당", row.managerName],
@@ -290,13 +281,14 @@ function validate(f: Form, isNew: boolean) {
   const name = textError(f.name, "화주사명", 50);
   if (name) e.name = name;
   if (isNew && !/^[A-Z]{2}$/.test(f.prefix)) e.prefix = "영문 대문자 2자를 입력하세요";
-  if (!isValidBizNo(f.bizNo)) e.bizNo = MSG.bizNo;
+  const bizErr = bizNoError(f.bizNo);
+  if (bizErr) e.bizNo = bizErr;
   const ceo = textError(f.ceoName, "대표자명", 20);
   if (ceo) e.ceoName = ceo;
   Object.assign(e, addressErrors(f));
   if (f.tel.trim() && !isValidPhone(f.tel)) e.tel = MSG.phone;
   if (f.email.trim() && !isValidEmail(f.email.trim())) e.email = MSG.email;
-  const cn = textError(f.contactName, "화주사 담당자명", 20);
+  const cn = textError(f.contactName, "업무 연락 담당자", 20);
   if (cn) e.contactName = cn;
   if (!isValidPhone(f.contactTel)) e.contactTel = f.contactTel.trim() ? MSG.phone : "담당자 전화를 입력하세요";
   if (f.contactEmail.trim() && !isValidEmail(f.contactEmail.trim())) e.contactEmail = MSG.email;
@@ -368,10 +360,14 @@ function ClientEditModal({
     setF({ ...f, centerCodes, managerUserId: keepManager ? f.managerUserId : "" });
   }
 
-  function submit() {
+  /** 사업자등록번호가 다른 화주사와 같을 때 서버가 보낸 확인 문구 (있으면 확인창을 띄움) */
+  const [dupBizMsg, setDupBizMsg] = useState<string | null>(null);
+
+  function submit(confirmDupBizNo = false) {
     const errs = validate(f, isNew);
     if (preview.error && isNew) errs.prefix = preview.error;
     if (Object.keys(errs).length) return act.invalid(errs);
+    setDupBizMsg(null);
     act.run(
       () =>
         saveClient({
@@ -394,9 +390,11 @@ function ClientEditModal({
           contractStartDt: f.contractStartDt,
           contractEndDt: f.contractEndDt,
           isActive: f.isActive,
+          confirmDupBizNo,
         }),
       (d) => d && onSaved(d.id),
       row ? () => onConflict(row.id) : undefined,
+      setDupBizMsg,
     );
   }
 
@@ -411,7 +409,7 @@ function ClientEditModal({
       pending={act.pending}
       error={act.error}
       onClose={onClose}
-      onSubmit={submit}
+      onSubmit={() => submit()}
     >
       <FormSection title="기본 정보">
         <FormField label="화주사명" htmlFor="cl-name" required error={act.fieldErrors.name}>
@@ -488,7 +486,7 @@ function ClientEditModal({
       </FormSection>
 
       <FormSection title="연락처">
-        <FormField label="화주사 담당자명" htmlFor="cl-cname" required hint="시스템 사용자와 별도로 입력합니다." error={act.fieldErrors.contactName}>
+        <FormField label="업무 연락 담당자" htmlFor="cl-cname" required hint="계약·업무 연락을 받는 화주사 쪽 담당자입니다. 시스템 로그인 계정과는 관계없습니다." error={act.fieldErrors.contactName}>
           <Input id="cl-cname" value={f.contactName} onChange={set("contactName")} maxLength={20} />
         </FormField>
         <FormField label="담당자 전화" htmlFor="cl-ctel" required error={act.fieldErrors.contactTel}>
@@ -553,6 +551,24 @@ function ClientEditModal({
           </Full>
         )}
       </FormSection>
+
+      <Modal
+        open={dupBizMsg !== null}
+        onClose={() => setDupBizMsg(null)}
+        title="사업자등록번호가 같은 화주사가 있습니다"
+        footer={
+          <>
+            <Button onClick={() => setDupBizMsg(null)} disabled={act.pending}>
+              번호 다시 확인
+            </Button>
+            <Button variant="primary" onClick={() => submit(true)} disabled={act.pending}>
+              {act.pending ? "저장 중…" : "그래도 저장"}
+            </Button>
+          </>
+        }
+      >
+        <p>{dupBizMsg}</p>
+      </Modal>
     </EditModal>
   );
 }

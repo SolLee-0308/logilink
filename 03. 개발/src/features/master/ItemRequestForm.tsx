@@ -68,7 +68,7 @@ export function ItemRequestForm({
   return (
     <EditCard
       title={row ? `품목 등록 재요청 · ${row.requestNo}` : "품목 등록 요청"}
-      description={`${clientName} · 3PL이 검토한 뒤 품목으로 등록합니다. 여러 품목은 [엑셀 일괄 요청] 탭에서 한 번에 보낼 수 있습니다.`}
+      description={`${clientName} · 3PL이 검토한 뒤 품목으로 등록합니다. 여러 품목은 화면 오른쪽 위 [엑셀로 여러 품목]으로 한 번에 보낼 수 있습니다.`}
       dirty={dirty}
       pending={act.pending}
       error={act.error}

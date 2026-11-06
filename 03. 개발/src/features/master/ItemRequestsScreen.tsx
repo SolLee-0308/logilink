@@ -171,7 +171,7 @@ export function ItemRequestsScreen({
         title="품목 등록 요청"
         count={counts.wait}
         rules={RULES.itemRequests}
-        // 단건·엑셀 일괄 요청은 등록 요청 화면의 탭에서 고른다
+        // 단건·엑셀 일괄 요청은 등록 요청 화면의 '입력 방법' 스위치에서 고른다
         actions={!canReview ? <CreateButton href="/master/item-requests/new">등록 요청</CreateButton> : undefined}
       />
       <FilterBar>
