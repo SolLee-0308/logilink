@@ -1,0 +1,54 @@
+/* 상태 배지 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  border-radius: var(--r-pill);
+  padding: 2px 10px;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.wait { background: var(--st-wait-bg); color: var(--st-wait-fg); }
+.rej { background: var(--st-rej-bg); color: var(--st-rej-fg); }
+.ok { background: var(--st-ok-bg); color: var(--st-ok-fg); }
+.part { background: var(--st-part-bg); color: var(--st-part-fg); }
+.done { background: var(--st-done-bg); color: var(--st-done-fg); }
+.close { background: var(--st-close-bg); color: var(--st-close-fg); }
+.cancel { background: var(--st-cancel-bg); color: var(--st-cancel-fg); }
+
+/* 태그 */
+.tag {
+  display: inline-block;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  border-radius: var(--r-tag);
+  padding: 1px 6px;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.t-accent { background: var(--violet-50); color: var(--violet-700); }
+.t-warn { background: var(--warn-bg); color: var(--warn-fg); }
+.t-danger { background: var(--st-rej-bg); color: var(--st-rej-fg); }
+.t-neutral { background: var(--st-close-bg); color: var(--st-close-fg); }
+
+/* 건수 배지 */
+.count {
+  background: var(--violet-50);
+  color: var(--violet-700);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  border-radius: var(--r-tag);
+  padding: 1px 7px;
+}

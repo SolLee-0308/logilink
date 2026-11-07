@@ -1,0 +1,25 @@
+/* 하위 화면 [← 목록] — 경로 줄 왼쪽의 작은 버튼 */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--fg);
+  text-decoration: none;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  background: var(--bg);
+  padding: 3px 10px;
+  width: fit-content;
+  white-space: nowrap;
+}
+
+.back:hover {
+  border-color: var(--line-hover);
+  background: var(--surface);
+}
+.back:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}

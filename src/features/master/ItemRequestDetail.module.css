@@ -1,0 +1,100 @@
+/* 품목 등록 요청 상세 — 왼쪽 요청 내용·이력 / 오른쪽 등록 입력·처리 결과 */
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+}
+
+.queue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (max-width: 1080px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.card {
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cardHead {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--card-line);
+  background: var(--card-head);
+  border-radius: calc(var(--r-panel) - 1px) calc(var(--r-panel) - 1px) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardHead h2 {
+  font-size: var(--fs-16);
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardHead p {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+
+.cardBody {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cardBody > p {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+
+.cardFoot {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--card-line);
+  background: var(--bg);
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 22px;
+}

@@ -1,0 +1,320 @@
+/* 입고예정 조회 — 요약 칸은 ASN·상차 현황과 같은 모양 */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 220px;
+  padding: 12px 16px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tile:hover {
+  border-color: var(--ink);
+}
+
+.tile:focus-visible {
+  outline: 2px solid var(--violet-600);
+  outline-offset: 2px;
+}
+
+.tileOn {
+  border-color: var(--violet-600);
+  box-shadow: inset 0 0 0 1px var(--violet-600);
+}
+
+.tileLabel {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.tileValue {
+  font-size: var(--fs-13);
+}
+
+.tileValue b {
+  font-size: 22px;
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.tileSub {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.tileWarn .tileValue b {
+  color: var(--st-rej-fg);
+}
+
+.reset {
+  align-self: center;
+  border: 0;
+  background: none;
+  color: var(--violet-600);
+  font-size: var(--fs-13);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.q {
+  width: 200px;
+}
+
+.item {
+  width: 200px;
+}
+
+.cap {
+  font-size: var(--fs-12);
+  color: var(--warn-fg);
+}
+
+/* 넓은 표가 화면 폭을 밀어내지 않게 — 표는 .scroll 안에서 가로 스크롤 */
+.panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.loading {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+/* ── 목록 표 (DataTable과 같은 모양 + 펼침 행) ── */
+.scroll {
+  /* 머리 칸의 화면 낭독용 글자(sr-only, absolute)가 표 밖으로 페이지 폭을 늘리지 않게 */
+  position: relative;
+  overflow-x: auto;
+  border-radius: var(--r-group);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.table > thead th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--th-fg);
+  background: var(--surface);
+  padding: 9px 10px;
+  white-space: nowrap;
+}
+
+.table > thead th:first-child {
+  border-radius: var(--r-control) 0 0 var(--r-control);
+}
+
+.table > thead th:last-child {
+  border-radius: 0 var(--r-control) var(--r-control) 0;
+}
+
+.row > td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--line-row);
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.row:hover > td {
+  background: var(--row-hover);
+}
+
+.rowOpen > td,
+.rowOpen:hover > td {
+  background: var(--violet-50);
+  border-bottom-color: transparent;
+}
+
+.rowOpen > td:first-child {
+  box-shadow: inset 3px 0 0 var(--violet-600);
+}
+
+/* 경과 기준 초과 — 왼쪽 빨간 선 */
+.rowOver > td:first-child {
+  box-shadow: inset 3px 0 0 var(--st-rej-fg);
+}
+
+.tCol {
+  width: 36px;
+  padding-right: 0 !important;
+}
+
+.toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.sub {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--soft);
+}
+
+.over {
+  color: var(--st-rej-fg);
+  font-weight: 600;
+}
+
+.no {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--line-hover);
+  text-underline-offset: 3px;
+}
+
+.no:hover {
+  text-decoration-color: var(--ink);
+}
+
+.detail {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  color: var(--fg);
+  font-size: var(--fs-12);
+  text-decoration: none;
+}
+
+.detail:hover {
+  border-color: var(--ink);
+}
+
+.vehicle {
+  font-weight: 600;
+}
+
+.incoming {
+  color: var(--st-ok-fg);
+  font-weight: 600;
+}
+
+.progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-12);
+}
+
+.bar {
+  position: relative;
+  width: 72px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--violet-600);
+  border-radius: inherit;
+}
+
+.bar > span.barDone {
+  background: var(--st-done-fg);
+}
+
+/* ── 펼친 영역: 약 10줄 높이, 넘치면 안에서 스크롤 ── */
+.expand > td {
+  padding: 0 10px 12px 46px;
+  background: var(--violet-50);
+  border-bottom: 1px solid var(--line-row);
+}
+
+.inner {
+  max-height: 372px;
+  overflow: auto;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  background: var(--bg);
+}
+
+.innerTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-12);
+}
+
+.innerTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-weight: 500;
+  color: var(--th-fg);
+  background: var(--surface);
+  padding: 7px 10px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.innerTable td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-row);
+  white-space: nowrap;
+}
+
+.innerTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.innerTable .num,
+.table .num {
+  text-align: right;
+}
+
+.name {
+  white-space: normal !important;
+  min-width: 160px;
+}
+
+.empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-group);
+}
+
+@media (max-width: 640px) {
+  .tile {
+    flex: 1 1 100%;
+  }
+  .expand > td {
+    padding-left: 10px;
+  }
+}

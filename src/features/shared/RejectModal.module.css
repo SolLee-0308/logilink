@@ -1,0 +1,9 @@
+.target {
+  background: var(--surface);
+  border-radius: var(--r-group);
+  padding: 10px 12px;
+  font-size: var(--fs-13);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

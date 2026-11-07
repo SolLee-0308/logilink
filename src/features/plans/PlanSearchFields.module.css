@@ -1,0 +1,30 @@
+.no {
+  width: 170px;
+}
+
+.item {
+  width: 200px;
+}
+
+/* 입고예정일 기간 (from ~ to) */
+.range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.range input {
+  width: 150px;
+}
+
+.rangeClear {
+  border: 0;
+  background: none;
+  color: var(--violet-600);
+  font-size: var(--fs-12);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

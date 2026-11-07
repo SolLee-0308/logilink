@@ -1,0 +1,86 @@
+.bar {
+  /* 위치 고정: 화면 맨 위에 붙고, 둘레의 흰 띠가 아래로 지나가는 목록을 가린다 */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 0 0 8px var(--bg);
+  background: var(--surface);
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-box);
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  /* 연회색 묶음 + 흰 선택 칸 (2026-11-06 Sol 확정 — 검정 선택이 너무 진함) */
+  background: #f0f0f3;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 3px;
+}
+
+.chips button {
+  border: 0;
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: var(--r-chip);
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.chips button:hover {
+  color: var(--fg);
+}
+
+.chips button[aria-pressed="true"] {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(22, 22, 22, 0.12), 0 0 0 1px rgba(22, 22, 22, 0.04);
+}
+
+.chk {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--violet-600);
+  cursor: pointer;
+}
+
+.search {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+
+.search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--soft);
+  pointer-events: none;
+}
+
+.search input {
+  width: 100%;
+  font-size: var(--fs-13);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 7px 10px 7px 32px;
+  background: var(--bg);
+}

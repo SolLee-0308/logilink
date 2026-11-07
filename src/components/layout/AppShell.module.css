@@ -1,0 +1,74 @@
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  gap: var(--gap-shell);
+  min-height: 100vh;
+  padding: var(--gap-shell);
+  padding-left: max(var(--gap-shell), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gap-shell), env(safe-area-inset-right, 0px));
+}
+
+/* 메뉴를 접으면 메인 카드가 왼쪽 끝까지 (사이드바는 숨김) */
+.app[data-nav="collapsed"] > aside {
+  display: none;
+}
+
+.app[data-nav="collapsed"] {
+  grid-template-columns: minmax(0, 1fr);
+  padding-left: max(18px, env(safe-area-inset-left, 0px));
+}
+
+.main {
+  background: var(--bg);
+  border-radius: var(--r-card);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* 펼치기 손잡이 — 메뉴를 접으면 화면 왼쪽 가장자리에 남는다 */
+.navToggle {
+  position: fixed;
+  z-index: 20;
+  top: calc(var(--gap-shell) + 18px);
+  left: 0;
+  width: 18px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink-line);
+  border-radius: 0 8px 8px 0;
+  background: var(--ink-2);
+  color: var(--ink-text);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.navToggle:hover {
+  background: var(--violet-600);
+  border-color: var(--violet-600);
+  color: #fff;
+}
+
+.navToggle:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .app,
+  .app[data-nav="collapsed"] {
+    grid-template-columns: minmax(0, 1fr);
+    padding-left: max(var(--gap-shell), env(safe-area-inset-left, 0px));
+  }
+  .app > aside,
+  .navToggle {
+    display: none;
+  }
+  .main {
+    padding: 16px;
+  }
+}

@@ -1,0 +1,71 @@
+.linesWrap {
+  overflow-x: auto;
+}
+
+.lines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.lines th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-12);
+  color: var(--th-fg);
+  background: var(--surface);
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.lines th:first-child {
+  border-radius: var(--r-control) 0 0 var(--r-control);
+}
+
+.lines th:last-child {
+  border-radius: 0 var(--r-control) var(--r-control) 0;
+}
+
+.lines td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line-row);
+  vertical-align: top;
+}
+
+.lines .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sub {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.up,
+.down,
+.new {
+  margin-left: 6px;
+  font-size: var(--fs-11);
+  font-weight: 600;
+}
+
+.up {
+  color: var(--diff-up);
+}
+
+.down {
+  color: var(--diff-down);
+}
+
+.new {
+  color: var(--diff-new);
+}
+
+.removed {
+  margin: 8px 0 0;
+  font-size: var(--fs-12);
+  color: var(--diff-down);
+}

@@ -1,0 +1,158 @@
+.field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.picker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 180px;
+  font-size: var(--fs-13);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 7px 10px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.picker:hover {
+  border-color: var(--line-hover);
+}
+
+.picker:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 1px;
+}
+
+.value {
+  font-weight: 500;
+  padding-right: 18px;
+}
+
+.placeholder {
+  color: var(--muted);
+}
+
+.find {
+  font-size: var(--fs-12);
+  color: var(--violet-600);
+  font-weight: 500;
+}
+
+.clear {
+  position: absolute;
+  right: 44px;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.clear:hover {
+  color: var(--fg);
+  background: var(--line);
+}
+
+.search {
+  width: 100%;
+  font-size: var(--fs-13);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 8px 10px;
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 1px;
+}
+
+.listWrap {
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  max-height: min(380px, 50vh);
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--card-head);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--card-line);
+}
+
+.table td {
+  padding: 9px 10px;
+  border-top: 1px solid var(--line-row);
+}
+
+.table tbody tr {
+  cursor: pointer;
+}
+
+.table tbody tr:hover,
+.table tbody tr:focus-visible {
+  background: var(--violet-50);
+  outline: none;
+}
+
+.off {
+  color: var(--muted);
+}
+
+.empty {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-12);
+}
+
+.picker:disabled {
+  cursor: default;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+/* 입력 화면(FormField) 오류 표시 — 다른 입력칸과 같은 붉은 테두리 */
+:global([data-invalid]) .picker {
+  border-color: var(--st-rej-fg);
+}
+
+/* 입력 화면용 — 칸 너비 꽉 채움 */
+.block {
+  display: flex;
+  width: 100%;
+}
+
+.block .picker {
+  flex: 1;
+}

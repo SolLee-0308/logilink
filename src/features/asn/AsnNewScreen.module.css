@@ -1,0 +1,293 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+  min-width: 0;
+}
+
+/* ① 차량·출고 정보 — 왼쪽 3×2(센터·출고일·차량번호 / 기사 이름·연락처), 오른쪽 메모(두 줄 높이) */
+.headGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 220px)) minmax(240px, 1fr);
+  gap: 12px 16px;
+  align-items: start;
+}
+
+.memo {
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  display: flex;
+  min-width: 0;
+}
+
+.memo > * {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.memo textarea {
+  flex: 1;
+  min-height: 96px;
+  resize: vertical;
+}
+
+@media (max-width: 1100px) {
+  .headGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .memo {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 700px) {
+  .headGrid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .headGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.static {
+  display: inline-block;
+  font-size: var(--fs-13);
+  padding: 8px 0;
+  font-weight: 500;
+}
+
+.search {
+  width: 200px;
+}
+
+.empty {
+  margin: 0;
+  padding: 16px 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+/* ② 건수 요약 줄 */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--card-line);
+  background: var(--surface);
+  font-size: var(--fs-13);
+}
+
+.chip b {
+  font-weight: 600;
+}
+
+.chipOn {
+  border-color: var(--violet-600);
+  background: color-mix(in srgb, var(--violet-600) 8%, var(--bg));
+  color: var(--violet-600);
+}
+
+/* 입고예정 1건 = 테두리 상자 1개 */
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plan {
+  border: 1px solid var(--card-line);
+  border-left: 4px solid var(--card-line);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.planOn {
+  border-left-color: var(--violet-600);
+}
+
+.planHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 12px;
+  background: var(--card-head, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+
+.planHead h3 {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.planIdx {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.planOn .planIdx {
+  background: var(--violet-600);
+}
+
+.planMeta {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.planMemo {
+  margin: 0;
+  padding: 6px 12px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-row);
+}
+
+.planActs {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  padding: 4px 8px 6px;
+}
+
+.table {
+  width: 100%;
+  /* 고정 칸 합 768px + 품목명 최소 190px */
+  min-width: 960px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.cCode {
+  width: 110px;
+}
+
+.cExp {
+  width: 210px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.cUnit {
+  width: 56px;
+}
+
+.cNum {
+  width: 84px;
+}
+
+.cIn {
+  width: 140px;
+}
+
+.table thead th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  padding: 6px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.table .num {
+  text-align: right;
+}
+
+.row td {
+  padding: 8px 6px;
+  vertical-align: top;
+  border-top: 1px solid var(--line-row);
+}
+
+.row td:not(:last-child) {
+  padding-top: 15px;
+}
+
+.row:first-child td {
+  border-top: 0;
+}
+
+.doneRow td {
+  color: var(--muted);
+}
+
+.remain {
+  font-weight: 600;
+}
+
+.qtyInput {
+  width: 110px;
+  text-align: right;
+}
+
+.err {
+  margin: 4px 0 0;
+  font-size: var(--fs-12);
+  color: var(--st-rej-fg);
+  text-align: right;
+  white-space: normal;
+}
+
+.row[data-invalid] td {
+  background: color-mix(in srgb, var(--st-rej-bg, #fdecec) 45%, transparent);
+}
+
+/* 저장 줄 — 화면 아래에 붙어 있다 */
+.foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.total {
+  margin-right: auto;
+  font-size: var(--fs-13);
+}
+
+.bad {
+  color: var(--st-rej-fg);
+  font-weight: 500;
+}

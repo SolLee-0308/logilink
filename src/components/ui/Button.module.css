@@ -1,0 +1,97 @@
+.btn {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  border-radius: var(--r-control);
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  background: var(--bg);
+  color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: var(--line-hover);
+}
+
+.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+/* 반려·취소·삭제 확정 — 붉은 채움 (2026-11-04 Sol) */
+.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+/* 목록 행의 삭제처럼 확인 창을 여는 버튼 — 붉은 글자 + 옅은 붉은 바탕 */
+.dangerSoft {
+  background: var(--danger-soft);
+  border-color: #f6c9c5;
+  color: var(--danger-hover);
+}
+
+.dangerSoft:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sm {
+  padding: 5px 10px;
+  font-size: var(--fs-12);
+  border-radius: 8px;
+}
+
+.link {
+  text-decoration: none;
+}
+
+/* 새로 만들기 — 브랜드 보라 채움 */
+.create {
+  background: var(--violet-600);
+  border-color: var(--violet-600);
+  color: #fff;
+  font-weight: 600;
+  /* 더 넓게 (2026-11-06 Sol 피드백) */
+  padding: 8px 24px 8px 20px;
+  min-width: 112px;
+  letter-spacing: 0.06em; /* 자간 넓게 (2026-11-06 Sol 피드백) */
+  box-shadow: 0 1px 2px rgba(76, 60, 200, 0.25);
+}
+
+.create:hover:not(:disabled) {
+  background: #5b4bd6;
+  border-color: #5b4bd6;
+}
+
+/* 수정 — 편집 화면·창을 여는 버튼: 옅은 보라 바탕 + 보라 글자 (2026-11-06 Sol 결정, 보라 채움 = 새로 만들기와 구분) */
+.editSoft {
+  background: var(--violet-50);
+  border-color: var(--violet-100);
+  color: var(--violet-700);
+  font-weight: 500;
+}
+
+.editSoft:hover:not(:disabled) {
+  border-color: var(--violet-300);
+}

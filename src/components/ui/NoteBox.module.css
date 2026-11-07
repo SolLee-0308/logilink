@@ -1,0 +1,27 @@
+.note {
+  border-radius: var(--r-group);
+  padding: 10px 12px;
+  font-size: var(--fs-13);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.error {
+  background: var(--st-rej-bg);
+  color: var(--err-text);
+}
+
+.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.info {
+  background: var(--violet-50);
+  color: var(--info-text);
+}
+
+.act {
+  margin-top: 6px;
+}

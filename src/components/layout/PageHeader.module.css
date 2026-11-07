@@ -1,0 +1,82 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 하위 화면: 머리(돌아가기·경로·제목)와 내용 사이 가는 구분선 (2026-11-06 Sol 결정) */
+.divided {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+}
+
+.crumb {
+  margin-left: auto;
+}
+
+.crumb ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--fs-12);
+  color: var(--soft);
+}
+
+.crumb li + li::before {
+  content: "›";
+  margin-right: 6px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.head h1 {
+  font-size: var(--fs-21);
+  font-weight: 600;
+}
+
+.help {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: var(--fs-12);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.help:hover {
+  border-color: var(--line-hover);
+  color: var(--fg);
+}
+
+.right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 860px) {
+  .right {
+    margin-left: 0;
+    width: 100%;
+  }
+}

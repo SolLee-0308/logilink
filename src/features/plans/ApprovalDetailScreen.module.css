@@ -1,0 +1,79 @@
+.queue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.qty {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+/* 승인·반려 — 화면 아래에 붙는 처리 줄 */
+.foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
+}
+
+.foot > :first-child {
+  margin-right: auto;
+  font-size: var(--fs-13);
+}
+
+/* 입고예정 정보 2단: 왼쪽 화주사·센터·입고예정일·등록 방식 / 오른쪽 차수·승인·메모·처리 이력 */
+.infoGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 32px;
+}
+
+@media (max-width: 900px) {
+  .infoGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--violet-600);
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

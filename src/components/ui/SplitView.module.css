@@ -1,0 +1,239 @@
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--detail-w);
+  gap: 14px;
+  align-items: start;
+}
+
+.listcol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel {
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+}
+
+/* 2분할 안의 패널만 따라 내려온다 */
+.body > .panel {
+  position: sticky;
+  /* 위치 고정된 조회조건 바(--filterbar-h) 아래에 붙는다 */
+  top: calc(var(--filterbar-h, 0px) + var(--gap-shell) + 8px);
+  max-height: calc(100vh - var(--filterbar-h, 0px) - var(--gap-shell) * 4);
+}
+
+.head {
+  background: var(--card-head);
+  border-radius: calc(var(--r-panel) - 1px) calc(var(--r-panel) - 1px) 0 0;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--card-line);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+
+.title:global(.mono) {
+  font-weight: 500;
+}
+
+.sub {
+  font-size: var(--fs-12);
+  color: var(--soft);
+}
+
+.pbody {
+  padding: 14px 18px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.foot {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.ver {
+  margin-right: auto;
+  font-size: var(--fs-12);
+  color: var(--soft);
+}
+
+.sect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sect h3 {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  min-height: 32px;
+}
+
+.toolbar strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.toolbarRight {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.kv {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: var(--fs-13);
+}
+
+.kvRow {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+}
+
+.kvRow dt {
+  color: var(--muted);
+}
+
+.kvRow dd {
+  margin: 0;
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1240px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .body > .panel {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* ── 오른쪽 패널 접기 (collapsible) ── */
+/* 머리: 왼쪽 제목·보조 줄 + 오른쪽 끝 접기 아이콘 */
+.headMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.headBare {
+  padding: 8px 10px;
+  justify-content: flex-end;
+}
+
+.foldBtn {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.foldBtn:hover {
+  border-color: var(--line-hover);
+  color: var(--fg);
+}
+
+/* 접힌 상태 열기 — 본문 오른쪽 가장자리 손잡이 (메뉴 열기 손잡이와 같은 모양) */
+.edgeOpen {
+  position: fixed;
+  z-index: 20;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink-line);
+  border-radius: 8px 0 0 8px;
+  background: var(--ink-2);
+  color: var(--ink-text);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.edgeOpen:hover {
+  background: var(--violet-600);
+  border-color: var(--violet-600);
+  color: #fff;
+}
+
+.foldBtn:focus-visible,
+.edgeOpen:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+/* 접으면 패널을 숨기고 목록이 오른쪽 끝까지 (넓은 화면만) */
+@media (min-width: 1241px) {
+  .folded {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .folded > .panel {
+    display: none;
+  }
+}
+
+/* 패널이 목록 아래로 내려가는 폭에서는 접지 않는다 */
+@media (max-width: 1240px) {
+  .foldBtn,
+  .edgeOpen {
+    display: none;
+  }
+}

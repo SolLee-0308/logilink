@@ -1,0 +1,12 @@
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.zip {
+  width: 96px !important;
+  flex: none;
+}
+.detail {
+  width: 100%;
+}

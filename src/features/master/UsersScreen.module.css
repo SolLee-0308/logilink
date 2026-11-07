@@ -1,0 +1,61 @@
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.temp {
+  font-size: var(--fs-21);
+  letter-spacing: 0.06em;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-group);
+  padding: 12px 14px;
+  text-align: center;
+  user-select: all;
+}
+
+.headAction {
+  margin-left: auto;
+}
+
+/* 역할 여러 개 고르기 */
+.roles {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roles legend {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.roleGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 18px;
+}
+
+.roleOrg {
+  font-size: var(--fs-12);
+  color: var(--muted);
+  min-width: 44px;
+}
+
+.req {
+  color: var(--st-rej-fg);
+}
+
+.err {
+  color: var(--st-rej-fg);
+  font-size: var(--fs-12);
+  margin: 0;
+}
