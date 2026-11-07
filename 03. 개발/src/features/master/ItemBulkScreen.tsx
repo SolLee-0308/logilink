@@ -174,7 +174,7 @@ export function ItemBulkScreen({
       if (!r.ok) {
         setPreview(null);
         setErrors({ form: r.fieldErrors ? undefined : r.error, ...(r.fieldErrors ?? {}) });
-        toast.show(r.error);
+        toast.show(r.error, { tone: "error" });
         return;
       }
       setPreview(r.data!);
@@ -188,7 +188,7 @@ export function ItemBulkScreen({
       const r = await commitItemBulk({ clientId: preview.clientId, rows: okRows.map((x) => ({ rowNo: x.rowNo, raw: x.raw })) });
       if (!r.ok) {
         setErrors({ form: r.error });
-        toast.show(r.error);
+        toast.show(r.error, { tone: "error" });
         return;
       }
       toast.show(r.message);

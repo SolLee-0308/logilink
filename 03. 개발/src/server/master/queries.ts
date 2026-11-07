@@ -279,6 +279,11 @@ export async function countOpenItemRequests() {
   return db.itemRequest.count({ where: { status: { in: ["WAITING", "REJECTED"] }, clientId: await clientScope() } });
 }
 
+/** 반려되어 화주사가 고쳐 다시 보내야 할 요청 건수 — 화주사 사이드바 붉은 숫자 */
+export async function countRejectedItemRequests() {
+  return db.itemRequest.count({ where: { status: "REJECTED", clientId: await clientScope() } });
+}
+
 export async function countWaitingItemRequests() {
   return db.itemRequest.count({ where: { status: "WAITING", clientId: await clientScope() } });
 }

@@ -270,13 +270,13 @@ export async function saveClient(input: ClientInput): Promise<ActionResult<{ id:
 
       // 미종결 전표가 있으면 사용 안 함 전환·이용 센터 제외를 막는다
       if (cur.isActive && !v.isActive) {
-        const block = deactivateBlock((await countUnclosed([cur.id])).get(cur.id)!);
+        const block = deactivateBlock((await countUnclosed([cur.id], undefined, tx)).get(cur.id)!);
         if (block) return fail("STATE", block, { isActive: block });
       }
       const removed = before.filter((c) => !centerCodes.includes(c));
       for (const code of removed) {
         const center = await tx.center.findUnique({ where: { code } });
-        const block = removeCenterBlock(center?.name ?? code, (await countUnclosed([cur.id], code)).get(cur.id)!);
+        const block = removeCenterBlock(center?.name ?? code, (await countUnclosed([cur.id], code, tx)).get(cur.id)!);
         if (block) return fail("STATE", block, { centerCodes: block });
       }
 

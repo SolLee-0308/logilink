@@ -84,7 +84,7 @@ function CompanyCard({ row, canEdit }: { row: CompanyRow; canEdit: boolean }) {
     setOpening(true);
     const r = await loadCompany();
     setOpening(false);
-    if (!r.ok) return toast.show(r.error);
+    if (!r.ok) return toast.show(r.error, { tone: "error" });
     setEditing(r.data!);
   }
 

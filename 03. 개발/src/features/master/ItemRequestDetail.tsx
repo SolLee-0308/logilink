@@ -92,6 +92,17 @@ export function ItemRequestDetailScreen({
     );
   }
 
+  const history = (
+    <section className={styles.card} aria-label="처리 이력">
+      <div className={styles.cardHead}>
+        <h2>처리 이력</h2>
+      </div>
+      <div className={styles.cardBody}>
+        <Timeline entries={historyEntries(row)} />
+      </div>
+    </section>
+  );
+
   return (
     <>
       <SubHeader
@@ -162,21 +173,19 @@ export function ItemRequestDetailScreen({
               />
             </div>
           </section>
-          <section className={styles.card} aria-label="처리 이력">
-            <div className={styles.cardHead}>
-              <h2>처리 이력</h2>
-            </div>
-            <div className={styles.cardBody}>
-              <Timeline entries={historyEntries(row)} />
-            </div>
-          </section>
+          {/* 3PL 등록대기는 오른쪽이 긴 입력 양식이라 처리 이력을 왼쪽에 둔다 */}
+          {waiting && history}
         </div>
 
         <div className={styles.col}>
           {waiting ? (
             <ReviewCard row={row} queue={queue} itemKeys={itemKeys} reasons={reasons} />
           ) : (
-            <ResultCard row={row} canReview={canReview} />
+            <>
+              <ResultCard row={row} canReview={canReview} />
+              {/* 처리 결과는 짧고 늘지 않아, 그 아래에 처리 이력 (2026-11-07 Sol 확정) */}
+              {history}
+            </>
           )}
         </div>
       </div>
@@ -215,7 +224,8 @@ function ResultCard({ row, canReview }: { row: ItemRequestRow; canReview: boolea
             </NoteBox>
             {!canReview && (
               <div>
-                <LinkButton variant="primary" href={`/master/item-requests/${row.id}/edit`}>
+                {/* [수정] 버튼과 같은 연보라 (2026-11-07 Sol 피드백) */}
+                <LinkButton variant="editSoft" href={`/master/item-requests/${row.id}/edit`}>
                   수정해서 다시 요청
                 </LinkButton>
               </div>

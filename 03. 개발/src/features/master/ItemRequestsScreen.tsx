@@ -5,13 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge, Tag } from "@/components/ui/Badges";
 import { CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
-import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
+import { FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { ClientPicker } from "@/features/plans/ClientFinder";
 import { ListToolbar } from "@/components/ui/SplitView";
 import { Tabs } from "@/components/ui/Tabs";
 import { ITEM_REQUEST_STATUS_META, SOURCE_LABEL, STORAGE_TEMP_LABEL } from "@/domain/master";
 import { fmtShortDateTime, includesText } from "@/lib/format";
-import { REQ_LIST_KEY, REQ_TABS, reqListSearch, type ReqListQuery, type ReqTab, type SourceFilter } from "./item-request-list";
+import { REQ_LIST_KEY, REQ_TABS, reqListSearch, type ReqListQuery, type ReqTab } from "./item-request-list";
 import { MasterHeader } from "./shared";
 import { RULES } from "./rules";
 import type { ClientOption, ItemKey, ItemRequestRow } from "./types";
@@ -63,32 +63,19 @@ export function ItemRequestsScreen({
   const [clientId, setClientId] = useState(initial.client);
   // 화주사 선택 목록에서 사용 안 함 화주사는 기본 제외 (조회 필터에서만 포함 가능)
   const [withInactiveClients, setWithInactiveClients] = useState(false);
-  // 화주사는 이 화면에서 직접 입력·엑셀 일괄 요청만 한다. AI 판독·엑셀 미매칭 요청은 입고예정 등록 화면에서 생기므로
-  // 원본 필터에서 빼고, 그 요청을 검토하는 3PL에게만 보인다
-  const sourceOptions: { value: SourceFilter; label: string }[] = [
-    { value: "all", label: "전체" },
-    ...(canReview
-      ? [
-          { value: "AI" as const, label: "AI 판독" },
-          { value: "EXCEL" as const, label: "엑셀 미매칭" },
-        ]
-      : []),
-    { value: "ITEM_EXCEL", label: "엑셀 일괄 요청" },
-    { value: "DIRECT", label: "직접 입력" },
-  ];
-  const [source, setSource] = useState<SourceFilter>(sourceOptions.some((o) => o.value === initial.source) ? initial.source : "all");
+  // '원본' 조회조건은 뺐다 (2026-11-07 Sol 확정 — 정의서 요구 아님, 업무 판단에 쓰이지 않음). 원본은 3PL 목록 열·상세에만
   const [q, setQ] = useState(initial.q);
 
   // 조회조건을 주소에 남기고(새로고침·공유), 상세 화면의 [← 목록]이 돌아올 주소로 기억
   useEffect(() => {
-    const url = `/master/item-requests${reqListSearch({ tab, client: clientId, source, q })}`;
+    const url = `/master/item-requests${reqListSearch({ tab, client: clientId, source: "all", q })}`;
     window.history.replaceState(null, "", url);
     try {
       sessionStorage.setItem(REQ_LIST_KEY, url);
     } catch {
       /* 저장소를 못 쓰면 기본 목록으로 돌아간다 */
     }
-  }, [tab, clientId, source, q]);
+  }, [tab, clientId, q]);
 
   const counts = useMemo(() => {
     const c: Record<ReqTab, number> = { wait: 0, rej: 0, done: 0 };
@@ -103,7 +90,6 @@ export function ItemRequestsScreen({
           (r) =>
             inTab(r, tab, canReview) &&
             (!clientId || r.clientId === Number(clientId)) &&
-            (source === "all" || r.source === source) &&
             includesText([r.requestNo, r.itemName, r.clientCode ?? "", r.barcode], q),
         )
         // 대기는 오래된 요청부터(상세의 [다음 요청] 순서와 같다), 반려는 최근 반려부터, 오늘 처리는 최근 처리부터
@@ -114,7 +100,7 @@ export function ItemRequestsScreen({
               ? (b.doneByMeToday?.at ?? "").localeCompare(a.doneByMeToday?.at ?? "")
               : (b.processedAt ?? "").localeCompare(a.processedAt ?? ""),
         ),
-    [rows, tab, clientId, source, q, canReview],
+    [rows, tab, clientId, q, canReview],
   );
 
   const columns: Column<ItemRequestRow>[] = [
@@ -136,9 +122,10 @@ export function ItemRequestsScreen({
     { key: "code", header: "화주사 품목코드", render: (r) => (r.clientCode ? <span className="mono">{r.clientCode}</span> : <span className="muted">–</span>) },
     { key: "name", header: "품목명", wrap: true, render: (r) => r.itemName },
     { key: "unit", header: "단위", render: (r) => <span className="mono">{r.unit}</span> },
-    { key: "barcode", header: "바코드", render: (r) => <span className="mono">{r.barcode}</span> },
+    // 바코드 열은 목록에서 뺐다(상세에만, 2026-11-07 Sol 피드백). 검색은 바코드로도 된다
     { key: "temp", header: "온도대", render: (r) => (r.storageTemp ? STORAGE_TEMP_LABEL[r.storageTemp] : <span className="muted">모름</span>) },
-    { key: "source", header: "원본", render: (r) => SOURCE_LABEL[r.source] },
+    // 원본 열은 3PL 목록에만 (화주사는 자기가 고른 입력 방법이라 볼 필요가 없다, 2026-11-07 Sol 확정)
+    ...(canReview ? [{ key: "source", header: "원본", render: (r: ItemRequestRow) => SOURCE_LABEL[r.source] }] : []),
     {
       key: "requested",
       header: tab === "wait" ? "요청" : tab === "done" ? (canReview ? "내 처리" : "등록") : "반려",
@@ -188,9 +175,6 @@ export function ItemRequestsScreen({
             <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>
         )}
-        <FilterField label="원본">
-          <ChipGroup value={source} onChange={setSource} options={sourceOptions} />
-        </FilterField>
         <SearchInput value={q} onChange={setQ} placeholder="요청번호, 품목명, 품목코드, 바코드 검색" />
       </FilterBar>
       <Tabs label="요청 상태" value={tab} onChange={setTab} panelId="req-body" items={REQ_TABS.map((k) => ({ key: k, label: tabLabel[k], count: counts[k] }))} />
