@@ -36,3 +36,21 @@
 .n {
   font-size: var(--fs-12);
 }
+
+/* 주의 건수 — 붉은 ⚠N (선택된 탭에서도 읽히게 흰 바탕 칩) */
+.alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--r-tag);
+  padding: 0 6px;
+  line-height: 18px;
+}
+
+.tab[aria-selected="true"] .alert {
+  background: #fff;
+}
