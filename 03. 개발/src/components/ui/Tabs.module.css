@@ -1,11 +1,9 @@
+/* 밑줄형 탭 (2026-11-07 Sol 확정) — 보라 채움 버튼과 헷갈리지 않게 칸·상자 없이 선택 탭 아래 보라 굵은 선 */
 .tabs {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
-  border: 1px solid var(--line);
-  border-radius: var(--r-group);
-  padding: 4px;
-  gap: 4px;
-  align-self: flex-start;
+  gap: 4px 20px;
+  border-bottom: 1px solid var(--line);
   max-width: 100%;
 }
 
@@ -14,23 +12,38 @@
   border: 0;
   background: transparent;
   font-size: var(--fs-13);
-  padding: 6px 14px;
-  border-radius: 8px;
+  padding: 8px 2px 9px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
   color: var(--muted);
   display: inline-flex;
   gap: 6px;
   align-items: center;
+  cursor: pointer;
 }
 
 .tab:hover {
   color: var(--fg);
+  border-bottom-color: var(--line-2);
 }
 
 .tab[aria-selected="true"],
 .tab[aria-current="page"] {
-  background: var(--violet-600);
-  color: #fff;
-  font-weight: 500;
+  color: var(--fg);
+  font-weight: 600;
+  border-bottom-color: var(--violet-600);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 선택된 탭의 건수는 보라 */
+.tab[aria-selected="true"] .n,
+.tab[aria-current="page"] .n {
+  color: var(--violet-700);
 }
 
 .n {
@@ -51,6 +64,4 @@
   line-height: 18px;
 }
 
-.tab[aria-selected="true"] .alert {
-  background: #fff;
-}
+
