@@ -6,6 +6,7 @@ import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
 import { AsnStatusBadge, StatusBadge } from "@/components/ui/Badges";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { Input, Select } from "@/components/ui/Form";
+import { AlertStrip } from "@/components/ui/AlertStrip";
 import { ModeSwitch } from "@/components/ui/ModeSwitch";
 import { ListToolbar } from "@/components/ui/SplitView";
 import { Tabs } from "@/components/ui/Tabs";
@@ -171,25 +172,16 @@ export function InquiryScreen({
       />
 
       {/* 경과 기준 초과 미종결 — 있을 때만 붉은 띠 1줄 (0건이면 자리 없음) */}
-      {overdueCount > 0 && (
-        <div className={styles.overdue} role="status">
-          <span className={styles.overdueIcon} aria-hidden="true">
-            !
-          </span>
-          <span className={styles.overdueText}>
-            {overdueLabel} <b className="mono">{overdueCount.toLocaleString()}</b>건
-          </span>
-          {overdueOn ? (
-            <button type="button" className={styles.overdueBtn} onClick={reset}>
-              기준 초과만 보는 중 · 처음 조건으로
-            </button>
-          ) : (
-            <button type="button" className={styles.overdueBtn} onClick={() => apply({ tab: "plan", st: "open", from: "", to: cutoff })}>
-              이 건만 보기 →
-            </button>
-          )}
-        </div>
-      )}
+      <AlertStrip
+        count={overdueCount}
+        unit="건"
+        active={overdueOn}
+        onShow={() => apply({ tab: "plan", st: "open", from: "", to: cutoff })}
+        onClear={reset}
+        activeLabel="기준 초과만 보는 중 · 처음 조건으로"
+      >
+        {overdueLabel}
+      </AlertStrip>
 
       <FilterBar>
         <DateRangeField label={tab === "plan" ? "입고예정일" : "출고일"} from={f.from} to={f.to} onFrom={(v) => apply({ from: v })} onTo={(v) => apply({ to: v })} />
@@ -240,7 +232,8 @@ export function InquiryScreen({
         panelId="inquiry-list"
         items={stateTabs.map((s) => ({
           ...s,
-          count: stateCounts[s.key] ?? 0,
+          // 보기를 바꾼 직후 새 건수가 오기 전에는 이전 보기의 건수가 섞이지 않게 숨긴다
+          count: initial.tab === tab ? (stateCounts[s.key] ?? 0) : undefined,
           ...(tab === "plan" && s.key === "open" ? { alert: overdueCount, alertLabel: `기준 초과 ${overdueCount}건` } : {}),
         }))}
       />
