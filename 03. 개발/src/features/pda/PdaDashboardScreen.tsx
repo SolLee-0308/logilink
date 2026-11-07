@@ -11,11 +11,12 @@ import styles from "./Pda.module.css";
 export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
   const total = data.todo + data.working + data.done;
   const pct = total ? Math.round((data.done / total) * 100) : 0;
-  const tiles: [string, number, string][] = [
-    ["상차할", data.todo, "/pda"],
-    ["작업 중", data.working, "/pda"],
-    ["상차완료", data.done, "/pda/loads"],
-    ["차이 있음", data.diffDone, "/pda/loads"],
+  // 칸 색 = 상태 배지 색 (상차할은 기본, 2026-11-07 Sol 피드백) — 작업 중 = 상차중(주황), 상차완료(초록), 차이 있음(붉은)
+  const tiles: [string, number, string, string][] = [
+    ["상차할", data.todo, "/pda", ""],
+    ["작업 중", data.working, "/pda", styles.tilePart],
+    ["상차완료", data.done, "/pda/loads", styles.tileDone],
+    ["차이 있음", data.diffDone, "/pda/loads", styles.tileRej],
   ];
   return (
     <>
@@ -37,8 +38,8 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
       </section>
 
       <section className={styles.tiles}>
-        {tiles.map(([k, v, href]) => (
-          <Link key={k} href={href} className={styles.tile}>
+        {tiles.map(([k, v, href, tone]) => (
+          <Link key={k} href={href} className={`${styles.tile} ${tone}`}>
             <span className={styles.k}>{k}</span>
             <b>{v}</b>
           </Link>

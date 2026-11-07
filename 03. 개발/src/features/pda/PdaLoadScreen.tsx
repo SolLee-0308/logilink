@@ -547,6 +547,38 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
 }
 
 /**
+ * 품목코드 + 품목명 한 줄 (2026-11-07 Sol 피드백) — 코드는 지금 크기·색 그대로 이름 앞에.
+ * 칸보다 길면 이름이 옆으로 천천히 흘러 끝까지 보이게 한다(움직임 줄이기 설정이면 멈춤).
+ */
+function ScrollName({ code, name }: { code: string; name: string }) {
+  const outer = useRef<HTMLSpanElement>(null);
+  const inner = useRef<HTMLSpanElement>(null);
+  const [shift, setShift] = useState(0);
+  useEffect(() => {
+    const o = outer.current;
+    const i = inner.current;
+    if (!o || !i) return;
+    const measure = () => setShift(Math.max(0, i.scrollWidth - o.clientWidth));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(o);
+    return () => ro.disconnect();
+  }, [code, name]);
+  return (
+    <span ref={outer} className={styles.flatName} title={`${code} ${name}`}>
+      <span
+        ref={inner}
+        className={shift > 0 ? styles.marquee : undefined}
+        style={shift > 0 ? ({ "--shift": `-${shift}px`, "--dur": `${Math.max(5, shift / 25)}s` } as React.CSSProperties) : undefined}
+      >
+        <span className={`${styles.dim} mono`}>{code}</span> {name}
+      </span>
+    </span>
+  );
+}
+
+/**
  * 품목별 지시·상차 합계 — 박스 없이 줄 목록 (2026-11-06 Sol 결정: 스캔 중심 + 목록 평면화).
  * 지시 상차는 줄마다 진행 막대, 상태는 색으로만: 일치 초록 · 부족 주황 · 초과·지시 외 빨강 · 아직 안 실음 회색.
  * 코드는 상차담당(화주사)에게 익숙한 화주사 품목코드를 먼저 보여 준다.
@@ -577,10 +609,7 @@ function Lines({ view }: { view: LoadView }) {
             return (
               <li key={l.itemId} className={styles[`st_${st}`]}>
                 <span className={styles.flatTop}>
-                  <span className={styles.lineName}>
-                    {l.itemName}
-                    <span className={`${styles.dim} mono`}>{l.itemClientCode ?? l.itemCode}</span>
-                  </span>
+                  <ScrollName code={l.itemClientCode ?? l.itemCode} name={l.itemName} />
                   <span className={styles.flatQty}>
                     <b className="mono">{fmt(l, l.loadBase)}</b>
                     {ordered && <span className={styles.dim}> / {l.orderBase ? fmt(l, l.orderBase) : "지시 없음"}</span>}
@@ -591,7 +620,8 @@ function Lines({ view }: { view: LoadView }) {
                     <span className={styles.lnBar} aria-hidden="true">
                       <span style={{ width: `${pct}%` }} />
                     </span>
-                    <span className={styles.stText}>{st === "none" ? "아직 안 실음" : LINE_STATE_LABEL[l.state]}</span>
+                    {/* 안 실은 줄은 회색 막대만 — '아직 안 실음' 문구는 뺐다 (2026-11-07 Sol 피드백) */}
+                    <span className={styles.stText}>{st === "none" ? "" : LINE_STATE_LABEL[l.state]}</span>
                   </span>
                 )}
               </li>
