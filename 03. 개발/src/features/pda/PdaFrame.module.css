@@ -67,6 +67,8 @@
     display: flex;
     flex-direction: column;
     zoom: var(--pda-zoom, 1);
+    /* 화면 안 확인 창(position: fixed)이 단말기 틀 밖으로 나가지 않게 기준 상자로 삼는다 (2026-11-07) */
+    transform: translateZ(0);
     padding: 0 10px;
     border-radius: 36px;
     background: var(--pda-body);

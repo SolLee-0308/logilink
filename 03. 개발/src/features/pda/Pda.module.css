@@ -1786,3 +1786,121 @@ select.field {
   color: var(--st-done-fg);
   font-weight: 600;
 }
+
+/* 방금 입력한 품목 줄 — 잠깐 연보라로 강조 (토스트 대신, 2026-11-07 Sol 피드백) */
+.lit {
+  animation: pdaLit 1.8s ease-out;
+}
+
+@keyframes pdaLit {
+  0%,
+  40% {
+    background: var(--violet-100);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* 상차완료 확인 — 아래에서 올라오는 확인 창 (2026-11-07 Sol 피드백) */
+.modalScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(17, 17, 20, 0.45);
+}
+
+.modalSheet {
+  width: 100%;
+  max-height: 88%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 16px calc(14px + env(safe-area-inset-bottom));
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  background: var(--bg);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18);
+  animation: pdaSheetUp 0.2s ease-out;
+}
+
+@keyframes pdaSheetUp {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.finishSum {
+  margin: 0;
+  font-size: var(--fs-13);
+}
+
+.diffList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.diffList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-13);
+}
+
+.diffName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.diffQty {
+  white-space: nowrap;
+}
+
+.diffState {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  border-radius: var(--r-tag);
+  padding: 1px 8px;
+}
+
+.ds_short {
+  background: var(--st-part-bg);
+  color: var(--st-part-fg);
+}
+
+.ds_over,
+.ds_extra {
+  background: var(--st-rej-bg);
+  color: var(--st-rej-fg);
+}
+
+.reasonBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r-group);
+  background: var(--st-rej-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lit,
+  .modalSheet {
+    animation: none;
+  }
+}
