@@ -1,4 +1,5 @@
 import "server-only";
+import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { UNCLOSED_PLAN } from "@/domain/plan-rules";
 import { UNCLOSED_ASN } from "@/domain/asn-rules";
@@ -10,16 +11,21 @@ import { emptyUnclosed, type UnclosedCounts } from "@/domain/unclosed";
  * ASN: 등록·상차중 (asn-rules.ts UNCLOSED_ASN).
  * 상차 실적·입고검수는 테이블이 생기면 같은 방식으로 더한다 — 화면·차단 규칙은 이미 이 값을 쓴다.
  */
-export async function countUnclosed(clientIds: number[], centerCode?: string): Promise<Map<number, UnclosedCounts>> {
+export async function countUnclosed(
+  clientIds: number[],
+  centerCode?: string,
+  /** 트랜잭션 안에서 부를 때는 그 tx — 밖의 연결로 세면 연결 1개인 시험 DB에서 저장이 5초 제한으로 실패한다 */
+  client: Pick<typeof db, "inboundPlan" | "asn"> | Prisma.TransactionClient = db,
+): Promise<Map<number, UnclosedCounts>> {
   const out = new Map(clientIds.map((id) => [id, emptyUnclosed()]));
   if (clientIds.length === 0) return out;
-  const plans = await db.inboundPlan.groupBy({
+  const plans = await client.inboundPlan.groupBy({
     by: ["clientId"],
     where: { clientId: { in: clientIds }, status: { in: [...UNCLOSED_PLAN] }, ...(centerCode ? { center: { code: centerCode } } : {}) },
     _count: { _all: true },
   });
   for (const p of plans) out.get(p.clientId)!.plan = p._count._all;
-  const asns = await db.asn.groupBy({
+  const asns = await client.asn.groupBy({
     by: ["clientId"],
     where: { clientId: { in: clientIds }, status: { in: [...UNCLOSED_ASN] }, ...(centerCode ? { center: { code: centerCode } } : {}) },
     _count: { _all: true },

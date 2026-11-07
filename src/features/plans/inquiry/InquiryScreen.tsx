@@ -6,6 +6,8 @@ import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
 import { AsnStatusBadge, StatusBadge } from "@/components/ui/Badges";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { Input, Select } from "@/components/ui/Form";
+import { AlertStrip } from "@/components/ui/AlertStrip";
+import { ModeSwitch } from "@/components/ui/ModeSwitch";
 import { ListToolbar } from "@/components/ui/SplitView";
 import { Tabs } from "@/components/ui/Tabs";
 import { dday, ddayLabel } from "@/domain/plan-rules";
@@ -22,23 +24,29 @@ import { INQUIRY_RULES } from "./rules";
 import type { CenterOption, InquiryPlanLine, InquiryPlanRow, InquiryTab, InquiryVehicleLine, InquiryVehicleRow } from "./types";
 import styles from "./InquiryScreen.module.css";
 
-const PLAN_STATE_LABEL: Record<string, string> = {
-  open: "미종결 (승인·부분입고)",
-  all: "전체",
-  APPROVED: PLAN_STATUS_META.APPROVED.label,
-  PARTIAL: PLAN_STATUS_META.PARTIAL.label,
-  COMPLETED: PLAN_STATUS_META.COMPLETED.label,
-  CLOSED: PLAN_STATUS_META.CLOSED.label,
-  CANCELED: "취소 (승인 건 취소)",
-};
-const ASN_STATE_LABEL: Record<string, string> = {
-  open: "미입고 (등록·상차중·상차완료)",
-  all: "전체 (취소 제외)",
-  REGISTERED: ASN_STATUS_META.REGISTERED.label,
-  LOADING: ASN_STATUS_META.LOADING.label,
-  LOADED: ASN_STATUS_META.LOADED.label,
-  RECEIVED: ASN_STATUS_META.RECEIVED.label,
-};
+/** 상태 탭 — 탭 순서대로 (2026-11-07 Sol 확정 A안). 승인 이후 건만 (승인 전은 승인 대기·입고예정 등록에서 본다) */
+const PLAN_STATE_TABS: { key: string; label: string }[] = [
+  { key: "open", label: "미종결" },
+  { key: "APPROVED", label: PLAN_STATUS_META.APPROVED.label },
+  { key: "PARTIAL", label: PLAN_STATUS_META.PARTIAL.label },
+  { key: "COMPLETED", label: PLAN_STATUS_META.COMPLETED.label },
+  { key: "CLOSED", label: PLAN_STATUS_META.CLOSED.label },
+  { key: "CANCELED", label: PLAN_STATUS_META.CANCELED.label },
+  { key: "all", label: "전체" },
+];
+/** 차량별 보기는 ASN 상태 (취소 ASN 제외) */
+const ASN_STATE_TABS: { key: string; label: string }[] = [
+  { key: "open", label: "미입고" },
+  { key: "REGISTERED", label: ASN_STATUS_META.REGISTERED.label },
+  { key: "LOADING", label: ASN_STATUS_META.LOADING.label },
+  { key: "LOADED", label: ASN_STATUS_META.LOADED.label },
+  { key: "RECEIVED", label: ASN_STATUS_META.RECEIVED.label },
+  { key: "all", label: "전체" },
+];
+const VIEW_ITEMS = [
+  { key: "plan" as const, label: "입고예정별", icon: "list" as const },
+  { key: "vehicle" as const, label: "차량별", icon: "truck" as const },
+];
 
 /** 기준 단위 수량을 입고예정 단위로 (예: 12 BOX 6 EA) */
 const q = (base: number, l: { unit: InquiryPlanLine["unit"]; factor: number; baseUnit: InquiryPlanLine["baseUnit"] }) => qtyInUnit(base, l.unit, l.factor, l.baseUnit);
@@ -65,7 +73,8 @@ function Toggle({ open, controls, label }: { open: boolean; controls: string; la
 }
 
 /**
- * 입고예정 조회 (/plans/inquiry, 정의서 ⑤) — 품목별·차량별 탭.
+ * 입고예정 조회 (/plans/inquiry, 정의서 ⑤) — 상태 탭(건수) + 오른쪽 위 보기 전환(입고예정별·차량별) (2026-11-07 Sol 확정 A안).
+ * 경과 기준 초과 미종결은 있을 때만 붉은 띠로 알리고, 미종결 탭에 ⚠N을 붙인다 (요약 카드 대체).
  * 기간·상태·화주사·센터는 서버에서 다시 조회하고, 번호·품목 검색은 받은 목록 안에서 바로 거른다.
  */
 export function InquiryScreen({
@@ -73,6 +82,7 @@ export function InquiryScreen({
   initialClient,
   plans,
   vehicles,
+  stateCounts,
   overdueCount,
   alertDays,
   centers,
@@ -84,6 +94,8 @@ export function InquiryScreen({
   initialClient: PickedClient | null;
   plans: InquiryPlanRow[];
   vehicles: InquiryVehicleRow[];
+  /** 상태 탭 건수 (상태 코드 + open + all) */
+  stateCounts: Record<string, number>;
   overdueCount: number;
   alertDays: number;
   centers: CenterOption[];
@@ -142,62 +154,37 @@ export function InquiryScreen({
     return f.st === d.st && f.from === d.from && f.to === d.to && !f.client && !f.center && !f.q && !f.item;
   })();
   const overdueOn = tab === "plan" && f.st === "open" && f.from === "" && f.to === cutoff;
-  const states = tab === "plan" ? PLAN_STATE_LABEL : ASN_STATE_LABEL;
+  const stateTabs = tab === "plan" ? PLAN_STATE_TABS : ASN_STATE_TABS;
   const showClient = !shipper;
+  const overdueLabel = `입고예정일 후 ${alertDays}일 넘게 종결되지 않은 입고예정`;
+  const reset = () => {
+    setClient(null);
+    apply({ ...defaultInquiry(today), tab });
+  };
 
   return (
     <>
-      <MasterHeader title="입고예정 조회" rules={INQUIRY_RULES} crumbs={["입고 계획", "입고예정 조회"]} />
-
-      <div className={styles.summary} role="group" aria-label="미종결 요약">
-        <button
-          type="button"
-          className={`${styles.tile} ${overdueCount ? styles.tileWarn : ""} ${overdueOn ? styles.tileOn : ""}`}
-          aria-pressed={overdueOn}
-          onClick={() => apply({ tab: "plan", st: "open", from: "", to: cutoff })}
-        >
-          <span className={styles.tileLabel}>경과 기준 초과 미종결</span>
-          <span className={styles.tileValue}>
-            <b className="mono">{overdueCount}</b>건
-          </span>
-          <span className={styles.tileSub}>입고예정일 후 {alertDays}일 이상 지난 승인·부분입고</span>
-        </button>
-        {!isDefault && (
-          <button
-            type="button"
-            className={styles.reset}
-            onClick={() => {
-              setClient(null);
-              apply({ ...defaultInquiry(today), tab });
-            }}
-          >
-            처음 조건으로
-          </button>
-        )}
-      </div>
-
-      <Tabs
-        label="조회 기준"
-        value={tab}
-        onChange={(k: InquiryTab) => apply({ tab: k, st: "open" })}
-        panelId="inquiry-list"
-        items={[
-          { key: "plan", label: "품목별" },
-          { key: "vehicle", label: "차량별" },
-        ]}
+      <MasterHeader
+        title="입고예정 조회"
+        rules={INQUIRY_RULES}
+        crumbs={["입고 계획", "입고예정 조회"]}
+        actions={<ModeSwitch label="보기" value={tab} onChange={(k: InquiryTab) => apply({ tab: k, st: "open" })} items={VIEW_ITEMS} />}
       />
+
+      {/* 경과 기준 초과 미종결 — 있을 때만 붉은 띠 1줄 (0건이면 자리 없음) */}
+      <AlertStrip
+        count={overdueCount}
+        unit="건"
+        active={overdueOn}
+        onShow={() => apply({ tab: "plan", st: "open", from: "", to: cutoff })}
+        onClear={reset}
+        activeLabel="기준 초과만 보는 중 · 처음 조건으로"
+      >
+        {overdueLabel}
+      </AlertStrip>
 
       <FilterBar>
         <DateRangeField label={tab === "plan" ? "입고예정일" : "출고일"} from={f.from} to={f.to} onFrom={(v) => apply({ from: v })} onTo={(v) => apply({ to: v })} />
-        <FilterField label="상태" htmlFor="f-st">
-          <Select id="f-st" value={f.st} onChange={(e) => apply({ st: e.target.value })}>
-            {Object.entries(states).map(([k, label]) => (
-              <option key={k} value={k}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </FilterField>
         {showClient && (
           <FilterField label="화주사" htmlFor="f-client">
             <ClientFilter
@@ -237,9 +224,28 @@ export function InquiryScreen({
         </FilterField>
       </FilterBar>
 
-      <div id="inquiry-list" role="tabpanel" aria-labelledby={`tab-${tab}`} aria-busy={loading} className={`${styles.panel} ${loading ? styles.loading : ""}`}>
+      {/* 상태 탭은 조회조건 아래 — 다른 목록 화면과 같은 순서 (2026-11-07 Sol 확정) */}
+      <Tabs
+        label="상태"
+        value={f.st}
+        onChange={(k: string) => apply({ st: k })}
+        panelId="inquiry-list"
+        items={stateTabs.map((s) => ({
+          ...s,
+          // 보기를 바꾼 직후 새 건수가 오기 전에는 이전 보기의 건수가 섞이지 않게 숨긴다
+          count: initial.tab === tab ? (stateCounts[s.key] ?? 0) : undefined,
+          ...(tab === "plan" && s.key === "open" ? { alert: overdueCount, alertLabel: `기준 초과 ${overdueCount}건` } : {}),
+        }))}
+      />
+
+      <div id="inquiry-list" role="tabpanel" aria-labelledby={`tab-${f.st}`} aria-busy={loading} className={`${styles.panel} ${loading ? styles.loading : ""}`}>
         <ListToolbar total={tab === "plan" ? planList.length : vehicleList.length}>
           {(tab === "plan" ? plans.length : vehicles.length) >= 1000 && <span className={styles.cap}>1,000건까지만 보입니다. 기간을 줄여 조회하세요.</span>}
+          {!isDefault && (
+            <button type="button" className={styles.reset} onClick={reset}>
+              처음 조건으로
+            </button>
+          )}
         </ListToolbar>
         {tab === "plan" ? (
           <PlanTable rows={planList} item={item} open={open} setOpen={setOpen} today={today} alertDays={alertDays} showClient={showClient} showCenter={multiCenter} />

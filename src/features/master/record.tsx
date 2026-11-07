@@ -134,6 +134,7 @@ export function EditCard({
   pending,
   error,
   submitLabel = "저장",
+  submitVariant = "primary",
   onCancel,
   onSubmit,
   children,
@@ -144,6 +145,8 @@ export function EditCard({
   pending: boolean;
   error?: string | null;
   submitLabel?: string;
+  /** 저장 버튼 모양 — 재요청처럼 '수정' 계열 행위는 editSoft(연보라) */
+  submitVariant?: "primary" | "editSoft";
   onCancel: () => void;
   onSubmit: () => void;
   children: React.ReactNode;
@@ -178,7 +181,7 @@ export function EditCard({
         <Button onClick={cancel} disabled={pending}>
           취소
         </Button>
-        <Button type="submit" variant="primary" disabled={!dirty || pending}>
+        <Button type="submit" variant={submitVariant} disabled={!dirty || pending}>
           {pending ? "저장 중…" : submitLabel}
         </Button>
       </div>
@@ -201,7 +204,7 @@ export function useEditTarget<T>(load: (id: number) => Promise<ActionResult<T>>)
     setLoading(true);
     const r = await load(id);
     setLoading(false);
-    if (!r.ok) return toast.show(r.error);
+    if (!r.ok) return toast.show(r.error, { tone: "error" });
     setTarget(r.data as T);
     setNonce((n) => n + 1);
   }

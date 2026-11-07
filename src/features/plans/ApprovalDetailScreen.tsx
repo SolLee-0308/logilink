@@ -68,7 +68,7 @@ export function ApprovalDetailScreen({
     setReloading(true);
     const r = await loadPlanDetail(d.id);
     setReloading(false);
-    if (!r.ok) return toast.show(r.error);
+    if (!r.ok) return toast.show(r.error, { tone: "error" });
     const next = r.data!;
     const { diffs, removed } = diffLines(next.lines, d.lines);
     setMarks({ diffs, removed, fromVersion: d.version });

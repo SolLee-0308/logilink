@@ -18,6 +18,28 @@
   animation: rise 0.18s ease-out;
 }
 
+/* 저장 실패 — 붉은 바탕 + 느낌표, 6초 (2026-11-07 Sol 확정) */
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--danger);
+  font-weight: 500;
+}
+
+.icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
 @keyframes rise {
   from {
     opacity: 0;

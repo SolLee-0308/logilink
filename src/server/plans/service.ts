@@ -102,7 +102,7 @@ export async function savePlan(me: PlanActor, input: SavePlanInput): Promise<Act
         const items = await tx.item.findMany({ where: { id: { in: v.lines.map((l) => l.itemId) }, clientId }, include: { uoms: true } });
         const byId = new Map(items.map((i) => [i.id, i]));
         // 소비기한 하한 = 입고예정일 + 최소 잔여일수 (운영 설정)
-        const minDays = await minExpiryDays();
+        const minDays = await minExpiryDays(tx);
         const minExpiry = minExpiryDate(v.planDate, minDays);
         const fe: Record<string, string> = {};
         const seen = new Set<string>();

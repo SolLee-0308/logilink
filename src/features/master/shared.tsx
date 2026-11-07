@@ -6,7 +6,7 @@ import { useEffect, useState, useTransition } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Sheet } from "@/components/ui/Overlay";
 import { RuleList, type Rule } from "@/components/ui/RuleList";
-import { useToast } from "@/components/ui/Toast";
+import { revealError, useToast } from "@/components/ui/Toast";
 import type { ActionResult } from "@/server/action-result";
 import styles from "./shared.module.css";
 
@@ -101,12 +101,8 @@ export function SubHeader({
 
 /** 첫 번째 오류 필드로 포커스 이동 — FormField가 오류일 때 data-invalid를 단다 */
 export function focusFirstError(root: ParentNode = document) {
-  requestAnimationFrame(() => {
-    const el = root.querySelector<HTMLElement>(
-      "[data-invalid] input:not([type=hidden]):not([readonly]), [data-invalid] select, [data-invalid] textarea, [data-invalid] button",
-    );
-    el?.focus();
-  });
+  // 첫 오류 칸(없으면 오류 상자)이 화면 가운데 오게 옮긴다
+  revealError(root);
 }
 
 /**
@@ -147,15 +143,16 @@ export function useAction() {
       if (r.code === "CONFLICT") {
         setFieldErrors({});
         setError(null);
-        toast.show(r.error);
+        toast.show(r.error, { tone: "error" });
         if (onConflict) onConflict();
         else router.refresh();
         return;
       }
       setFieldErrors(r.fieldErrors ?? {});
       setError(r.fieldErrors ? null : r.error);
-      toast.show(r.error);
-      if (r.fieldErrors) focusFirstError();
+      // 실패는 붉은 알림 + 오류 칸·오류 상자로 이동 (스크롤을 내린 상태에서도 보이게)
+      toast.show(r.error, { tone: "error" });
+      focusFirstError();
     });
   }
 

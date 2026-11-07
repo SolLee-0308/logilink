@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { ChipGroup } from "@/components/ui/FilterBar";
 import { FormField, Input, Select, Textarea } from "@/components/ui/Form";
 import { NoteBox } from "@/components/ui/NoteBox";
-import { useToast } from "@/components/ui/Toast";
+import { revealError, useToast } from "@/components/ui/Toast";
 import { useUnsavedChanges, useUnsavedGuard } from "@/components/ui/UnsavedGuard";
 import type { ItemUnit } from "@/domain/master";
 import {
@@ -244,8 +244,8 @@ export function PlanEditor({
     setFormError(null);
     const bad = lines.findIndex((_, i) => hasErr(i));
     if (headerErrors.centerId || headerErrors.planDate || bad >= 0) {
-      toast.show(bad >= 0 ? `확인 필요 ${issueCount}줄을 고친 뒤 저장하세요.` : "입력 내용을 확인하세요.");
-      requestAnimationFrame(() => (document.querySelector("[data-invalid], [aria-invalid=true]") as HTMLElement | null)?.focus());
+      toast.show(bad >= 0 ? `확인 필요 ${issueCount}줄을 고친 뒤 저장하세요.` : "입력 내용을 확인하세요.", { tone: "error" });
+      revealError();
       return;
     }
     start(async () => {
@@ -275,11 +275,15 @@ export function PlanEditor({
       }
       if (r.code === "CONFLICT" || r.code === "STATE") {
         setConflict(r.error);
+        toast.show(r.error, { tone: "error" });
+        revealError();
         return;
       }
       setServerErrors(r.fieldErrors ?? {});
       setFormError(r.fieldErrors ? null : r.error);
-      toast.show(r.error);
+      // 실패는 붉은 알림 + 오류 칸·오류 상자로 이동 (2026-11-07 Sol 확정)
+      toast.show(r.error, { tone: "error" });
+      revealError();
     });
   }
 

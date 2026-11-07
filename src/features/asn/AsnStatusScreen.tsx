@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { AlertStrip } from "@/components/ui/AlertStrip";
 import { AsnStatusBadge } from "@/components/ui/Badges";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
@@ -28,7 +29,7 @@ const addDays = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T00:00:00
 
 /**
  * ASN·상차 현황 (3PL, /plans/asn-status) — 소속 센터로 들어올 차량(ASN)과 상차 진행을 조회만 한다.
- * 위 요약(오늘·내일 출고, 출고일 지난 상차 대기)을 누르면 그 조건으로 걸러진다.
+ * 출고일 지난 상차 대기는 있을 때만 붉은 띠 + 상차 대기 탭 ⚠N, 오늘·내일 출고는 출고일 옆 빠른 선택 (요약 카드 대체, 2026-11-07 Sol 확정).
  */
 export function AsnStatusScreen({
   rows,
@@ -204,51 +205,42 @@ export function AsnStatusScreen({
     <>
       <MasterHeader title="ASN·상차 현황" count={counts.wait + counts.loading + counts.loaded} rules={ASN_STATUS_RULES} crumbs={["입고 계획", "ASN·상차 현황"]} />
 
-      {/* 요약 — 누르면 그 출고일로 거른다 */}
-      <div className={styles.summary} role="group" aria-label="출고 요약">
-        <button type="button" className={`${styles.tile} ${isRange(today, today) ? styles.tileOn : ""}`} onClick={() => pick(today, today)} aria-pressed={isRange(today, today)}>
-          <span className={styles.tileLabel}>오늘 출고</span>
-          <span className={styles.tileValue}>
-            <b className="mono">{summary.today.length}</b>대
-          </span>
-          <span className={styles.tileSub}>화주사 {clients(summary.today)}곳 · 상차완료 {summary.today.filter((r) => r.status === "LOADED").length}대</span>
-        </button>
-        <button
-          type="button"
-          className={`${styles.tile} ${isRange(tomorrow, tomorrow) ? styles.tileOn : ""}`}
-          onClick={() => pick(tomorrow, tomorrow)}
-          aria-pressed={isRange(tomorrow, tomorrow)}
-        >
-          <span className={styles.tileLabel}>내일 출고</span>
-          <span className={styles.tileValue}>
-            <b className="mono">{summary.tomorrow.length}</b>대
-          </span>
-          <span className={styles.tileSub}>화주사 {clients(summary.tomorrow)}곳</span>
-        </button>
-        <button
-          type="button"
-          className={`${styles.tile} ${summary.overdue.length ? styles.tileWarn : ""} ${isRange("", yesterday) && tab === "wait" ? styles.tileOn : ""}`}
-          onClick={() => pick("", yesterday, "wait")}
-          aria-pressed={isRange("", yesterday) && tab === "wait"}
-        >
-          <span className={styles.tileLabel}>출고일 지난 상차 대기</span>
-          <span className={styles.tileValue}>
-            <b className="mono">{summary.overdue.length}</b>건
-          </span>
-          <span className={styles.tileSub}>화주사에 차량 도착 여부 확인</span>
-        </button>
-        {(from || to) && (
-          <button type="button" className={styles.reset} onClick={() => pick("", "")}>
-            출고일 전체 보기
-          </button>
-        )}
-      </div>
+      {/* 출고일 지난 상차 대기 — 있을 때만 붉은 띠 (입고예정 조회와 같은 규칙, 2026-11-07 Sol 확정) */}
+      <AlertStrip
+        count={summary.overdue.length}
+        unit="대"
+        active={isRange("", yesterday) && tab === "wait"}
+        onShow={() => pick("", yesterday, "wait")}
+        onClear={() => pick("", "")}
+        activeLabel="출고일 지난 차량만 보는 중 · 전체 보기"
+      >
+        출고일이 지났는데 상차를 시작하지 않은 차량 (화주사에 차량 도착 여부 확인)
+      </AlertStrip>
 
       <FilterBar>
         <FilterField label="화주사" htmlFor="f-client">
           <ClientFilter id="f-client" value={client} onChange={setClient} />
         </FilterField>
         <DateRangeField label="출고일" from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        {/* 오늘·내일 출고 — 요약 카드 대신 출고일 옆 빠른 선택 (진행 중 ASN 대수) */}
+        <div className={styles.quick} role="group" aria-label="출고일 빠른 선택">
+          <button
+            type="button"
+            aria-pressed={isRange(today, today)}
+            onClick={() => (isRange(today, today) ? pick("", "") : pick(today, today))}
+            title={`화주사 ${clients(summary.today)}곳 · 상차완료 ${summary.today.filter((r) => r.status === "LOADED").length}대`}
+          >
+            오늘 <b className="mono">{summary.today.length}</b>대
+          </button>
+          <button
+            type="button"
+            aria-pressed={isRange(tomorrow, tomorrow)}
+            onClick={() => (isRange(tomorrow, tomorrow) ? pick("", "") : pick(tomorrow, tomorrow))}
+            title={`화주사 ${clients(summary.tomorrow)}곳`}
+          >
+            내일 <b className="mono">{summary.tomorrow.length}</b>대
+          </button>
+        </div>
         <FilterField label="번호·차량" htmlFor="f-q">
           <Input id="f-q" type="search" className={`${styles.q} mono`} placeholder="ASN·입고예정번호, 차량번호" value={q} onChange={(e) => setQ(e.target.value)} />
         </FilterField>
@@ -257,7 +249,18 @@ export function AsnStatusScreen({
         </FilterField>
       </FilterBar>
 
-      <Tabs label="ASN 상태" value={tab} onChange={setTab} panelId="asn-status-list" items={ASN_STATUS_TABS.map((k) => ({ key: k, label: TAB_LABEL[k], count: counts[k] }))} />
+      <Tabs
+        label="ASN 상태"
+        value={tab}
+        onChange={setTab}
+        panelId="asn-status-list"
+        items={ASN_STATUS_TABS.map((k) => ({
+          key: k,
+          label: TAB_LABEL[k],
+          count: counts[k],
+          ...(k === "wait" ? { alert: summary.overdue.length, alertLabel: `출고일 지난 상차 대기 ${summary.overdue.length}대` } : {}),
+        }))}
+      />
       <div id="asn-status-list" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         <ListToolbar total={list.length} />
         <DataTable

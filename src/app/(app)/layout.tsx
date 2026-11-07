@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { AppShell } from "@/components/layout/AppShell";
 import { NAV_COOKIE } from "@/components/layout/nav-cookie";
 import { ORG_LABEL, ROLE_META, rolesLabel } from "@/domain/master";
-import { countWaitingItemRequests } from "@/server/master/queries";
+import { isShipperRole } from "@/domain/permissions";
+import { countRejectedItemRequests, countWaitingItemRequests } from "@/server/master/queries";
 import { countApprovalWaiting } from "@/server/plans/queries";
 import { countMyRejected } from "@/server/plans/entry";
 import { requireUser } from "@/server/session";
@@ -12,7 +13,12 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireUser();
-  const [itemRequestWaiting, approvalWaiting, planRejected] = await Promise.all([countWaitingItemRequests(), countApprovalWaiting(me), countMyRejected(me)]);
+  const [itemRequestWaiting, itemRequestRejected, approvalWaiting, planRejected] = await Promise.all([
+    countWaitingItemRequests(),
+    isShipperRole(me.roles) ? countRejectedItemRequests() : Promise.resolve(0),
+    countApprovalWaiting(me),
+    countMyRejected(me),
+  ]);
   const navCollapsed = (await cookies()).get(NAV_COOKIE)?.value === "collapsed";
   const meta = ROLE_META[me.roles[0]];
   const viewer = {
@@ -22,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     orgLabel: `${ORG_LABEL[meta.org]} · ${me.clientName ?? me.centerName ?? ""}`,
   };
   return (
-    <AppShell serverCounts={{ itemRequestWaiting, approvalWaiting, planRejected }} viewer={viewer} navCollapsed={navCollapsed}>
+    <AppShell serverCounts={{ itemRequestWaiting, itemRequestRejected, approvalWaiting, planRejected }} viewer={viewer} navCollapsed={navCollapsed}>
       {children}
     </AppShell>
   );

@@ -57,18 +57,7 @@ export function DateRangeField({
         <Input id="f-from" type="date" aria-label={`${label} 시작`} value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} />
         <span aria-hidden>~</span>
         <Input type="date" aria-label={`${label} 끝`} value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} />
-        {(from || to) && (
-          <button
-            type="button"
-            className={styles.rangeClear}
-            onClick={() => {
-              onFrom("");
-              onTo("");
-            }}
-          >
-            기간 지우기
-          </button>
-        )}
+        {/* [기간 지우기] 버튼은 뺐다 — 달력 팝업의 [삭제]로 지운다 (2026-11-07 Sol 피드백: 자리를 많이 차지) */}
       </span>
     </FilterField>
   );

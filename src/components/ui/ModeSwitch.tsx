@@ -5,6 +5,14 @@ import styles from "./ModeSwitch.module.css";
 
 const ICONS = {
   pencil: <path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" />,
+  list: <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />,
+  truck: (
+    <>
+      <path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z" />
+      <circle cx="7" cy="18" r="1.6" />
+      <circle cx="17" cy="18" r="1.6" />
+    </>
+  ),
   sheet: (
     <>
       <rect x="4" y="3" width="16" height="18" rx="2" />
@@ -30,7 +38,7 @@ export function ModeSwitch<K extends string>({
   onChange,
   label,
 }: {
-  items: { key: K; label: string; icon?: "pencil" | "sheet" | "image" }[];
+  items: { key: K; label: string; icon?: keyof typeof ICONS }[];
   value: K;
   onChange: (key: K) => void;
   label: string;

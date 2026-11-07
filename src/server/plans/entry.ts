@@ -159,9 +159,13 @@ export async function entryOptions(me: PlanActor): Promise<EntryOptions | null> 
   return { centers, defaultCenterId, items: [], holidays: holidays.map((h) => ({ centerId: h.centerId, date: ymd(h.date), name: h.name })), today, minExpiryDays: await minExpiryDays() };
 }
 
-/** 최소 잔여 소비기한(일) — 운영 설정, 없거나 잘못된 값이면 기본 7일 */
-export async function minExpiryDays(): Promise<number> {
-  const s = await db.setting.findUnique({ where: { key: MIN_EXPIRY_KEY } });
+/**
+ * 최소 잔여 소비기한(일) — 운영 설정, 없거나 잘못된 값이면 기본 7일.
+ * 트랜잭션 안에서 부를 때는 그 트랜잭션(tx)을 넘긴다 — 밖의 연결로 읽으면 연결 수가 적은 환경(시험 DB 1개)에서
+ * 트랜잭션이 잡은 연결을 기다리다 5초 제한으로 저장이 실패한다 (2026-11-07)
+ */
+export async function minExpiryDays(client: Pick<typeof db, "setting"> | Prisma.TransactionClient = db): Promise<number> {
+  const s = await client.setting.findUnique({ where: { key: MIN_EXPIRY_KEY } });
   const n = Number(s?.value);
   return Number.isInteger(n) && n >= 0 ? n : DEFAULT_MIN_EXPIRY_DAYS;
 }

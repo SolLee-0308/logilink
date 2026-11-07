@@ -7,6 +7,10 @@ export interface TabItem<K extends string> {
   key: K;
   label: string;
   count?: number;
+  /** 주의 건수 — 붉은 ⚠N (0이면 숨김). 예: 미종결 탭의 경과 기준 초과 건 */
+  alert?: number;
+  /** alert 숫자의 뜻 (스크린리더·마우스 올림) */
+  alertLabel?: string;
 }
 
 interface TabsProps<K extends string> {
@@ -56,6 +60,13 @@ export function Tabs<K extends string>({ items, value, onChange, label, panelId 
           >
             {t.label}
             {t.count !== undefined && <span className={`${styles.n} mono`}>{t.count.toLocaleString()}</span>}
+            {!!t.alert && (
+              <span className={`${styles.alert} mono`} title={t.alertLabel}>
+                <span aria-hidden="true">⚠</span>
+                {t.alert.toLocaleString()}
+                {t.alertLabel && <span className="sr-only"> {t.alertLabel}</span>}
+              </span>
+            )}
           </button>
         );
       })}

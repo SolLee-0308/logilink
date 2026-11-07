@@ -50,7 +50,7 @@ function SettingCard({ row }: { row: SettingRow }) {
     setOpening(true);
     const r = await loadSetting(row.key);
     setOpening(false);
-    if (!r.ok) return toast.show(r.error);
+    if (!r.ok) return toast.show(r.error, { tone: "error" });
     setEditing(r.data!);
   }
 
