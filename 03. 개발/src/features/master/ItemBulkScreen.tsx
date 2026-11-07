@@ -49,6 +49,7 @@ export function ItemBulkScreen({
   defaultClientId,
   clientName,
   embedded = false,
+  onDirtyChange,
 }: {
   kind: BulkKind;
   /** 3PL: 사용 중인 화주사 */
@@ -58,6 +59,8 @@ export function ItemBulkScreen({
   clientName: string;
   /** 품목 등록·등록 요청 화면의 [엑셀로 여러 품목] 안에 들어갈 때 — 머리(SubHeader)는 등록 화면이 그린다 */
   embedded?: boolean;
+  /** 파일을 올렸거나 검사 결과가 있으면 true — 등록 화면이 입력 방법을 바꿀 때 경고한다 */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -115,6 +118,8 @@ export function ItemBulkScreen({
   const okRows = useMemo(() => preview?.rows.filter((r) => r.errors.length === 0) ?? [], [preview]);
   const errRows = useMemo(() => preview?.rows.filter((r) => r.errors.length > 0) ?? [], [preview]);
   useUnsavedChanges(okRows.length > 0 && !saving);
+  const hasInput = !!fileName || !!preview;
+  useEffect(() => onDirtyChange?.(hasInput), [hasInput, onDirtyChange]);
 
   const shown = filter === "ok" ? okRows : filter === "err" ? errRows : (preview?.rows ?? []);
   const cols = columnsOf(kind);
@@ -216,11 +221,8 @@ export function ItemBulkScreen({
         no={1}
         title="양식 내려받기"
         state={fileName || preview ? "done" : "current"}
-        description={
-          isItem
-            ? "품목 1개를 1행에 씁니다. BOX·PLT 입수와 단위별 바코드, 별칭까지 한 번에 넣을 수 있습니다."
-            : "요청 1건을 1행에 씁니다. 단위 1개와 바코드 1개를 넣고, 단위 환산·추가 바코드는 3PL이 등록 후 보완합니다."
-        }
+        // 요청 양식 설명은 뺀다 (2026-11-07 Sol 피드백)
+        description={isItem ? "품목 1개를 1행에 씁니다. BOX·PLT 입수와 단위별 바코드, 별칭까지 한 번에 넣을 수 있습니다." : undefined}
         aside={
           // 라우트 핸들러가 역할에 맞는 양식을 만들어 준다
           <a className={styles.download} href="/master/items/template" download>
@@ -233,7 +235,7 @@ export function ItemBulkScreen({
         no={2}
         title="작성한 파일 올리기"
         state={preview ? "done" : fileName ? "current" : "todo"}
-        description={`.xlsx 파일 1개, 한 번에 최대 ${BULK_MAX_ROWS.toLocaleString()}행. [파일 확인]을 누르면 행마다 검사 결과를 먼저 보여 주고, 아직 저장하지 않습니다.`}
+        description={`.xlsx 1개, 최대 ${BULK_MAX_ROWS.toLocaleString()}행 · 파일 확인만으로는 저장되지 않습니다`}
         // [파일 확인]은 화주사 선택(3PL)·파일 올리기가 모두 끝났을 때만 켠다 (2026-11-06 Sol 결정)
         footer={
           <Button variant={preview ? "secondary" : "primary"} onClick={check} disabled={busy || !fileName || (isItem && !clientId)}>
@@ -330,7 +332,20 @@ export function ItemBulkScreen({
         no={3}
         title={`검사 결과 확인 후 ${verb}`}
         state={preview ? "current" : "todo"}
-        description={`오류가 없는 행만 ${verb}합니다. 오류 행은 내려받아 고친 뒤 다시 올리세요.`}
+        description={`오류 없는 행만 ${verb}됩니다 · 오류 행은 고쳐서 다시 올리세요`}
+        // [다시 올리기]·[요청]은 단계 제목 줄 오른쪽 (2026-11-07 Sol 피드백, 요청 = 보라 채움)
+        aside={
+          preview && (
+            <div className={styles.stepActions}>
+              <Button onClick={reset} disabled={saving}>
+                다시 올리기
+              </Button>
+              <Button variant="create" onClick={commit} disabled={saving || okRows.length === 0}>
+                {saving ? `${verb} 중…` : `${okRows.length.toLocaleString()}건 ${verb}`}
+              </Button>
+            </div>
+          )
+        }
       >
         {!preview ? (
           <p className={styles.placeholder}>파일을 올리고 [파일 확인]을 누르면 행마다 검사 결과가 여기에 표시됩니다.</p>
@@ -366,12 +381,6 @@ export function ItemBulkScreen({
                 오류 행 내려받기
               </Button>
             )}
-            <Button size="sm" onClick={reset} disabled={saving}>
-              다시 올리기
-            </Button>
-            <Button size="sm" variant="primary" onClick={commit} disabled={saving || okRows.length === 0}>
-              {saving ? `${verb} 중…` : `${okRows.length.toLocaleString()}건 ${verb}`}
-            </Button>
           </ListToolbar>
           <DataTable
             caption="엑셀 검사 결과"
@@ -403,7 +412,7 @@ function Step({
   no: number;
   title: string;
   state: StepState;
-  description: string;
+  description?: string;
   aside?: React.ReactNode;
   footer?: React.ReactNode;
   children?: React.ReactNode;
@@ -416,7 +425,7 @@ function Step({
         </span>
         <div className={styles.stepText}>
           <h2>{title}</h2>
-          <p className="muted">{description}</p>
+          {description && <p className="muted">{description}</p>}
         </div>
         {aside && <div className={styles.stepAside}>{aside}</div>}
       </div>
