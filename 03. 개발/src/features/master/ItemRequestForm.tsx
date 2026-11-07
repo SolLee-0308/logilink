@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FormField, Input, Select, Textarea } from "@/components/ui/Form";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ITEM_UNITS, STORAGE_TEMP_LABEL, STORAGE_TEMPS, type ItemUnit, type StorageTemp } from "@/domain/master";
@@ -23,8 +23,11 @@ export function ItemRequestForm({
   row,
   onCancel,
   onSaved,
+  onDirtyChange,
 }: {
   clientName: string;
+  /** 입력한 내용이 있으면 true — 등록 화면이 입력 방법을 바꿀 때 경고한다 */
+  onDirtyChange?: (dirty: boolean) => void;
   /** 반려된 요청 (재요청) */
   row?: ItemRequestRow;
   onCancel: () => void;
@@ -44,6 +47,7 @@ export function ItemRequestForm({
   const act = useAction();
   // 재요청은 고치지 않아도 다시 보낼 수 있다 (사유가 "확인 필요"인 경우)
   const dirty = !!row || (Object.keys(f) as (keyof typeof f)[]).some((k) => f[k] !== initial[k]);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF({ ...f, [k]: v });
 
   function submit() {

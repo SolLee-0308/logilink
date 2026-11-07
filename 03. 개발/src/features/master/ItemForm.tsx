@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { FormCheck, FormError, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
 import { ClientPicker } from "@/features/plans/ClientFinder";
@@ -45,8 +45,11 @@ export function ItemForm({
   onCancel,
   onSaved,
   onConflict,
+  onDirtyChange,
 }: {
   row: ItemRow | null;
+  /** 입력한 내용이 있으면 true — 등록 화면이 입력 방법을 바꿀 때 경고한다 */
+  onDirtyChange?: (dirty: boolean) => void;
   clients: ClientOption[];
   defaultClientId?: string;
   onCancel: () => void;
@@ -79,6 +82,7 @@ export function ItemForm({
   );
   const currentSig = sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + `|${clientCode.trim()}` + (row ? "" : `|${clientId}`);
   const dirty = currentSig !== initialSig || aliasInput.trim() !== "";
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   const usedUnits = new Set(uoms.map((u) => u.unit));
   const freeUnits = ITEM_UNITS.filter((u) => !usedUnits.has(u));
