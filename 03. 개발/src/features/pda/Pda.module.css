@@ -1780,3 +1780,9 @@ select.field {
     animation: none;
   }
 }
+
+/* 지시 품목이 모두 일치 — 상태 줄 초록 글자 */
+.matchAll {
+  color: var(--st-done-fg);
+  font-weight: 600;
+}

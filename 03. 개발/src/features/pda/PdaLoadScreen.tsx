@@ -168,6 +168,8 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
 
   const tone = ordered ? "blue" : "amber";
   const firstInput = [...view.inputs].reverse().find((i) => !i.canceled);
+  const orderLineCount = view.lines.filter((l) => l.orderBase > 0).length;
+  const matchedCount = view.lines.filter((l) => l.orderBase > 0 && l.state === "match").length;
 
   /**
    * 차량 머리 — 차량번호·구분 + 상태 한 줄 (2026-11-06 Sol 결정: 타임라인 3단계 → 상태 한 줄).
@@ -184,6 +186,15 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
         {working ? (
           <>
             <b>상차 중</b> · {timeOf(view.createdAt)} 시작{firstInput ? ` · 마지막 입력 ${timeOf(view.inputs.find((i) => !i.canceled)?.inputAt ?? firstInput.inputAt)}` : ""}
+            {/* 지시 품목 일치 — 태그 대신 상태 줄 일반 글자 (2026-11-07 Sol 확정), 다 맞으면 초록 */}
+            {view.type === "ORDERED" && orderLineCount > 0 && (
+              <>
+                {" · "}
+                <span className={matchedCount === orderLineCount ? styles.matchAll : undefined}>
+                  일치 <span className="mono">{matchedCount}/{orderLineCount}</span>품목
+                </span>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -585,19 +596,12 @@ function ScrollName({ code, name }: { code: string; name: string }) {
  */
 function Lines({ view }: { view: LoadView }) {
   const ordered = view.type === "ORDERED";
-  const orderLines = view.lines.filter((l) => l.orderBase > 0);
-  const matched = orderLines.filter((l) => l.state === "match").length;
   return (
     <section className={styles.flat}>
       <h2 className={styles.h2}>
         품목 <span className={styles.count}>{view.lines.length}</span>
-        {ordered ? (
-          <span className={`${styles.progressTag} ${orderLines.length > 0 && matched === orderLines.length ? styles.progressDone : ""}`}>
-            일치 <b className="mono">{matched}</b> / {orderLines.length}줄
-          </span>
-        ) : (
-          <span className={styles.h2Sub}>상차 수량</span>
-        )}
+        {/* 지시 상차의 '일치 N/M' 태그는 머리 상태 줄로 옮겼다 (2026-11-07 Sol 확정) */}
+        {!ordered && <span className={styles.h2Sub}>상차 수량</span>}
       </h2>
       {view.lines.length === 0 ? (
         <p className={styles.empty}>{ordered ? "지시 품목이 없습니다." : "아직 실은 품목이 없습니다. 오늘 ASN에 있는 품목만 실을 수 있습니다."}</p>
