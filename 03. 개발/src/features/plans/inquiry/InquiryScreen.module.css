@@ -154,17 +154,24 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--line-2);
+  /* 연보라 — 눈에 띄게 (2026-11-07 Sol 피드백, [수정] 버튼과 같은 계열) */
+  border: 1px solid var(--violet-100);
   border-radius: var(--r-chip);
-  background: var(--bg);
-  color: var(--muted);
+  background: var(--violet-50);
+  color: var(--violet-700);
   font-size: 11px;
   cursor: pointer;
 }
 
 .toggle:hover {
-  border-color: var(--ink);
-  color: var(--ink);
+  border-color: var(--violet-300);
+}
+
+/* 펼친 행 — 진한 보라 */
+.toggle[aria-expanded="true"] {
+  background: var(--violet-600);
+  border-color: var(--violet-600);
+  color: #fff;
 }
 
 .sub {
@@ -192,15 +199,18 @@
 .detail {
   display: inline-block;
   padding: 3px 10px;
-  border: 1px solid var(--line-2);
+  /* 연보라 (2026-11-07 Sol 피드백) */
+  border: 1px solid var(--violet-100);
   border-radius: var(--r-chip);
-  color: var(--fg);
+  background: var(--violet-50);
+  color: var(--violet-700);
   font-size: var(--fs-12);
+  font-weight: 500;
   text-decoration: none;
 }
 
 .detail:hover {
-  border-color: var(--ink);
+  border-color: var(--violet-300);
 }
 
 .vehicle {

@@ -191,18 +191,6 @@ export function InquiryScreen({
         </div>
       )}
 
-      <Tabs
-        label="상태"
-        value={f.st}
-        onChange={(k: string) => apply({ st: k })}
-        panelId="inquiry-list"
-        items={stateTabs.map((s) => ({
-          ...s,
-          count: stateCounts[s.key] ?? 0,
-          ...(tab === "plan" && s.key === "open" ? { alert: overdueCount, alertLabel: `기준 초과 ${overdueCount}건` } : {}),
-        }))}
-      />
-
       <FilterBar>
         <DateRangeField label={tab === "plan" ? "입고예정일" : "출고일"} from={f.from} to={f.to} onFrom={(v) => apply({ from: v })} onTo={(v) => apply({ to: v })} />
         {showClient && (
@@ -243,6 +231,19 @@ export function InquiryScreen({
           <Input id="f-item" type="search" className={styles.item} placeholder="품목코드 또는 품목명" value={f.item} onChange={(e) => search({ item: e.target.value })} />
         </FilterField>
       </FilterBar>
+
+      {/* 상태 탭은 조회조건 아래 — 다른 목록 화면과 같은 순서 (2026-11-07 Sol 확정) */}
+      <Tabs
+        label="상태"
+        value={f.st}
+        onChange={(k: string) => apply({ st: k })}
+        panelId="inquiry-list"
+        items={stateTabs.map((s) => ({
+          ...s,
+          count: stateCounts[s.key] ?? 0,
+          ...(tab === "plan" && s.key === "open" ? { alert: overdueCount, alertLabel: `기준 초과 ${overdueCount}건` } : {}),
+        }))}
+      />
 
       <div id="inquiry-list" role="tabpanel" aria-labelledby={`tab-${f.st}`} aria-busy={loading} className={`${styles.panel} ${loading ? styles.loading : ""}`}>
         <ListToolbar total={tab === "plan" ? planList.length : vehicleList.length}>
