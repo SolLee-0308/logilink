@@ -149,7 +149,8 @@ export function ItemsScreen({
       render: (r) => (
         <>
           <span className="mono">{r.code}</span>
-          {r.clientCode && <small className="muted mono" style={{ display: "block" }}>{r.clientCode}</small>}
+          {/* 화주사 품목코드는 더 연하게 (2026-11-07 Sol 피드백) */}
+          {r.clientCode && <small className="mono" style={{ display: "block", color: "var(--soft)" }}>{r.clientCode}</small>}
         </>
       ),
     },

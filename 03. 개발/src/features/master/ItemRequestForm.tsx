@@ -77,6 +77,8 @@ export function ItemRequestForm({
       pending={act.pending}
       error={act.error}
       submitLabel={row ? "다시 요청" : "요청"}
+      // 재요청은 [수정] 버튼과 같은 연보라 (2026-11-07 Sol 피드백)
+      submitVariant={row ? "editSoft" : "primary"}
       onCancel={onCancel}
       onSubmit={submit}
     >

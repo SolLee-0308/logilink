@@ -14,7 +14,10 @@ import {
 } from "@/components/icons";
 
 /** 사이드바 건수 배지 키 */
-export type NavCountKey = "approvalWaiting" | "itemRequestWaiting" | "planRejected";
+export type NavCountKey = "approvalWaiting" | "itemRequestWaiting" | "itemRequestRejected" | "planRejected";
+
+/** 붉은 숫자로 보일 건수 — 화주사가 고쳐야 할 반려 건 (2026-11-07 Sol 피드백) */
+export const DANGER_COUNT_KEYS: ReadonlySet<NavCountKey> = new Set(["itemRequestRejected", "planRejected"]);
 
 export interface NavChild {
   label: string;
@@ -22,6 +25,8 @@ export interface NavChild {
   shipperLabel?: string;
   href: string;
   countKey?: NavCountKey;
+  /** 화주사 계정에 보일 건수 (없으면 countKey) */
+  shipperCountKey?: NavCountKey;
 }
 
 export interface NavItem {
@@ -44,7 +49,8 @@ export const MASTER_MENU: NavChild[] = [
   { label: "화주사", href: "/master/clients" },
   // 3PL: 조회 + 등록·수정 / 화주사: 조회만 (2026-11-04 Sol 확정)
   { label: "품목 관리", shipperLabel: "품목 조회", href: "/master/items" },
-  { label: "품목 등록 요청", href: "/master/item-requests", countKey: "itemRequestWaiting" },
+  // 3PL은 등록대기 건수, 화주사는 반려(수정 필요) 건수를 붉은 숫자로
+  { label: "품목 등록 요청", href: "/master/item-requests", countKey: "itemRequestWaiting", shipperCountKey: "itemRequestRejected" },
   { label: "사유 코드", href: "/master/codes" },
   { label: "사용자·역할", href: "/master/users" },
   { label: "휴무일", href: "/master/holidays" },
@@ -58,10 +64,10 @@ export const NAV_GROUPS: NavGroup[] = [
       // 화주사: 입고예정 등록(승인 전 건 관리, 건수 = 반려되어 고칠 건) / 3PL: 승인 대기 — 권한에 따라 하나만 보인다
       { label: "입고예정 등록", href: "/plans/entry", icon: <IconPlus />, countKey: "planRejected" },
       { label: "승인 대기", href: "/plans/approval", icon: <IconCheck />, countKey: "approvalWaiting" },
+      // 화주사·3PL 공통: 승인된 입고예정의 품목별·차량별 진행과 잔량 (정의서 ⑤) — 입고예정 등록 바로 아래 (2026-11-07 Sol)
+      { label: "입고예정 조회", href: "/plans/inquiry", icon: <IconDoc /> },
       // 화주사: 승인된 입고예정을 차량에 나눠 담고 상차지시서 발행 (정의서 ③)
       { label: "ASN 등록", href: "/plans/asn", icon: <IconTruck /> },
-      // 화주사·3PL 공통: 승인된 입고예정의 품목별·차량별 진행과 잔량 (정의서 ⑤)
-      { label: "입고예정 조회", href: "/plans/inquiry", icon: <IconDoc /> },
       // 3PL: 들어올 차량(ASN)과 상차 진행 조회 — 조회 전용
       { label: "ASN·상차 현황", href: "/plans/asn-status", icon: <IconTruck /> },
     ],

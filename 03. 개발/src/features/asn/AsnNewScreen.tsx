@@ -110,7 +110,7 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
     startReload(async () => {
       const r = await reloadAsnOptions();
       if (!r.ok || !r.data) {
-        toast.show(r.ok ? "다시 불러오지 못했습니다." : r.error);
+        toast.show(r.ok ? "다시 불러오지 못했습니다." : r.error, { tone: "error" });
         return;
       }
       setPlans(r.data.plans);
@@ -125,11 +125,14 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
     setShowAll(true);
     setFormError(null);
     if (Object.keys(headerErrors).length || lineIssues > 0) {
+      toast.show("입력 내용을 확인하세요.", { tone: "error" });
       focusFirstError();
       return;
     }
     if (!picked.length) {
       setFormError("차량에 담을 품목이 없습니다. 아래 입고예정에서 이번 차량에 실을 수량을 입력하세요.");
+      toast.show("차량에 담을 품목이 없습니다.", { tone: "error" });
+      focusFirstError();
       return;
     }
     start(async () => {
@@ -142,7 +145,7 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
         memo: memo || null,
         lines: picked.map((p) => ({ planLineId: p.line.planLineId, qty: p.value })),
       });
-      toast.show(r.ok ? r.message : r.error);
+      toast.show(r.ok ? r.message : r.error, { tone: r.ok ? "default" : "error" });
       if (r.ok && r.data) {
         setSaved(true);
         router.push(`/plans/asn/${r.data.id}?issued=1`);
@@ -152,7 +155,8 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
         setServerErrors(r.fieldErrors ?? {});
         setFormError(r.fieldErrors && r.error !== DISTRIBUTE_CONFLICT_MSG ? null : r.error);
         setStale(r.error === DISTRIBUTE_CONFLICT_MSG);
-        if (r.fieldErrors) focusFirstError();
+        // 실패는 오류 칸·오류 상자로 이동 (2026-11-07 Sol 확정)
+        focusFirstError();
       }
     });
   }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { NAV_GROUPS, type NavCountKey, type NavItem } from "@/config/navigation";
+import { DANGER_COUNT_KEYS, NAV_GROUPS, type NavCountKey, type NavItem } from "@/config/navigation";
 import { can, isShipperRole, resourceOfPath } from "@/domain/permissions";
 import type { UserRole } from "@/domain/master";
 import { logout } from "@/server/auth/actions";
@@ -37,7 +37,11 @@ export function Sidebar({ serverCounts = {}, viewer, onCollapse }: { serverCount
               ...it,
               children: it.children
                 .filter((c) => can(viewer.roles, resourceOfPath(c.href), "view"))
-                .map((c) => (c.shipperLabel && isShipperRole(viewer.roles) ? { ...c, label: c.shipperLabel } : c)),
+                .map((c) =>
+                  isShipperRole(viewer.roles)
+                    ? { ...c, label: c.shipperLabel ?? c.label, countKey: c.shipperCountKey ?? c.countKey }
+                    : c,
+                ),
             }
           : it,
       ),
@@ -108,10 +112,10 @@ export function Sidebar({ serverCounts = {}, viewer, onCollapse }: { serverCount
   );
 }
 
-function Count({ value }: { value?: number }) {
+function Count({ value, danger = false }: { value?: number; danger?: boolean }) {
   if (!value) return null;
   return (
-    <span className={styles.cnt}>
+    <span className={`${styles.cnt} ${danger ? styles.cntDanger : ""}`}>
       {value}
       <span className="sr-only">건</span>
     </span>
@@ -149,6 +153,8 @@ function NavParent({ item, pathname, counts }: { item: NavItem; pathname: string
   const expanded = open || inside;
   const id = `sub-${item.label}`;
   const total = children.reduce((n, c) => n + (c.countKey ? counts[c.countKey] ?? 0 : 0), 0);
+  // 접힌 상위 메뉴 합계도, 반려 건이 섞여 있으면 붉게
+  const totalDanger = children.some((c) => c.countKey && DANGER_COUNT_KEYS.has(c.countKey) && (counts[c.countKey] ?? 0) > 0);
 
   return (
     <>
@@ -161,7 +167,7 @@ function NavParent({ item, pathname, counts }: { item: NavItem; pathname: string
       >
         {item.icon}
         <span className={styles.navLabel}>{item.label}</span>
-        {!expanded && <Count value={total} />}
+        {!expanded && <Count value={total} danger={totalDanger} />}
         <svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
         </svg>
@@ -174,7 +180,7 @@ function NavParent({ item, pathname, counts }: { item: NavItem; pathname: string
               <li key={c.href}>
                 <Link href={c.href} className={`${styles.subItem} ${on ? styles.on : ""}`} aria-current={on ? "page" : undefined}>
                   <span className={styles.navLabel}>{c.label}</span>
-                  {c.countKey && <Count value={counts[c.countKey]} />}
+                  {c.countKey && <Count value={counts[c.countKey]} danger={DANGER_COUNT_KEYS.has(c.countKey)} />}
                 </Link>
               </li>
             );

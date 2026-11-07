@@ -11,7 +11,7 @@ import { getPlanDetail } from "@/server/plans/queries";
 import { distributedByLine } from "@/server/asn/queries";
 import { can, isShipperRole } from "@/domain/permissions";
 import { CANCEL_GROUP, type ItemUnit } from "@/domain/master";
-import { ALERT_DAYS_KEY, DEFAULT_ALERT_DAYS, OPEN_PLAN, approvedCancelBlock, asnStatusesOf, overdueCutoff, planStatusesOf } from "@/domain/inquiry-rules";
+import { ALERT_DAYS_KEY, DEFAULT_ALERT_DAYS, INQUIRY_PLAN, OPEN_ASN, OPEN_PLAN, approvedCancelBlock, asnStatusesOf, overdueCutoff, planStatusesOf } from "@/domain/inquiry-rules";
 import { todayKst } from "@/lib/format";
 import type { CenterOption, InquiryDetail, InquiryPlanRow, InquiryVehicleRow } from "@/features/plans/inquiry/types";
 import type { InquiryQuery } from "@/features/plans/inquiry/inquiry-list";
@@ -122,6 +122,34 @@ export async function listInquiryPlans(me: PlanActor, q: InquiryQuery): Promise<
 }
 
 /** 경과 기준 초과 미종결 건수 — 기간 조건과 상관없이 (요약 칸) */
+/**
+ * 상태 탭 건수 (2026-11-07 Sol 확정 A안: 상태 탭 + 보기 전환) — 기간·화주사·센터는 목록과 같은 조건, 상태만 빼고 센다.
+ * 키: 상태 코드 + open(미종결/미입고) + all(전체). 번호·품목 검색은 화면에서 거르므로 건수에 넣지 않는다.
+ */
+export async function countInquiryStates(me: PlanActor, q: InquiryQuery): Promise<Record<string, number>> {
+  if (!canInquiry(me)) return {};
+  const out: Record<string, number> = {};
+  if (q.tab === "plan") {
+    const rows = await db.inboundPlan.groupBy({
+      by: ["status"],
+      where: { ...narrow(me, q), status: { in: [...INQUIRY_PLAN] }, approvedAt: { not: null }, planDate: range(q.from, q.to) },
+      _count: { _all: true },
+    });
+    for (const r of rows) out[r.status] = r._count._all;
+    out.open = OPEN_PLAN.reduce((s, k) => s + (out[k] ?? 0), 0);
+  } else {
+    const rows = await db.asn.groupBy({
+      by: ["status"],
+      where: { ...narrow(me, q), status: { in: asnStatusesOf("all") }, shipDate: range(q.from, q.to) },
+      _count: { _all: true },
+    });
+    for (const r of rows) out[r.status] = r._count._all;
+    out.open = OPEN_ASN.reduce((s, k) => s + (out[k] ?? 0), 0);
+  }
+  out.all = Object.entries(out).reduce((s, [k, n]) => (k === "open" ? s : s + n), 0);
+  return out;
+}
+
 export async function countOverdue(me: PlanActor, q: Pick<InquiryQuery, "client" | "center">, days: number): Promise<number> {
   if (!canInquiry(me)) return 0;
   return db.inboundPlan.count({

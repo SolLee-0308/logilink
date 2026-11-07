@@ -115,6 +115,11 @@ a.on:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* 화주사가 고쳐야 할 반려 건수 — 붉은 숫자 (2026-11-07 Sol 피드백) */
+.cntDanger {
+  background: var(--danger);
+}
+
 .user {
   margin-top: auto;
   background: var(--ink-2);

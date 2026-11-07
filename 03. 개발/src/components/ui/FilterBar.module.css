@@ -12,6 +12,11 @@
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  /* 높이 2줄 고정 (2026-11-07 Sol 피드백) — 화면마다 조건 수가 달라도 목록 시작 위치가 같게.
+     조건이 1줄이면 그 안에서 세로 가운데. 창이 좁아 3줄로 넘칠 때만 늘어난다 */
+  box-sizing: border-box;
+  min-height: 110px;
+  align-content: center;
 }
 
 .field {

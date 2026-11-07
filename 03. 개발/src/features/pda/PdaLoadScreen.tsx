@@ -31,7 +31,8 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
   const [view, setView] = useState(initial);
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  /** 방금 입력·정정·취소한 품목 — 목록에서 그 줄로 옮겨 잠깐 강조 (토스트 대신, 2026-11-07 Sol 피드백) */
+  const [flash, setFlash] = useState<{ itemId: number; n: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scan, setScan] = useState("");
   const [preview, setPreview] = useState<ScanPreview | null>(null);
@@ -64,11 +65,6 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
     return () => clearInterval(t);
   }, [working, reload]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const resetScan = () => {
     setScan("");
@@ -102,9 +98,10 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
       setError(null);
       const r = await addLoadInput({ loadId: view.id, scan: preview.scan, qty: Number(qty), deviceId: deviceId(), confirm });
       if (r.ok) {
-        setToast(r.message);
+        const itemId = preview.itemId;
         resetScan();
         await reload();
+        setFlash({ itemId, n: Date.now() });
       } else if (r.code === "CONFIRM") setWarn(r.error);
       else {
         setError(r.error);
@@ -117,9 +114,9 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
       setError(null);
       if (!window.confirm(`${i.itemName} +${i.addQty} ${i.unit} 입력을 취소할까요?`)) return;
       const r = await cancelLoadInput({ inputId: i.id });
-      if (r.ok) setToast(r.message);
-      else setError(r.error);
+      if (!r.ok) setError(r.error);
       await reload();
+      if (r.ok) setFlash({ itemId: i.itemId, n: Date.now() });
     });
 
   const onCorrect = (confirm = false) =>
@@ -128,9 +125,10 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
       setError(null);
       const r = await correctLoadInput({ inputId: editing.id, qty: Number(editing.qty), confirm, deviceId: deviceId() });
       if (r.ok) {
-        setToast(r.message);
+        const itemId = view.inputs.find((x) => x.id === editing.id)?.itemId;
         setEditing(null);
         await reload();
+        if (itemId) setFlash({ itemId, n: Date.now() });
       } else if (r.code === "CONFIRM") setEditing({ ...editing, warn: r.error });
       else {
         setError(r.error);
@@ -155,7 +153,6 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
         // 최신 상태(상차완료)를 먼저 읽고 화면을 바꾼다
         await reload();
         setFinishing(false);
-        setToast(r.message);
       } else if (r.code === "CONFLICT") {
         setConflict(r.error);
         await reload();
@@ -168,6 +165,8 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
 
   const tone = ordered ? "blue" : "amber";
   const firstInput = [...view.inputs].reverse().find((i) => !i.canceled);
+  const orderLineCount = view.lines.filter((l) => l.orderBase > 0).length;
+  const matchedCount = view.lines.filter((l) => l.orderBase > 0 && l.state === "match").length;
 
   /**
    * 차량 머리 — 차량번호·구분 + 상태 한 줄 (2026-11-06 Sol 결정: 타임라인 3단계 → 상태 한 줄).
@@ -184,6 +183,15 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
         {working ? (
           <>
             <b>상차 중</b> · {timeOf(view.createdAt)} 시작{firstInput ? ` · 마지막 입력 ${timeOf(view.inputs.find((i) => !i.canceled)?.inputAt ?? firstInput.inputAt)}` : ""}
+            {/* 지시 품목 일치 — 태그 대신 상태 줄 일반 글자 (2026-11-07 Sol 확정), 다 맞으면 초록 */}
+            {view.type === "ORDERED" && orderLineCount > 0 && (
+              <>
+                {" · "}
+                <span className={matchedCount === orderLineCount ? styles.matchAll : undefined}>
+                  일치 <span className="mono">{matchedCount}/{orderLineCount}</span>품목
+                </span>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -218,6 +226,8 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
               ["도착 센터", view.centerName],
               ["완료 시각", fmtDateTime(view.completedAt)],
               ["완료자", view.completedBy ?? "-"],
+              // ASN 대비 상차 — 품목 목록 대신 요약만 (2026-11-07 Sol 피드백)
+              ["ASN 대비 상차", <LoadSummary key="sum" view={view} />],
               ...(view.diffReasonName ? ([["차이 사유", `${view.diffReasonName}${view.diffReasonText ? ` — ${view.diffReasonText}` : ""}`]] as [string, React.ReactNode][]) : []),
             ]}
           />
@@ -228,46 +238,42 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
             처음으로
           </button>
         </section>
-        <Lines view={view} />
       </>
     );
   }
 
-  /* ═════════ 상차완료 확인 ═════════ */
-  if (finishing) {
-    return (
-      <>
-        {head()}
-        <section className={styles.sheet}>
-          <h2 className={styles.h2}>상차완료 확인</h2>
-          <p className={styles.help}>상차완료는 차량당 한 번입니다. 완료하면 더는 입력할 수 없고, 이후 차이는 입고검수에서 처리합니다.</p>
-          <p className={styles.label}>작업자 {view.workers.length}명</p>
-          <ul className={styles.workers}>
-            {view.workers.map((w) => (
-              <li key={w.workerId}>
-                <span className={styles.avatarSm} aria-hidden="true">
-                  {w.name.slice(0, 1)}
+  /* ═════════ 상차완료 확인 — 작업 화면 위에 아래에서 올라오는 확인 창 (2026-11-07 Sol 피드백: 위쪽 표시 → 모달) ═════════ */
+  const diffLines = view.lines.filter((l) => l.state !== "match" && (l.orderBase > 0 || l.loadBase > 0));
+  const finishSheet = finishing && (
+    <div className={styles.modalScrim} onClick={(e) => e.target === e.currentTarget && !pending && setFinishing(false)}>
+      <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="finish-title">
+        <h2 id="finish-title" className={styles.h2}>
+          상차완료 확인
+        </h2>
+        <p className={styles.help}>상차완료는 차량당 한 번입니다. 완료하면 더는 입력할 수 없고, 이후 차이는 입고검수에서 처리합니다.</p>
+        {ordered && orderLineCount > 0 && (
+          <p className={styles.finishSum}>
+            지시 {orderLineCount}품목 중 <b className={matchedCount === orderLineCount ? styles.matchAll : undefined}>일치 {matchedCount}품목</b>
+          </p>
+        )}
+        {view.hasDiff && diffLines.length > 0 && (
+          <ul className={styles.diffList}>
+            {diffLines.map((l) => (
+              <li key={l.itemId}>
+                <span className={styles.diffName}>
+                  <span className={`${styles.dim} mono`}>{l.itemClientCode ?? l.itemCode}</span> {l.itemName}
                 </span>
-                <span className={styles.workerText}>
-                  <b>{w.name}</b>
-                  <span className={styles.dim}>
-                    입력 {w.count}건 · 마지막 {timeOf(w.lastAt)}
-                  </span>
+                <span className={`mono ${styles.diffQty}`}>
+                  {fmt(l, l.loadBase)}
+                  {l.orderBase > 0 && <span className={styles.dim}> / {fmt(l, l.orderBase)}</span>}
                 </span>
+                <span className={`${styles.diffState} ${styles[`ds_${l.state}`]}`}>{LINE_STATE_LABEL[l.state]}</span>
               </li>
             ))}
           </ul>
-          {view.workers.length > 1 && <p className={styles.warnText}>다른 작업자가 아직 싣고 있지 않은지 확인하세요.</p>}
-        </section>
-        <Lines view={view} />
-        {conflict && (
-          <p className={styles.error} role="alert">
-            {conflict}
-          </p>
         )}
-        {loadedLines === 0 && <p className={styles.error}>아직 실은 품목이 없습니다.</p>}
         {view.hasDiff && loadedLines > 0 && (
-          <section className={styles.sheet}>
+          <div className={styles.reasonBox}>
             <label htmlFor="pda-reason" className={styles.label}>
               {ordered ? "지시수량과 차이가 있습니다 — 차이 사유" : "무지시 상차 — 차이 사유"}
             </label>
@@ -290,14 +296,37 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
                 disabled={pending}
               />
             )}
-          </section>
+          </div>
         )}
+        <p className={styles.label}>작업자 {view.workers.length}명</p>
+        <ul className={styles.workers}>
+          {view.workers.map((w) => (
+            <li key={w.workerId}>
+              <span className={styles.avatarSm} aria-hidden="true">
+                {w.name.slice(0, 1)}
+              </span>
+              <span className={styles.workerText}>
+                <b>{w.name}</b>
+                <span className={styles.dim}>
+                  입력 {w.count}건 · 마지막 {timeOf(w.lastAt)}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        {view.workers.length > 1 && <p className={styles.warnText}>다른 작업자가 아직 싣고 있지 않은지 확인하세요.</p>}
+        {conflict && (
+          <p className={styles.error} role="alert">
+            {conflict}
+          </p>
+        )}
+        {loadedLines === 0 && <p className={styles.error}>아직 실은 품목이 없습니다.</p>}
         {error && (
           <p className={styles.error} role="alert">
             {error}
           </p>
         )}
-        <div className={`${styles.btnRow} ${styles.bottomBar}`}>
+        <div className={styles.btnRow}>
           <button type="button" className={styles.secondary} onClick={() => setFinishing(false)} disabled={pending}>
             더 싣기
           </button>
@@ -310,9 +339,9 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
             상차완료 · 확인서 발행
           </button>
         </div>
-      </>
-    );
-  }
+      </section>
+    </div>
+  );
 
   /* ═════════ 작업 중 ═════════ */
   return (
@@ -424,14 +453,9 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
             {error}
           </p>
         )}
-        {toast && (
-          <p className={styles.toast} role="status">
-            {toast}
-          </p>
-        )}
       </section>
 
-      <Lines view={view} />
+      <Lines view={view} flash={flash} />
 
       {/* 내 입력 — 접힌 줄, 눌러서 정정·취소 (2026-11-06 Sol 결정: 정보 줄이기) */}
       <details className={styles.fold}>
@@ -542,7 +566,40 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
           상차완료
         </button>
       </div>
+      {finishSheet}
     </>
+  );
+}
+
+/**
+ * 품목코드 + 품목명 한 줄 (2026-11-07 Sol 피드백) — 코드는 지금 크기·색 그대로 이름 앞에.
+ * 칸보다 길면 이름이 옆으로 천천히 흘러 끝까지 보이게 한다(움직임 줄이기 설정이면 멈춤).
+ */
+function ScrollName({ code, name }: { code: string; name: string }) {
+  const outer = useRef<HTMLSpanElement>(null);
+  const inner = useRef<HTMLSpanElement>(null);
+  const [shift, setShift] = useState(0);
+  useEffect(() => {
+    const o = outer.current;
+    const i = inner.current;
+    if (!o || !i) return;
+    const measure = () => setShift(Math.max(0, i.scrollWidth - o.clientWidth));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(o);
+    return () => ro.disconnect();
+  }, [code, name]);
+  return (
+    <span ref={outer} className={styles.flatName} title={`${code} ${name}`}>
+      <span
+        ref={inner}
+        className={shift > 0 ? styles.marquee : undefined}
+        style={shift > 0 ? ({ "--shift": `-${shift}px`, "--dur": `${Math.max(5, shift / 25)}s` } as React.CSSProperties) : undefined}
+      >
+        <span className={`${styles.dim} mono`}>{code}</span> {name}
+      </span>
+    </span>
   );
 }
 
@@ -551,21 +608,23 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
  * 지시 상차는 줄마다 진행 막대, 상태는 색으로만: 일치 초록 · 부족 주황 · 초과·지시 외 빨강 · 아직 안 실음 회색.
  * 코드는 상차담당(화주사)에게 익숙한 화주사 품목코드를 먼저 보여 준다.
  */
-function Lines({ view }: { view: LoadView }) {
+function Lines({ view, flash }: { view: LoadView; flash?: { itemId: number; n: number } | null }) {
   const ordered = view.type === "ORDERED";
-  const orderLines = view.lines.filter((l) => l.orderBase > 0);
-  const matched = orderLines.filter((l) => l.state === "match").length;
+  const refs = useRef(new Map<number, HTMLLIElement>());
+  const [lit, setLit] = useState<number | null>(null);
+  useEffect(() => {
+    if (!flash) return;
+    refs.current.get(flash.itemId)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setLit(flash.itemId);
+    const t = setTimeout(() => setLit(null), 1800);
+    return () => clearTimeout(t);
+  }, [flash]);
   return (
     <section className={styles.flat}>
       <h2 className={styles.h2}>
         품목 <span className={styles.count}>{view.lines.length}</span>
-        {ordered ? (
-          <span className={`${styles.progressTag} ${orderLines.length > 0 && matched === orderLines.length ? styles.progressDone : ""}`}>
-            일치 <b className="mono">{matched}</b> / {orderLines.length}줄
-          </span>
-        ) : (
-          <span className={styles.h2Sub}>상차 수량</span>
-        )}
+        {/* 지시 상차의 '일치 N/M' 태그는 머리 상태 줄로 옮겼다 (2026-11-07 Sol 확정) */}
+        {!ordered && <span className={styles.h2Sub}>상차 수량</span>}
       </h2>
       {view.lines.length === 0 ? (
         <p className={styles.empty}>{ordered ? "지시 품목이 없습니다." : "아직 실은 품목이 없습니다. 오늘 ASN에 있는 품목만 실을 수 있습니다."}</p>
@@ -575,12 +634,16 @@ function Lines({ view }: { view: LoadView }) {
             const st = l.loadBase === 0 && l.orderBase > 0 ? "none" : l.state;
             const pct = l.orderBase > 0 ? Math.min(100, (l.loadBase / l.orderBase) * 100) : 100;
             return (
-              <li key={l.itemId} className={styles[`st_${st}`]}>
+              <li
+                key={l.itemId}
+                ref={(el) => {
+                  if (el) refs.current.set(l.itemId, el);
+                  else refs.current.delete(l.itemId);
+                }}
+                className={`${styles[`st_${st}`]} ${lit === l.itemId ? styles.lit : ""}`}
+              >
                 <span className={styles.flatTop}>
-                  <span className={styles.lineName}>
-                    {l.itemName}
-                    <span className={`${styles.dim} mono`}>{l.itemClientCode ?? l.itemCode}</span>
-                  </span>
+                  <ScrollName code={l.itemClientCode ?? l.itemCode} name={l.itemName} />
                   <span className={styles.flatQty}>
                     <b className="mono">{fmt(l, l.loadBase)}</b>
                     {ordered && <span className={styles.dim}> / {l.orderBase ? fmt(l, l.orderBase) : "지시 없음"}</span>}
@@ -591,7 +654,8 @@ function Lines({ view }: { view: LoadView }) {
                     <span className={styles.lnBar} aria-hidden="true">
                       <span style={{ width: `${pct}%` }} />
                     </span>
-                    <span className={styles.stText}>{st === "none" ? "아직 안 실음" : LINE_STATE_LABEL[l.state]}</span>
+                    {/* 안 실은 줄은 회색 막대만 — '아직 안 실음' 문구는 뺐다 (2026-11-07 Sol 피드백) */}
+                    <span className={styles.stText}>{st === "none" ? "" : LINE_STATE_LABEL[l.state]}</span>
                   </span>
                 )}
               </li>
@@ -600,5 +664,24 @@ function Lines({ view }: { view: LoadView }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** 상차확인서의 ASN 대비 상차 요약 — 지시 품목 중 일치 수, 부족·초과·지시 외 품목 수 (2026-11-07 Sol 피드백) */
+function LoadSummary({ view }: { view: LoadView }) {
+  if (view.type !== "ORDERED") {
+    return <span>무지시 상차 · {view.lines.filter((l) => l.loadBase > 0).length}품목</span>;
+  }
+  const order = view.lines.filter((l) => l.orderBase > 0);
+  const n = (st: string) => view.lines.filter((l) => l.state === st && (l.orderBase > 0 || l.loadBase > 0)).length;
+  const match = n("match");
+  const parts = ([["부족", n("short")], ["초과", n("over")], ["지시 외", n("extra")]] as [string, number][]).filter(([, v]) => v > 0);
+  return (
+    <span>
+      <b className={match === order.length ? styles.matchAll : undefined}>
+        일치 {match}/{order.length}품목
+      </b>
+      {parts.length > 0 && <span className={styles.dim}> · {parts.map(([k, v]) => `${k} ${v}`).join(" · ")}</span>}
+    </span>
   );
 }

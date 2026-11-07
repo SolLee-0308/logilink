@@ -1235,6 +1235,32 @@ select.field {
   line-height: 1.1;
 }
 
+/* 상태 색 칸 — 웹 상태 배지와 같은 색 (2026-11-07 Sol 피드백) */
+.tilePart {
+  background: var(--st-part-bg);
+  border-color: color-mix(in srgb, var(--st-part-fg) 25%, transparent);
+  color: var(--st-part-fg);
+}
+
+.tileDone {
+  background: var(--st-done-bg);
+  border-color: color-mix(in srgb, var(--st-done-fg) 25%, transparent);
+  color: var(--st-done-fg);
+}
+
+.tileRej {
+  background: var(--st-rej-bg);
+  border-color: color-mix(in srgb, var(--st-rej-fg) 25%, transparent);
+  color: var(--st-rej-fg);
+}
+
+.tilePart .k,
+.tileDone .k,
+.tileRej .k {
+  color: inherit;
+  opacity: 0.85;
+}
+
 .rows {
   list-style: none;
   margin: 0;
@@ -1708,3 +1734,173 @@ select.field {
 .rst_mismatch,
 .rst_problem { color: var(--st-rej-fg); }
 .rst_zero { color: var(--st-ok-fg); }
+
+/* 상차 작업 머리 아래 구분선 (2026-11-07 Sol 피드백) */
+.vHead {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* 품목 줄: 코드 + 이름 한 줄, 길면 옆으로 흐름 (2026-11-07 Sol 피드백) */
+.flatName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.flatName > span {
+  display: inline-block;
+}
+
+.flatName .dim {
+  font-size: var(--fs-11);
+}
+
+.marquee {
+  animation: pdaMarquee var(--dur, 6s) ease-in-out infinite alternate;
+}
+
+@keyframes pdaMarquee {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  85%,
+  100% {
+    transform: translateX(var(--shift, 0));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    animation: none;
+  }
+}
+
+/* 지시 품목이 모두 일치 — 상태 줄 초록 글자 */
+.matchAll {
+  color: var(--st-done-fg);
+  font-weight: 600;
+}
+
+/* 방금 입력한 품목 줄 — 잠깐 연보라로 강조 (토스트 대신, 2026-11-07 Sol 피드백) */
+.lit {
+  animation: pdaLit 1.8s ease-out;
+}
+
+@keyframes pdaLit {
+  0%,
+  40% {
+    background: var(--violet-100);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* 상차완료 확인 — 아래에서 올라오는 확인 창 (2026-11-07 Sol 피드백) */
+.modalScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(17, 17, 20, 0.45);
+}
+
+.modalSheet {
+  width: 100%;
+  max-height: 88%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 16px calc(14px + env(safe-area-inset-bottom));
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  background: var(--bg);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18);
+  animation: pdaSheetUp 0.2s ease-out;
+}
+
+@keyframes pdaSheetUp {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.finishSum {
+  margin: 0;
+  font-size: var(--fs-13);
+}
+
+.diffList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.diffList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-13);
+}
+
+.diffName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.diffQty {
+  white-space: nowrap;
+}
+
+.diffState {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  border-radius: var(--r-tag);
+  padding: 1px 8px;
+}
+
+.ds_short {
+  background: var(--st-part-bg);
+  color: var(--st-part-fg);
+}
+
+.ds_over,
+.ds_extra {
+  background: var(--st-rej-bg);
+  color: var(--st-rej-fg);
+}
+
+.reasonBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r-group);
+  background: var(--st-rej-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lit,
+  .modalSheet {
+    animation: none;
+  }
+}
