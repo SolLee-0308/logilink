@@ -53,6 +53,9 @@ const viewInclude = {
   },
   lines: { include: { item: { select: { code: true, clientCode: true, name: true, baseUnit: true, uoms: { select: { unit: true, qty: true } } } } } },
   inputs: { orderBy: { id: "desc" }, include: { item: { select: { code: true, clientCode: true, name: true } } } },
+  // 상차 재개 가능 여부(검수 시작 전) · 마지막 재개 (정의서 v1.5 D20)
+  rcvs: { where: { status: { in: ["WORKING", "CONFIRMED"] } }, select: { id: true } },
+  histories: { where: { action: "REOPEN" }, orderBy: { id: "desc" }, take: 1 },
 } satisfies Prisma.LoadInclude;
 
 type LoadRow = Prisma.LoadGetPayload<{ include: typeof viewInclude }>;
@@ -100,6 +103,11 @@ function toView(l: LoadRow, meId: number | null): LoadView {
     type: l.loadType,
     status: l.status,
     version: l.version,
+    revisionNo: l.revisionNo,
+    canReopen: l.status === "COMPLETED" && l.rcvs.length === 0,
+    lastReopen: l.histories[0]
+      ? { at: iso(l.histories[0].at), by: l.histories[0].actor, reasonName: l.histories[0].reasonName, reasonText: l.histories[0].reasonText }
+      : null,
     clientName: l.client.name,
     centerId: l.centerId,
     centerName: l.center.name,

@@ -54,6 +54,12 @@ export interface LoadView {
   type: LoadType;
   status: LoadStatus;
   version: number;
+  /** 상차확인서 차수 — 상차 재개 때 +1 (정의서 v1.5 D20) */
+  revisionNo: number;
+  /** 상차완료이고 검수(진행·확정)가 없을 때만 재개 가능 */
+  canReopen: boolean;
+  /** 마지막 상차 재개 */
+  lastReopen: { at: string; by: string; reasonName: string | null; reasonText: string | null } | null;
   clientName: string;
   centerId: number;
   centerName: string;

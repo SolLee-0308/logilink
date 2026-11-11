@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Barcode } from "@/components/ui/Barcode";
 import { LINE_STATE_LABEL, LOAD_TYPE_LABEL, UNORDERED_REASON_CODE, qtyInUnit } from "@/domain/load-rules";
 import { fmtDateTime } from "@/lib/format";
-import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, previewScan, reloadLoad } from "@/server/loads/actions";
+import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, previewScan, reloadLoad, reopenLoad } from "@/server/loads/actions";
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { LoadInputView, LoadLineView, LoadView, ScanPreview } from "@/features/loads/types";
 import { deviceId, takeNotice } from "./device";
@@ -19,6 +19,17 @@ const fmt = (l: Pick<LoadLineView, "showUnit" | "showFactor" | "baseUnit">, base
 const timeOf = (iso: string) => fmtDateTime(iso).slice(11);
 
 /**
+ * 확인 창 — 화면 안 경고·브라우저 confirm 대신 아래에서 올라오는 창 (2026-11-11 Sol).
+ * over: 지시 초과·지시 외 (입력 add / 정정 edit) · cancel: 내 입력 취소. 버튼을 고르기 전에는 [상차완료]를 막는다.
+ */
+type Ask =
+  | { type: "over"; source: "add" | "edit"; kind: "over" | "extra"; item: string; order: string; after: string }
+  | { type: "cancel"; input: LoadInputView };
+
+const overAsk = (source: "add" | "edit", fe?: Record<string, string>): Ask | null =>
+  fe?.kind === "over" || fe?.kind === "extra" ? { type: "over", source, kind: fe.kind, item: fe.item ?? "", order: fe.order ?? "", after: fe.after ?? "" } : null;
+
+/**
  * PDA 상차 작업 (정의서 ④ · C5 · C6 · D11)
  * 1) 품목 바코드 스캔 → 품목·단위·지금 합계 확인 → "추가로 실은 수량" 입력
  * 2) 지시 외 품목·지시수량 초과는 경고 후 확인하면 받는다 (사유는 상차완료 때 한 번, 2026-11-05 Sol)
@@ -26,7 +37,7 @@ const timeOf = (iso: string) => fmtDateTime(iso).slice(11);
  * 4) 상차완료: 작업자·품목 합계를 보고 확인, 차이가 있으면 사유 선택 → 상차확인서 발행
  * 화면 배치(2026-11-05 참고 UI): 차량 머리·진행 단계 → 스캔 카드 → 품목 → 상차 정보 → 내 입력 타임라인 → 아래 고정 [상차완료]
  */
-export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons: ReasonOption[] }) {
+export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initial: LoadView; reasons: ReasonOption[]; reopenReasons?: ReasonOption[] }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
   const [pending, start] = useTransition();
@@ -37,12 +48,14 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
   const [scan, setScan] = useState("");
   const [preview, setPreview] = useState<ScanPreview | null>(null);
   const [qty, setQty] = useState("");
-  const [warn, setWarn] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ id: number; qty: string; warn: string | null } | null>(null);
+  const [ask, setAsk] = useState<Ask | null>(null);
+  const [editing, setEditing] = useState<{ id: number; qty: string } | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [reason, setReason] = useState(initial.type === "UNORDERED" ? UNORDERED_REASON_CODE : "");
   const [reasonText, setReasonText] = useState("");
   const [conflict, setConflict] = useState<string | null>(null);
+  /** 상차 재개 창 (정의서 v1.5 D20) — 사유 코드·상세 */
+  const [reopening, setReopening] = useState<{ code: string; text: string } | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const working = view.status === "WORKING";
@@ -70,14 +83,14 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
     setScan("");
     setPreview(null);
     setQty("");
-    setWarn(null);
+    setAsk(null);
     setTimeout(() => scanRef.current?.focus(), 0);
   };
 
   const onScan = (value: string) =>
     start(async () => {
       setError(null);
-      setWarn(null);
+      setAsk(null);
       const r = await previewScan({ loadId: view.id, scan: value });
       if (r.ok && r.data) {
         setPreview(r.data);
@@ -102,8 +115,9 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
         resetScan();
         await reload();
         setFlash({ itemId, n: Date.now() });
-      } else if (r.code === "CONFIRM") setWarn(r.error);
+      } else if (r.code === "CONFIRM" && overAsk("add", r.fieldErrors)) setAsk(overAsk("add", r.fieldErrors));
       else {
+        setAsk(null);
         setError(r.error);
         if (r.code === "STATE") await reload();
       }
@@ -112,7 +126,7 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
   const onCancelInput = (i: LoadInputView) =>
     start(async () => {
       setError(null);
-      if (!window.confirm(`${i.itemName} +${i.addQty} ${i.unit} 입력을 취소할까요?`)) return;
+      setAsk(null);
       const r = await cancelLoadInput({ inputId: i.id });
       if (!r.ok) setError(r.error);
       await reload();
@@ -127,14 +141,41 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
       if (r.ok) {
         const itemId = view.inputs.find((x) => x.id === editing.id)?.itemId;
         setEditing(null);
+        setAsk(null);
         await reload();
         if (itemId) setFlash({ itemId, n: Date.now() });
-      } else if (r.code === "CONFIRM") setEditing({ ...editing, warn: r.error });
+      } else if (r.code === "CONFIRM" && overAsk("edit", r.fieldErrors)) setAsk(overAsk("edit", r.fieldErrors));
       else {
+        setAsk(null);
         setError(r.error);
         await reload();
       }
     });
+
+  /** 상차 재개 — 검수 시작 전에만. 성공하면 작업 화면으로 돌아간다(기존 입력 유지) */
+  const onReopen = () =>
+    start(async () => {
+      if (!reopening) return;
+      setError(null);
+      const r = await reopenLoad({ loadId: view.id, reasonCode: reopening.code, reasonText: reopening.text });
+      if (r.ok) {
+        setReopening(null);
+        setReason(view.type === "UNORDERED" ? UNORDERED_REASON_CODE : "");
+        setReasonText("");
+        setNotice(r.message);
+        await reload();
+      } else {
+        setError(r.error);
+        if (r.code === "STATE") await reload();
+      }
+    });
+
+  /** 확인 창 [수량 고치기]·[그만두기] — 고치던 수량 칸으로 돌아간다 */
+  const closeAsk = () => {
+    const src = ask?.type === "over" ? ask.source : null;
+    setAsk(null);
+    if (src === "add") setTimeout(() => qtyRef.current?.select(), 0);
+  };
 
   const openFinish = () =>
     start(async () => {
@@ -161,15 +202,15 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
 
   const myInputs = view.inputs.filter((i) => i.mine && !i.canceled);
   const chosen = reasons.find((r) => r.code === reason);
+  const reopenChosen = reopenReasons.find((r) => r.code === reopening?.code);
   const loadedLines = view.lines.filter((l) => l.loadBase > 0).length;
 
   const tone = ordered ? "blue" : "amber";
-  const firstInput = [...view.inputs].reverse().find((i) => !i.canceled);
   const orderLineCount = view.lines.filter((l) => l.orderBase > 0).length;
   const matchedCount = view.lines.filter((l) => l.orderBase > 0 && l.state === "match").length;
 
   /**
-   * 차량 머리 — 차량번호·구분 + 상태 한 줄 (2026-11-06 Sol 결정: 타임라인 3단계 → 상태 한 줄).
+   * 차량 머리 — 차량번호·구분 + 상태 한 줄: 시작 시각 · 도착 센터 (2026-11-11 Sol: 일치 수는 아래 [상차완료] 띠로, 마지막 입력은 '내 입력'에서).
    * 박스 없이 두어 아래 스캔 칸이 화면의 중심이 되게 한다.
    */
   const head = () => (
@@ -177,29 +218,11 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
       <span className={styles.idHead}>
         <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
-        <Pill tone={working ? tone : "green"}>{working ? LOAD_TYPE_LABEL[view.type] : "상차완료"}</Pill>
+        <Pill tone={tone}>{LOAD_TYPE_LABEL[view.type]}</Pill>
+        {view.revisionNo > 1 && <Pill tone="amber">재개 · {view.revisionNo}차</Pill>}
       </span>
       <span className={styles.vStatus}>
-        {working ? (
-          <>
-            <b>상차 중</b> · {timeOf(view.createdAt)} 시작{firstInput ? ` · 마지막 입력 ${timeOf(view.inputs.find((i) => !i.canceled)?.inputAt ?? firstInput.inputAt)}` : ""}
-            {/* 지시 품목 일치 — 태그 대신 상태 줄 일반 글자 (2026-11-07 Sol 확정), 다 맞으면 초록 */}
-            {view.type === "ORDERED" && orderLineCount > 0 && (
-              <>
-                {" · "}
-                <span className={matchedCount === orderLineCount ? styles.matchAll : undefined}>
-                  일치 <span className="mono">{matchedCount}/{orderLineCount}</span>품목
-                </span>
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <b>상차완료</b> · {view.completedAt ? timeOf(view.completedAt) : "-"}
-          </>
-        )}
-        {" · "}
-        {view.centerName}
+        <b>상차 중</b> · {timeOf(view.createdAt)} 시작 · {view.centerName}
       </span>
     </section>
   );
@@ -217,15 +240,19 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
           <h2 className={styles.successTitle}>
             상차확인서를 발행했습니다.
           </h2>
-          <p className={styles.successSub}>종이 확인서는 화주사 담당자가 웹 ASN 화면에서 인쇄해 차량에 실어 보냅니다. 입고검수는 이 바코드로 시작합니다.</p>
+          <p className={styles.successSub}>입고검수는 이 바코드로 시작합니다.</p>
           <InfoRows
             rows={[
-              ["상차확인서", <b key="no" className="mono">{view.loadNo}</b>],
+              [
+                "상차확인서",
+                <b key="no" className="mono">
+                  {view.loadNo}
+                  {view.revisionNo > 1 && ` · ${view.revisionNo}차`}
+                </b>,
+              ],
               ["차량번호", <span key="v" className="mono">{view.vehicleNo}</span>],
-              ["구분", LOAD_TYPE_LABEL[view.type]],
               ["도착 센터", view.centerName],
-              ["완료 시각", fmtDateTime(view.completedAt)],
-              ["완료자", view.completedBy ?? "-"],
+              ["완료", `${view.completedAt ? timeOf(view.completedAt) : "-"} · ${view.completedBy ?? "-"}`],
               // ASN 대비 상차 — 품목 목록 대신 요약만 (2026-11-07 Sol 피드백)
               ["ASN 대비 상차", <LoadSummary key="sum" view={view} />],
               ...(view.diffReasonName ? ([["차이 사유", `${view.diffReasonName}${view.diffReasonText ? ` — ${view.diffReasonText}` : ""}`]] as [string, React.ReactNode][]) : []),
@@ -237,7 +264,79 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
           <button type="button" className={styles.blackPill} onClick={() => router.push("/pda")}>
             처음으로
           </button>
+          {/* 상차 재개 — 검수 시작 전에만 (정의서 v1.5 D20) */}
+          {view.canReopen ? (
+            <button type="button" className={`${styles.secondary} ${styles.wide}`} onClick={() => { setError(null); setReopening({ code: "", text: "" }); }} disabled={pending}>
+              상차 재개
+            </button>
+          ) : (
+            <p className={styles.help}>입고검수가 시작되어 상차를 재개할 수 없습니다.</p>
+          )}
+          {error && !reopening && (
+            <p className={styles.error} role="alert">
+              {error}
+            </p>
+          )}
         </section>
+        {reopening && (
+          <div className={styles.modalScrim}>
+            <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="reopen-title">
+              <h2 id="reopen-title" className={styles.h2}>
+                상차 재개
+              </h2>
+              <p className={styles.help}>
+                다시 상차완료하면 확인서가 <b>{view.revisionNo + 1}차</b>로 바뀝니다. 인쇄한 확인서는 다시 인쇄해야 합니다.
+              </p>
+              <label htmlFor="pda-reopen" className={styles.label}>
+                재개 사유
+              </label>
+              <select
+                id="pda-reopen"
+                className={styles.field}
+                value={reopening.code}
+                onChange={(e) => setReopening({ ...reopening, code: e.target.value })}
+                disabled={pending}
+                autoFocus
+              >
+                <option value="">사유를 고르세요</option>
+                {reopenReasons.map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+              {reopenChosen?.requiresText && (
+                <textarea
+                  className={`${styles.field} ${styles.textarea}`}
+                  value={reopening.text}
+                  onChange={(e) => setReopening({ ...reopening, text: e.target.value })}
+                  placeholder="상세 내용 (필수)"
+                  maxLength={500}
+                  rows={3}
+                  disabled={pending}
+                />
+              )}
+              {error && (
+                <p className={styles.error} role="alert">
+                  {error}
+                </p>
+              )}
+              <div className={styles.btnRow}>
+                <button type="button" className={styles.secondary} onClick={() => setReopening(null)} disabled={pending}>
+                  그만두기
+                </button>
+                <button
+                  type="button"
+                  className={styles.primary}
+                  onClick={onReopen}
+                  disabled={pending || !reopening.code || (!!reopenChosen?.requiresText && !reopening.text.trim())}
+                >
+                  재개
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
       </>
     );
   }
@@ -248,16 +347,16 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
     <div className={styles.modalScrim} onClick={(e) => e.target === e.currentTarget && !pending && setFinishing(false)}>
       <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="finish-title">
         <h2 id="finish-title" className={styles.h2}>
-          상차완료 확인
+          상차완료
         </h2>
-        <p className={styles.help}>상차완료는 차량당 한 번입니다. 완료하면 더는 입력할 수 없고, 이후 차이는 입고검수에서 처리합니다.</p>
+        <p className={styles.help}>완료하면 더 입력할 수 없습니다.</p>
         {ordered && orderLineCount > 0 && (
           <p className={styles.finishSum}>
-            지시 {orderLineCount}품목 중 <b className={matchedCount === orderLineCount ? styles.matchAll : undefined}>일치 {matchedCount}품목</b>
+            <MatchText matched={matchedCount} total={orderLineCount} />
           </p>
         )}
         {view.hasDiff && diffLines.length > 0 && (
-          <ul className={styles.diffList}>
+          <ul className={styles.diffList} aria-label="차이 품목">
             {diffLines.map((l) => (
               <li key={l.itemId}>
                 <span className={styles.diffName}>
@@ -275,7 +374,7 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
         {view.hasDiff && loadedLines > 0 && (
           <div className={styles.reasonBox}>
             <label htmlFor="pda-reason" className={styles.label}>
-              {ordered ? "지시수량과 차이가 있습니다 — 차이 사유" : "무지시 상차 — 차이 사유"}
+              차이 사유
             </label>
             <select id="pda-reason" className={styles.field} value={reason} onChange={(e) => setReason(e.target.value)} disabled={pending}>
               <option value="">사유를 고르세요</option>
@@ -290,7 +389,7 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
                 className={`${styles.field} ${styles.textarea}`}
                 value={reasonText}
                 onChange={(e) => setReasonText(e.target.value)}
-                placeholder="상세 내용을 적어 주세요 (필수)"
+                placeholder="상세 내용 (필수)"
                 maxLength={500}
                 rows={3}
                 disabled={pending}
@@ -298,29 +397,16 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
             )}
           </div>
         )}
-        <p className={styles.label}>작업자 {view.workers.length}명</p>
-        <ul className={styles.workers}>
-          {view.workers.map((w) => (
-            <li key={w.workerId}>
-              <span className={styles.avatarSm} aria-hidden="true">
-                {w.name.slice(0, 1)}
-              </span>
-              <span className={styles.workerText}>
-                <b>{w.name}</b>
-                <span className={styles.dim}>
-                  입력 {w.count}건 · 마지막 {timeOf(w.lastAt)}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-        {view.workers.length > 1 && <p className={styles.warnText}>다른 작업자가 아직 싣고 있지 않은지 확인하세요.</p>}
+        {/* 작업자 — 이름 한 줄 (2026-11-11 Sol: 꼭 필요한 정보만). 여러 명이면 아직 싣는 사람이 없는지 확인 */}
+        <p className={styles.finishSum}>
+          작업자 {view.workers.length}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
+        </p>
+        {view.workers.length > 1 && <p className={styles.warnText}>다른 작업자가 다 실었는지 확인하세요.</p>}
         {conflict && (
           <p className={styles.error} role="alert">
             {conflict}
           </p>
         )}
-        {loadedLines === 0 && <p className={styles.error}>아직 실은 품목이 없습니다.</p>}
         {error && (
           <p className={styles.error} role="alert">
             {error}
@@ -336,9 +422,66 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
             onClick={onComplete}
             disabled={pending || loadedLines === 0 || (view.hasDiff && (!reason || (!!chosen?.requiresText && !reasonText.trim())))}
           >
-            상차완료 · 확인서 발행
+            상차완료
           </button>
         </div>
+      </section>
+    </div>
+  );
+
+  /* ═════════ 확인 창 — 지시 초과·지시 외 / 입력 취소 (2026-11-11 Sol: 화면 안 경고 → 모달). 밖을 눌러도 닫지 않는다 ═════════ */
+  const askSheet = ask && (
+    <div className={styles.modalScrim}>
+      <section className={styles.modalSheet} role="alertdialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-body">
+        {ask.type === "over" ? (
+          <>
+            <h2 id="ask-title" className={`${styles.h2} ${styles.askTitle}`}>
+              <Icon name="alert" size={18} /> {ask.kind === "over" ? "지시 수량 초과" : "지시 외 품목"}
+            </h2>
+            <div id="ask-body" className={styles.askBody}>
+              <b className={styles.askItem}>{ask.item}</b>
+              <dl className={styles.askRows}>
+                {ask.kind === "over" && (
+                  <>
+                    <dt>지시</dt>
+                    <dd className="mono">{ask.order}</dd>
+                  </>
+                )}
+                <dt>싣고 나면</dt>
+                <dd className={`mono ${styles.askAfter}`}>{ask.after}</dd>
+              </dl>
+              <p className={styles.help}>그래도 실으면 상차완료 때 차이 사유를 고릅니다.</p>
+            </div>
+            <div className={styles.btnRow}>
+              <button type="button" className={styles.secondary} onClick={closeAsk} disabled={pending} autoFocus>
+                수량 고치기
+              </button>
+              <button type="button" className={styles.primary} onClick={() => (ask.source === "add" ? onAdd(true) : onCorrect(true))} disabled={pending}>
+                {ask.source === "add" ? "그래도 싣기" : "그래도 정정"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 id="ask-title" className={styles.h2}>
+              입력 취소
+            </h2>
+            <p id="ask-body" className={styles.askBody}>
+              <b className={styles.askItem}>{ask.input.itemName}</b>{" "}
+              <span className="mono">
+                +{ask.input.addQty.toLocaleString()} {ask.input.unit}
+              </span>
+            </p>
+            <div className={styles.btnRow}>
+              <button type="button" className={styles.secondary} onClick={closeAsk} disabled={pending} autoFocus>
+                그만두기
+              </button>
+              <button type="button" className={styles.dangerBtn} onClick={() => onCancelInput(ask.input)} disabled={pending}>
+                입력 취소
+              </button>
+            </div>
+          </>
+        )}
       </section>
     </div>
   );
@@ -390,6 +533,8 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
               if (Number(qty) > 0) onAdd(false);
             }}
           >
+            {/* 스캔한 품목 — 이름 + 라벨/값 상자 (2026-11-11 Sol: 이전 방식 유지, 필요한 줄만).
+                품목코드 · 지시(지시 상차만) · 지금 합계. 스캔 단위는 기준 단위와 다를 때만 */}
             <div className={styles.sheetHead}>
               <span className={styles.iconCircle}>
                 <Icon name="box" size={17} />
@@ -400,9 +545,22 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
               tone="white"
               rows={[
                 ["품목코드", <span key="c" className="mono">{preview.itemClientCode ?? preview.itemCode}</span>],
-                ["스캔 단위", <span key="u" className="mono">{preview.unit}{preview.unit !== preview.baseUnit ? ` (= ${preview.factor} ${preview.baseUnit})` : ""}</span>],
+                ...(preview.unit !== preview.baseUnit
+                  ? ([["스캔 단위", <span key="u" className="mono">{preview.unit} = {preview.factor} {preview.baseUnit}</span>]] as [string, React.ReactNode][])
+                  : []),
                 ...(ordered
-                  ? ([["지시", preview.orderBase ? qtyInUnit(preview.orderBase, preview.showUnit, preview.showFactor, preview.baseUnit) : <span key="x" className={styles.warnInline}><Icon name="alert" size={15} /> 지시 외</span>]] as [string, React.ReactNode][])
+                  ? ([
+                      [
+                        "지시",
+                        preview.orderBase ? (
+                          qtyInUnit(preview.orderBase, preview.showUnit, preview.showFactor, preview.baseUnit)
+                        ) : (
+                          <span key="x" className={styles.warnInline}>
+                            <Icon name="alert" size={15} /> 지시 외
+                          </span>
+                        ),
+                      ],
+                    ] as [string, React.ReactNode][])
                   : []),
                 ["지금 합계", <b key="n">{qtyInUnit(preview.loadBase, preview.showUnit, preview.showFactor, preview.baseUnit)}</b>],
               ]}
@@ -416,33 +574,17 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
                 id="pda-qty"
                 className={`${styles.field} ${styles.qty} mono`}
                 value={qty}
-                onChange={(e) => {
-                  setQty(e.target.value.replace(/\D/g, ""));
-                  setWarn(null);
-                }}
+                onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
                 placeholder="0"
                 autoComplete="off"
                 enterKeyHint="done"
                 disabled={pending}
               />
-              <button type="submit" className={styles.primary} disabled={pending || !(Number(qty) > 0) || !!warn}>
+              <button type="submit" className={styles.primary} disabled={pending || !(Number(qty) > 0) || !!ask}>
                 + 싣기
               </button>
             </div>
-            {warn && (
-              <div className={styles.confirm} role="alert">
-                <p>{warn}</p>
-                <div className={styles.btnRow}>
-                  <button type="button" className={styles.secondary} onClick={() => setWarn(null)} disabled={pending}>
-                    수량 고치기
-                  </button>
-                  <button type="button" className={styles.primary} onClick={() => onAdd(true)} disabled={pending}>
-                    그래도 싣기
-                  </button>
-                </div>
-              </div>
-            )}
             <button type="button" className={styles.link} onClick={resetScan} disabled={pending}>
               다른 품목 스캔
             </button>
@@ -481,24 +623,16 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
                   <input
                     className={`${styles.field} ${styles.qty} mono`}
                     value={editing.qty}
-                    onChange={(e) => setEditing({ ...editing, qty: e.target.value.replace(/\D/g, ""), warn: null })}
+                    onChange={(e) => setEditing({ ...editing, qty: e.target.value.replace(/\D/g, "") })}
                     inputMode="numeric"
                     autoFocus
                     aria-label="정정할 수량"
                     disabled={pending}
                   />
-                  <button type="button" className={styles.primary} onClick={() => onCorrect(false)} disabled={pending || !(Number(editing.qty) > 0) || !!editing.warn}>
+                  <button type="button" className={styles.primary} onClick={() => onCorrect(false)} disabled={pending || !(Number(editing.qty) > 0) || !!ask}>
                     정정
                   </button>
                 </div>
-                {editing.warn && (
-                  <div className={styles.confirm} role="alert">
-                    <p>{editing.warn}</p>
-                    <button type="button" className={styles.primary} onClick={() => onCorrect(true)} disabled={pending}>
-                      그래도 정정
-                    </button>
-                  </div>
-                )}
                 <button type="button" className={styles.link} onClick={() => setEditing(null)} disabled={pending}>
                   그만두기
                 </button>
@@ -521,10 +655,10 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
                     </b>
                   </span>
                   <span className={styles.inputBtns}>
-                    <button type="button" className={styles.small} onClick={() => setEditing({ id: i.id, qty: String(i.addQty), warn: null })} disabled={pending}>
+                    <button type="button" className={styles.small} onClick={() => setEditing({ id: i.id, qty: String(i.addQty) })} disabled={pending}>
                       정정
                     </button>
-                    <button type="button" className={styles.smallDanger} onClick={() => onCancelInput(i)} disabled={pending}>
+                    <button type="button" className={styles.smallDanger} onClick={() => setAsk({ type: "cancel", input: i })} disabled={pending}>
                       취소
                     </button>
                   </span>
@@ -534,15 +668,14 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
           )}
         </ol>
       )}
-          <p className={styles.help}>본인이 입력한 건만 정정·취소할 수 있습니다.</p>
         </div>
       </details>
 
-      {/* 상차 정보 — 기본은 접어 두고 눌러서 펼친다 (2026-11-05 Sol 승인) */}
+      {/* 상차 정보 — 기본은 접어 두고 눌러서 펼친다 (2026-11-05 Sol 승인). 도착 센터는 머리에 있어 뺐다 (2026-11-11) */}
       <details className={styles.fold}>
         <summary className={styles.foldHead}>
           상차 정보
-          <span className={styles.detailSum}>{view.centerName}</span>
+          <span className={styles.detailSum}>{view.asn?.orderNo ?? "ASN 없음"}</span>
           <span className={styles.detailChev}>
             <Icon name="chevD" size={16} />
           </span>
@@ -550,7 +683,6 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
         <InfoRows
           tone="white"
           rows={[
-            ["도착 센터", view.centerName],
             ["지시서", view.asn?.orderNo ? <span key="o" className="mono">{view.asn.orderNo}</span> : view.asn ? "-" : "ASN 없음"],
             ...(view.asn ? ([["출고일", <span key="d" className="mono">{view.asn.shipDate}</span>]] as [string, React.ReactNode][]) : []),
             ...(view.asn?.driverName ? ([["기사", `${view.asn.driverName}${view.asn.driverTel ? ` · ${view.asn.driverTel}` : ""}`]] as [string, React.ReactNode][]) : []),
@@ -560,13 +692,20 @@ export function PdaLoadScreen({ initial, reasons }: { initial: LoadView; reasons
       </details>
 
 
-      <div className={styles.bottomBar}>
-        {/* 품목을 1개 이상 실었을 때만 (2026-11-06 Sol) */}
-        <button type="button" className={styles.blackPill} onClick={openFinish} disabled={pending || loadedLines === 0}>
+      {/* 아래 띠 — 지시 품목 일치 수(2026-11-11 Sol: 머리 → 여기) + [상차완료].
+          품목을 1개 이상 실었을 때만, 확인 창에서 아직 고르지 않았으면 막는다 */}
+      <div className={`${styles.bottomBar} ${styles.barRow}`}>
+        {ordered && orderLineCount > 0 && (
+          <span className={styles.barInfo}>
+            <MatchText matched={matchedCount} total={orderLineCount} />
+          </span>
+        )}
+        <button type="button" className={styles.blackPill} onClick={openFinish} disabled={pending || loadedLines === 0 || !!ask}>
           상차완료
         </button>
       </div>
       {finishSheet}
+      {askSheet}
     </>
   );
 }
@@ -664,6 +803,16 @@ function Lines({ view, flash }: { view: LoadView; flash?: { itemId: number; n: n
         </ul>
       )}
     </section>
+  );
+}
+
+/** 지시 품목 일치 수 — 다 맞으면 초록 */
+function MatchText({ matched, total }: { matched: number; total: number }) {
+  return (
+    <span className={matched === total ? styles.matchAll : undefined}>
+      일치 <b className="mono">{matched}</b>
+      <span className="mono">/{total}</span>품목
+    </span>
   );
 }
 

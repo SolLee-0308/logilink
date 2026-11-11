@@ -27,6 +27,15 @@ export const IconCheck = (p: IconProps) => (
   </Base>
 );
 
+export const IconGrid = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />
+    <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
+    <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
+    <rect x="9" y="9" width="4.5" height="4.5" rx="1" />
+  </Base>
+);
+
 export const IconPlus = (p: IconProps) => (
   <Base {...p}>
     <rect x="2.5" y="2.5" width="11" height="11" rx="2" />

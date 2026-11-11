@@ -74,7 +74,22 @@ export function LoadSection({ load }: { load: LoadView }) {
         <ViewSection
           items={[
             ["상차 상태", <Badge key="s" tone={meta.tone}>{meta.label}</Badge>],
-            [done ? "상차확인서" : "상차 실적", <span key="n" className="mono">{load.loadNo}</span>],
+            [
+              done ? "상차확인서" : "상차 실적",
+              <span key="n" className="mono">
+                {load.loadNo}
+                {load.revisionNo > 1 && <b> · {load.revisionNo}차</b>}
+              </span>,
+            ],
+            // 상차 재개 (정의서 v1.5 D20) — 이전 차수로 인쇄한 확인서는 무효
+            ...(load.lastReopen
+              ? ([
+                  [
+                    "상차 재개",
+                    `${fmtDateTime(load.lastReopen.at)} · ${load.lastReopen.by} · ${load.lastReopen.reasonName ?? ""}${load.lastReopen.reasonText ? ` — ${load.lastReopen.reasonText}` : ""}`,
+                  ],
+                ] as [string, React.ReactNode][])
+              : []),
             ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
             ["상차완료", done ? `${fmtDateTime(load.completedAt)} · ${load.completedBy}` : null],
           ]}

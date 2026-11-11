@@ -25,7 +25,8 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
     <div className={styles.page}>
       <div className={styles.toolbar}>
         <span>
-          상차확인서 <b className="mono">{d.loadNo}</b> · A4 세로로 인쇄하세요.
+          상차확인서 <b className="mono">{d.loadNo}</b>
+          {d.revisionNo > 1 && <b> · {d.revisionNo}차 (이전 차수 확인서는 폐기)</b>} · A4 세로로 인쇄하세요.
         </span>
         <button type="button" className={styles.printBtn} onClick={() => window.print()}>
           인쇄
@@ -38,7 +39,8 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
       <article className={styles.sheet} aria-label={`상차확인서 ${d.loadNo}`}>
         <header className={styles.head}>
           <div>
-            <h1>상차확인서</h1>
+            {/* 차수 — 상차 재개 후 재발행이면 표시 (정의서 v1.5 D20) */}
+            <h1>상차확인서{d.revisionNo > 1 && <span className={styles.rev}> ({d.revisionNo}차)</span>}</h1>
             <p className={styles.sub}>
               {LOAD_TYPE_LABEL[d.type]}
               {d.asn ? (
