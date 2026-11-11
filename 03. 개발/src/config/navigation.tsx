@@ -61,7 +61,7 @@ export const MASTER_MENU: NavChild[] = [
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "현황",
-    // 3PL: 오늘 할 일·흐름·주의 건·일마감 상태 (2026-11-11 Sol). 화주사 대시보드는 다음 차례
+    // 3PL: 오늘 할 일·흐름·주의 건·일마감 상태 / 화주사: 할 일·흐름·주의 건·이용 센터 기준 (2026-11-11)
     items: [{ label: "대시보드", href: "/dashboard", icon: <IconGrid /> }],
   },
   {

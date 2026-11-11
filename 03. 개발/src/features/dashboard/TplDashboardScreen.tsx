@@ -7,13 +7,11 @@ import { StatusBadge } from "@/components/ui/Badges";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { Select } from "@/components/ui/Form";
 import { weeklyOffLabel } from "@/domain/business-day";
-import { fmtDateTime, fmtShortDateTime } from "@/lib/format";
-import type { DashCenter, TplDashboard } from "./types";
+import { fmtShortDateTime } from "@/lib/format";
+import { FlowCard, HeadActions, More, Tile, centerCol } from "./DashboardParts";
+import type { DashAsnRow, DashCenter, DashPlanRow, DashRcvRow, TplDashboard } from "./types";
 import styles from "./Dashboard.module.css";
-
-const md = (ymd: string) => ymd.slice(5);
 
 /**
  * 3PL 대시보드 (2026-11-11 Sol) — ① 오늘 할 일 ② 오늘 흐름 ③ 주의할 건 ④ 일마감 상태.
@@ -22,41 +20,11 @@ const md = (ymd: string) => ymd.slice(5);
 export function TplDashboardScreen({ data }: { data: TplDashboard }) {
   const router = useRouter();
   const { todo, flow, watch, centers } = data;
-  const single = centers.length === 1 ? centers[0] : null;
-  const dateLabel = single
-    ? `업무일 ${single.businessDate} (${single.businessDayStart} 시작)`
-    : `센터별 업무일 기준 (${[...new Set(centers.map((c) => md(c.businessDate)))].join(" · ")})`;
+  const multi = centers.length > 1;
 
   return (
     <>
-      <PageHeader
-        crumbs={["현황", "대시보드"]}
-        title="대시보드"
-        actions={
-          <div className={styles.headActions}>
-            {data.centerOptions.length > 1 && (
-              <Select
-                aria-label="센터"
-                value={data.selectedCenter}
-                onChange={(e) => router.push(e.target.value ? `/dashboard?center=${e.target.value}` : "/dashboard")}
-              >
-                <option value="">전체 센터</option>
-                {data.centerOptions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-            <span className={styles.asOf}>
-              {dateLabel} · <span className="mono">{fmtDateTime(data.now).slice(11)}</span> 기준
-            </span>
-            <Button size="sm" onClick={() => router.refresh()}>
-              새로 고침
-            </Button>
-          </div>
-        }
-      />
+      <PageHeader crumbs={["현황", "대시보드"]} title="대시보드" actions={<HeadActions {...data} />} />
 
       <div className={styles.page}>
         {/* ① 오늘 할 일 */}
@@ -74,25 +42,7 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
         </section>
 
         {/* ② 오늘 흐름 */}
-        <Card title="오늘 흐름" description="오늘 업무일 기준 — 입고예정은 입고예정일, ASN은 출고일, 검수는 확정 시각으로 셉니다. 취소 건은 빼고 셉니다.">
-          <div className={styles.flow}>
-            <FlowGroup title="입고예정 (오늘 예정일)">
-              <FlowStep label="승인 전" value={flow.planPre} unit="건" />
-              <FlowStep label="승인 이후" value={flow.planApproved} unit="건" />
-            </FlowGroup>
-            <FlowGroup title="ASN 차량 (오늘 출고)" arrows>
-              <FlowStep label="상차 대기" value={flow.asnRegistered} unit="대" />
-              <FlowStep label="상차중" value={flow.asnLoading} unit="대" />
-              <FlowStep label="검수 대기" value={flow.asnLoaded} unit="대" />
-              <FlowStep label="입고완료" value={flow.asnReceived} unit="대" done />
-            </FlowGroup>
-            <FlowGroup title="검수 확정 (오늘)">
-              <FlowStep label="차량" value={flow.rcvVehicles} unit="대" done />
-              <FlowStep label="품목" value={flow.rcvLines} unit="줄" />
-              <FlowStep label="차이 있음" value={flow.rcvIssueVehicles} unit="대" warn />
-            </FlowGroup>
-          </div>
-        </Card>
+        <FlowCard flow={flow} description="오늘 업무일 기준 — 입고예정은 입고예정일, ASN은 출고일, 검수는 확정 시각으로 셉니다. 취소 건은 빼고 셉니다." />
 
         {/* ③ 주의할 건 */}
         <div className={styles.watch}>
@@ -104,7 +54,7 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
             <DataTable
               compact
               caption="기한경과 취소 대상"
-              columns={expireColumns(centers.length > 1)}
+              columns={expireColumns(multi)}
               rows={watch.expire}
               rowKey={(r) => String(r.id)}
               onActivate={(k) => router.push(`/plans/approval/${k}`)}
@@ -117,7 +67,7 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
             <DataTable
               compact
               caption="출고일 지난 상차 대기"
-              columns={asnColumns(centers.length > 1)}
+              columns={asnColumns(multi)}
               rows={watch.overdueAsn}
               rowKey={(r) => String(r.id)}
               onActivate={(k) => router.push(`/plans/asn-status/${k}`)}
@@ -130,7 +80,7 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
             <DataTable
               compact
               caption="오늘 검수 차이"
-              columns={rcvColumns(centers.length > 1)}
+              columns={rcvColumns(multi)}
               rows={watch.issueRcv}
               rowKey={(r) => r.href}
               onActivate={(k) => router.push(k)}
@@ -169,74 +119,26 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
   );
 }
 
-function Tile({ href, label, value, unit, note, danger }: { href: string; label: string; value: number; unit: string; note: string; danger?: boolean }) {
-  const zero = value === 0;
-  return (
-    <Link href={href} className={`${styles.tile} ${zero ? styles.zero : ""} ${danger && !zero ? styles.danger : ""}`}>
-      <span className={styles.tileLabel}>{label}</span>
-      <span className={styles.tileValue}>
-        <b className="mono">{value.toLocaleString()}</b>
-        {unit}
-      </span>
-      <span className={styles.tileNote}>{note}</span>
-    </Link>
-  );
-}
-
-function FlowGroup({ title, arrows, children }: { title: string; arrows?: boolean; children: React.ReactNode }) {
-  return (
-    <div className={styles.flowGroup}>
-      <h3>{title}</h3>
-      <div className={`${styles.flowSteps} ${arrows ? styles.arrows : ""}`}>{children}</div>
-    </div>
-  );
-}
-
-function FlowStep({ label, value, unit, done, warn }: { label: string; value: number; unit: string; done?: boolean; warn?: boolean }) {
-  const tone = value === 0 ? styles.stepZero : warn ? styles.stepWarn : done ? styles.stepDone : "";
-  return (
-    <div className={`${styles.step} ${tone}`}>
-      <span className={styles.stepLabel}>{label}</span>
-      <span className={styles.stepValue}>
-        <b className="mono">{value.toLocaleString()}</b>
-        {unit}
-      </span>
-    </div>
-  );
-}
-
-function More({ shown, total, href }: { shown: number; total: number; href: string }) {
-  if (total <= shown) return null;
-  return (
-    <p className={styles.more}>
-      외 {total - shown}건 · <Link href={href}>전체 보기 →</Link>
-    </p>
-  );
-}
-
-const centerCol = <T extends { centerName: string }>(multi: boolean): Column<T>[] =>
-  multi ? [{ key: "center", header: "센터", render: (r) => r.centerName }] : [];
-
-const expireColumns = (multi: boolean): Column<TplDashboard["watch"]["expire"][number]>[] => [
+const expireColumns = (multi: boolean): Column<DashPlanRow>[] => [
   { key: "no", header: "입고예정번호", render: (r) => <span className="mono">{r.planNo}</span> },
   { key: "client", header: "화주사", render: (r) => r.clientName },
-  ...centerCol<TplDashboard["watch"]["expire"][number]>(multi),
+  ...centerCol<DashPlanRow>(multi),
   { key: "date", header: "입고예정일", render: (r) => <span className="mono">{r.planDate}</span> },
   { key: "status", header: "상태", render: (r) => <StatusBadge status={r.status} /> },
 ];
 
-const asnColumns = (multi: boolean): Column<TplDashboard["watch"]["overdueAsn"][number]>[] => [
+const asnColumns = (multi: boolean): Column<DashAsnRow>[] => [
   { key: "no", header: "ASN번호", render: (r) => <span className="mono">{r.asnNo}</span> },
   { key: "client", header: "화주사", render: (r) => r.clientName },
-  ...centerCol<TplDashboard["watch"]["overdueAsn"][number]>(multi),
+  ...centerCol<DashAsnRow>(multi),
   { key: "vehicle", header: "차량번호", render: (r) => <span className="mono">{r.vehicleNo}</span> },
   { key: "date", header: "출고일", render: (r) => <span className="mono">{r.shipDate}</span> },
 ];
 
-const rcvColumns = (multi: boolean): Column<TplDashboard["watch"]["issueRcv"][number]>[] => [
+const rcvColumns = (multi: boolean): Column<DashRcvRow>[] => [
   { key: "vehicle", header: "차량번호", render: (r) => <span className="mono">{r.vehicleNo}</span> },
   { key: "client", header: "화주사", render: (r) => r.clientName },
-  ...centerCol<TplDashboard["watch"]["issueRcv"][number]>(multi),
+  ...centerCol<DashRcvRow>(multi),
   { key: "at", header: "확정", render: (r) => <span className="mono">{fmtShortDateTime(r.confirmedAt)}</span> },
   { key: "issue", header: "차이 품목", align: "right", render: (r) => <span className={`mono ${styles.warnText}`}>{r.issueCount}</span> },
 ];

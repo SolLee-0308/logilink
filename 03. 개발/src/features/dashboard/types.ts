@@ -65,23 +65,61 @@ export interface TplDashboard {
     partial: number;
     expireTargets: number;
   };
-  flow: {
-    /** 오늘 입고예정일 건 — 승인 전·승인 이후로 나눈다 (취소 제외) */
-    planPre: number;
-    planApproved: number;
-    /** 오늘 출고일 ASN 상태별 (취소 제외) */
-    asnRegistered: number;
-    asnLoading: number;
-    asnLoaded: number;
-    asnReceived: number;
-    /** 오늘 업무일 검수 확정 */
-    rcvVehicles: number;
-    rcvLines: number;
-    rcvIssueVehicles: number;
-  };
+  flow: DashFlow;
   watch: {
     expire: DashPlanRow[];
     expireCount: number;
+    overdueAsn: DashAsnRow[];
+    overdueAsnCount: number;
+    issueRcv: DashRcvRow[];
+    unclosedOverdue: number;
+    alertDays: number;
+  };
+}
+
+/** 오늘 흐름 — 3PL·화주사 공통 */
+export interface DashFlow {
+  /** 오늘 입고예정일 건 — 승인 전·승인 이후로 나눈다 (취소 제외) */
+  planPre: number;
+  planApproved: number;
+  /** 오늘 출고일 ASN 상태별 (취소 제외) */
+  asnRegistered: number;
+  asnLoading: number;
+  asnLoaded: number;
+  asnReceived: number;
+  /** 오늘 업무일 검수 확정 */
+  rcvVehicles: number;
+  rcvLines: number;
+  rcvIssueVehicles: number;
+}
+
+/** 화주사 대시보드 (2026-11-11) — 자기 화주사 건, 이용 센터 기준 */
+export interface ShipperDashboard {
+  now: string;
+  centers: DashCenter[];
+  /** 이용 센터 — 2곳 이상이면 고르기 */
+  centerOptions: { id: number; name: string }[];
+  selectedCenter: string;
+  todo: {
+    /** 반려된 입고예정 — 고쳐서 다시 요청 */
+    rejected: number;
+    /** 승인대기 — 3PL 검토 중 */
+    waiting: number;
+    /** ASN에 나눠 담을 잔량이 남은 승인·부분입고 건 */
+    toAsn: number;
+    /** 반려된 품목 등록 요청 (센터 무관) */
+    itemRejected: number;
+    /** 오늘 일마감 때 기한경과로 취소될 승인 전 건 */
+    expireTargets: number;
+    /** 3PL이 검수 중인 내 차량 */
+    inspecting: number;
+  };
+  flow: DashFlow;
+  watch: {
+    /** 승인 전 + 입고예정일 지남 — 오늘 취소 대상(target)과 유예 중 */
+    expire: (DashPlanRow & { target: boolean })[];
+    expireCount: number;
+    expireTargetCount: number;
     overdueAsn: DashAsnRow[];
     overdueAsnCount: number;
     issueRcv: DashRcvRow[];
