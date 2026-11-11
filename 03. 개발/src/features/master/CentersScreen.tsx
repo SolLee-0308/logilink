@@ -10,6 +10,17 @@ import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui
 import { Modal } from "@/components/ui/Overlay";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
 import { MSG, addressErrors, formatPhone, isValidPhone, isValidTime, textError } from "@/domain/validators";
+import {
+  DEFAULT_BUSINESS_DAY_START,
+  DEFAULT_EXPIRE_GRACE_DAYS,
+  EXPIRE_GRACE_MAX,
+  WEEKDAYS,
+  WEEKDAY_LABEL,
+  isValidGraceDays,
+  isValidWeeklyOff,
+  normalizeWeeklyOff,
+  weeklyOffLabel,
+} from "@/domain/business-day";
 import { saveCenter } from "@/server/master/actions";
 import { loadCenter } from "@/server/master/loaders";
 import { LastChanged } from "./history";
@@ -28,10 +39,16 @@ const LABELS = {
   inboundTel: "입고 문의 전화",
   managerUserId: "센터 담당자",
   dailyCloseTime: "일마감 예정 시각",
+  businessDayStart: "업무일 시작 시각",
+  expireGraceDays: "기한경과 취소 유예",
+  weeklyOffDays: "정기 휴무 요일",
   isActive: "사용 여부",
 };
 
-const CLOSE_TIME_HELP = "이 시각이 지나도 일마감을 실행하지 않으면 알림 대상입니다. 마감 실행 이후 확정된 검수 실적은 다음 날 실적으로 귀속합니다.";
+const CLOSE_TIME_HELP = "이 시각이 지나도 일마감을 실행하지 않으면 알림 대상입니다. 안내용이며 자동으로 마감하지 않습니다.";
+const DAY_START_HELP = "이 시각부터 다음 날 이 시각 전까지를 하루 업무일로 셉니다. 06:00이면 새벽 2시에 확정한 검수 실적은 전날 업무일 실적입니다.";
+const GRACE_HELP = "승인 전(승인대기·반려) 입고예정은 입고예정일 + 이 영업일 수가 지난 날의 일마감 때 기한경과 취소 대상이 됩니다. 정기 휴무 요일과 휴무일은 세지 않습니다.";
+const WEEKLY_OFF_HELP = "매주 쉬는 요일을 고릅니다. 고르지 않으면 모든 요일을 영업일로 셉니다. 공휴일·임시 휴무는 기준정보 › 휴무일에서 따로 등록합니다.";
 
 export function CentersScreen({ rows, candidates, canEdit }: { rows: CenterRow[]; candidates: ManagerCandidate[]; canEdit: boolean }) {
   const [active, setActive] = useState<ActiveFilter>("all");
@@ -46,7 +63,9 @@ export function CentersScreen({ rows, candidates, canEdit }: { rows: CenterRow[]
     { key: "addr", header: "주소", render: (r) => r.addr1 },
     { key: "tel", header: "입고 문의 전화", render: (r) => <span className="mono">{r.inboundTel}</span> },
     { key: "manager", header: "센터 담당자", render: (r) => r.managerName ?? <span className="muted">미지정</span> },
+    { key: "dayStart", header: "업무일 시작", render: (r) => <span className="mono">{r.businessDayStart}</span> },
     { key: "close", header: "일마감 예정 시각", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
+    { key: "off", header: "정기 휴무", render: (r) => (r.weeklyOffDays.length ? weeklyOffLabel(r.weeklyOffDays) : <span className="muted">없음</span>) },
     { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
@@ -157,7 +176,10 @@ function CenterView({
         title="운영"
         items={[
           ["센터 담당자", row.managerName],
+          ["업무일 시작 시각", <span key="s" className="mono">{row.businessDayStart}</span>],
           ["일마감 예정 시각", <span key="d" className="mono">{row.dailyCloseTime}</span>],
+          ["기한경과 취소 유예", `입고예정일 + ${row.expireGraceDays}영업일`],
+          ["정기 휴무 요일", weeklyOffLabel(row.weeklyOffDays)],
           ["소속 사용자", `사용 중 ${row.activeUserCount}명`],
         ]}
       />
@@ -174,8 +196,15 @@ type Form = {
   inboundTel: string;
   managerUserId: string;
   dailyCloseTime: string;
+  businessDayStart: string;
+  expireGraceDays: string;
+  /** 요일 순서(월~일)로 정리한 값을 쉼표로 이어 둔다 — 문자열이라야 바뀜 비교가 단순하다 */
+  weeklyOffDays: string;
   isActive: boolean;
 };
+
+const toDays = (s: string) => (s ? s.split(",").map(Number) : []);
+const fromDays = (d: number[]) => normalizeWeeklyOff(d).join(",");
 
 function validate(f: Form, isNew: boolean) {
   const e: Record<string, string> = {};
@@ -185,6 +214,10 @@ function validate(f: Form, isNew: boolean) {
   Object.assign(e, addressErrors(f));
   if (!isValidPhone(f.inboundTel)) e.inboundTel = f.inboundTel.trim() ? MSG.phone : "입고 문의 전화를 입력하세요";
   if (!isValidTime(f.dailyCloseTime)) e.dailyCloseTime = "일마감 예정 시각을 HH:mm(00:00~23:59)으로 입력하세요";
+  if (!isValidTime(f.businessDayStart)) e.businessDayStart = "업무일 시작 시각을 HH:mm(00:00~23:59)으로 입력하세요";
+  if (!/^\d{1,2}$/.test(f.expireGraceDays) || !isValidGraceDays(Number(f.expireGraceDays)))
+    e.expireGraceDays = `기한경과 취소 유예를 0~${EXPIRE_GRACE_MAX}일로 입력하세요`;
+  if (!isValidWeeklyOff(toDays(f.weeklyOffDays))) e.weeklyOffDays = "정기 휴무 요일은 7일 모두 고를 수 없습니다";
   return e;
 }
 
@@ -211,6 +244,9 @@ function CenterEditModal({
       inboundTel: row?.inboundTel ?? "",
       managerUserId: row?.managerUserId ? String(row.managerUserId) : "",
       dailyCloseTime: row?.dailyCloseTime ?? "18:00",
+      businessDayStart: row?.businessDayStart ?? DEFAULT_BUSINESS_DAY_START,
+      expireGraceDays: String(row?.expireGraceDays ?? DEFAULT_EXPIRE_GRACE_DAYS),
+      weeklyOffDays: fromDays(row?.weeklyOffDays ?? []),
       isActive: row?.isActive ?? true,
     }),
     [row],
@@ -238,6 +274,9 @@ function CenterEditModal({
           inboundTel: f.inboundTel,
           managerUserId: f.managerUserId ? Number(f.managerUserId) : null,
           dailyCloseTime: f.dailyCloseTime,
+          businessDayStart: f.businessDayStart,
+          expireGraceDays: Number(f.expireGraceDays),
+          weeklyOffDays: toDays(f.weeklyOffDays),
           isActive: f.isActive,
         }),
       (d) => d && onSaved(d.id),
@@ -297,6 +336,33 @@ function CenterEditModal({
         <FormField label="일마감 예정 시각" htmlFor="ct-close" required hint={CLOSE_TIME_HELP} error={act.fieldErrors.dailyCloseTime}>
           <Input id="ct-close" className="mono" type="time" value={f.dailyCloseTime} onChange={set("dailyCloseTime")} />
         </FormField>
+        <FormField label="업무일 시작 시각" htmlFor="ct-daystart" required hint={DAY_START_HELP} error={act.fieldErrors.businessDayStart}>
+          <Input id="ct-daystart" className="mono" type="time" value={f.businessDayStart} onChange={set("businessDayStart")} />
+        </FormField>
+        <FormField label="기한경과 취소 유예(영업일)" htmlFor="ct-grace" required hint={GRACE_HELP} error={act.fieldErrors.expireGraceDays}>
+          <Input id="ct-grace" className="mono" inputMode="numeric" value={f.expireGraceDays} onChange={set("expireGraceDays", (v) => v.replace(/\D/g, "").slice(0, 2))} maxLength={2} />
+        </FormField>
+        <Full>
+          <FormField label="정기 휴무 요일" htmlFor="ct-off-1" hint={WEEKLY_OFF_HELP} error={act.fieldErrors.weeklyOffDays}>
+            <div className={styles.weekdays} role="group" aria-label="정기 휴무 요일">
+              {WEEKDAYS.map((d) => {
+                const days = toDays(f.weeklyOffDays);
+                const on = days.includes(d);
+                return (
+                  <label key={d} htmlFor={`ct-off-${d}`} className={`${styles.weekday} ${on ? styles.weekdayOn : ""}`}>
+                    <input
+                      id={`ct-off-${d}`}
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => setF({ ...f, weeklyOffDays: fromDays(e.target.checked ? [...days, d] : days.filter((x) => x !== d)) })}
+                    />
+                    {WEEKDAY_LABEL[d]}
+                  </label>
+                );
+              })}
+            </div>
+          </FormField>
+        </Full>
         <Full>
           <FormCheck id="ct-active" label="사용" checked={f.isActive} onChange={(v) => setF({ ...f, isActive: v })} hint="센터는 삭제하지 않습니다. 더 쓰지 않으면 '사용 안 함'으로 바꿉니다." />
         </Full>
@@ -331,5 +397,7 @@ function CenterEditModal({
 function fmtValue(k: string, v: unknown, candidates: ManagerCandidate[]) {
   if (k === "managerUserId") return v ? (candidates.find((c) => c.id === v)?.name ?? `사용자 #${String(v)}`) : "미지정";
   if (k === "isActive") return v ? "사용" : "사용 안 함";
+  if (k === "weeklyOffDays") return Array.isArray(v) ? weeklyOffLabel(v as number[]) : "없음";
+  if (k === "expireGraceDays") return `${String(v)}영업일`;
   return v === null || v === undefined || v === "" ? "없음" : String(v);
 }

@@ -96,6 +96,12 @@ model Center {
   managerUserId  Int?     @map("manager_user_id")
   /// 일마감 예정 시각 HH:mm (센터마다 다름)
   dailyCloseTime String   @map("daily_close_time") @db.VarChar(5)
+  /// 업무일 시작 시각 HH:mm — 이 시각부터 다음 날 이 시각 전까지를 하루 업무일로 센다 (2026-11-11 Sol 결정, 기본 06:00)
+  businessDayStart String @default("06:00") @map("business_day_start") @db.VarChar(5)
+  /// 기한경과 취소 유예(영업일) — 승인 전 입고예정은 입고예정일 + 이 영업일 수가 지난 날의 일마감 때 취소 대상 (2026-11-11 Sol 결정, 기본 1)
+  expireGraceDays  Int    @default(1) @map("expire_grace_days")
+  /// 정기 휴무 요일 (0 일 ~ 6 토) — 영업일 계산에서 뺀다. 기본 없음: 토·일을 쉬는 날로 가정하지 않는다 (2026-11-11 Sol)
+  weeklyOffDays    Int[]  @default([]) @map("weekly_off_days")
   isActive       Boolean  @default(true) @map("use_yn")
   version        Int      @default(1)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -730,6 +736,7 @@ enum AsnAction {
   LOAD_START // 상차 시작 (첫 상차 입력)
   LOAD_COMPLETE // 상차완료 (상차확인서 발행)
   RECEIVE // 입고검수 확정 (입고완료)
+  LOAD_REOPEN // 상차 재개 (정의서 v1.5 D20, 상차완료 → 상차중)
 }
 
 /// ASN 헤더 (TB_ASN_H) — 차량 1대 단위. 입고예정번호를 두지 않고 라인이 입고예정 라인을 가리킨다 (D9)
@@ -867,6 +874,8 @@ model Load {
   /// 상차하는 날 (KST) — 무지시 상차의 "당일 ASN 품목" 기준
   loadDate       DateTime   @map("load_dt") @db.Date
   status         LoadStatus @default(WORKING)
+  /// 상차확인서 차수 — 상차 재개 때 +1, 확인서 번호는 그대로 (정의서 v1.5 D20)
+  revisionNo     Int        @default(1) @map("revision_no")
   version        Int        @default(1)
   /// ASN 대비 차이 사유 (LOAD_DIFF 그룹, 기타는 텍스트 필수)
   diffReasonCode String?    @map("diff_reason_cd") @db.VarChar(20)
@@ -886,6 +895,7 @@ model Load {
   lines     LoadLine[]
   inputs    LoadInput[]
   rcvs      Rcv[]
+  histories LoadHistory[]
 
   @@index([clientId, status])
   @@index([centerId, loadDate])
@@ -894,6 +904,32 @@ model Load {
 }
 
 /// 상차 품목별 합계 (TB_LOAD_D) — 입력 행 합계를 기준 단위로 모은다. 지시수량은 ASN 라인 합계
+/// 상차 실적 처리 행위
+enum LoadAction {
+  COMPLETE // 상차완료 (상차확인서 발행)
+  REOPEN // 상차 재개 (검수 시작 전, 사유 필수)
+}
+
+/// 상차 실적 처리 이력 (TB_LOAD_HIS) — 상차완료·재개를 차수와 함께 남긴다 (정의서 v1.5 D20). 무지시 상차는 ASN 이력이 없어 여기에만 남는다
+model LoadHistory {
+  id         Int        @id @default(autoincrement())
+  loadId     Int        @map("load_id")
+  action     LoadAction
+  /// 처리한 시점의 상차확인서 차수
+  revisionNo Int        @map("revision_no")
+  actor      String     @db.VarChar(50)
+  actorId    Int?       @map("actor_id")
+  at         DateTime   @default(now()) @db.Timestamptz(3)
+  reasonCode String?    @map("reason_cd") @db.VarChar(20)
+  reasonName String?    @map("reason_nm") @db.VarChar(100)
+  reasonText String?    @map("reason_text") @db.VarChar(500)
+
+  load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+
+  @@index([loadId])
+  @@map("tb_load_his")
+}
+
 model LoadLine {
   id           Int @id @default(autoincrement())
   loadId       Int @map("load_id")

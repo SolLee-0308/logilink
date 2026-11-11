@@ -1,0 +1,215 @@
+/* 3PL 대시보드 (2026-11-11) — 숫자 칸 · 흐름 · 주의 목록 · 일마감 */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.headActions select {
+  min-width: 140px;
+}
+
+.asOf {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.secTitle {
+  margin: 0 0 8px;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+/* ① 오늘 할 일 */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-group);
+  background: var(--bg);
+  color: var(--fg);
+  text-decoration: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.tile:hover {
+  border-color: var(--violet-300);
+  background: var(--violet-50);
+}
+
+.tile:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+.tileLabel {
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+
+.tileValue {
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.tileValue b {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-right: 2px;
+}
+
+.tileNote {
+  font-size: var(--fs-12);
+  color: var(--soft);
+}
+
+.zero .tileValue b {
+  color: var(--soft);
+}
+
+.danger {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.danger .tileValue b,
+.danger .tileLabel {
+  color: var(--danger);
+}
+
+/* ② 오늘 흐름 */
+.flow {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1.4fr;
+  gap: 20px;
+}
+
+@media (max-width: 1100px) {
+  .flow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.flowGroup h3 {
+  margin: 0 0 8px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.flowSteps {
+  display: flex;
+  gap: 6px;
+}
+
+.step {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--st-ok-bg);
+  color: var(--st-ok-fg);
+  position: relative;
+}
+
+.arrows .step:not(:last-child)::after {
+  content: "›";
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translate(50%, -50%);
+  color: var(--soft);
+  font-size: 16px;
+}
+
+.stepLabel {
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+
+.stepValue {
+  font-size: var(--fs-12);
+}
+
+.stepValue b {
+  font-size: var(--fs-21);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.stepDone {
+  background: var(--st-done-bg);
+  color: var(--st-done-fg);
+}
+
+.stepWarn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.stepZero {
+  background: var(--surface);
+  color: var(--soft);
+}
+
+/* ③ 주의할 건 */
+.watch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .watch {
+    grid-template-columns: 1fr;
+  }
+}
+
+.plain {
+  margin: 0;
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+
+.plain a,
+.more a {
+  color: var(--violet-700);
+}
+
+.more {
+  margin: 8px 0 0;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  text-align: right;
+}
+
+.warnText {
+  color: var(--warn-fg);
+  font-weight: 600;
+}
+
+.dangerText {
+  color: var(--danger);
+  font-weight: 600;
+}

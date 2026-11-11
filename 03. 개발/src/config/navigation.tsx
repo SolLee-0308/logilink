@@ -8,6 +8,7 @@ import {
   IconClipboard,
   IconClock,
   IconDoc,
+  IconGrid,
   IconList,
   IconPlus,
   IconTruck,
@@ -58,6 +59,11 @@ export const MASTER_MENU: NavChild[] = [
 ];
 
 export const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "현황",
+    // 3PL: 오늘 할 일·흐름·주의 건·일마감 상태 (2026-11-11 Sol). 화주사 대시보드는 다음 차례
+    items: [{ label: "대시보드", href: "/dashboard", icon: <IconGrid /> }],
+  },
   {
     label: "입고 계획",
     items: [

@@ -69,3 +69,33 @@
   font-size: var(--fs-12);
   margin: 0;
 }
+
+/* 센터 정기 휴무 요일 — 요일 7칸 (2026-11-11) */
+.weekdays {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.weekday {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  font-size: var(--fs-13);
+  cursor: pointer;
+  user-select: none;
+}
+
+.weekday input {
+  margin: 0;
+}
+
+.weekdayOn {
+  border-color: var(--violet-300);
+  background: var(--violet-50);
+  color: var(--violet-700);
+  font-weight: 600;
+}

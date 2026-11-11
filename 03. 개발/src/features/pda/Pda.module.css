@@ -1904,3 +1904,105 @@ select.field {
     animation: none;
   }
 }
+
+/* ── 상차 작업 정리 (2026-11-11 Sol 피드백) ── */
+
+/* 아래 띠: 일치 수 + [상차완료] */
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.barRow .blackPill {
+  flex: 1;
+  width: auto;
+}
+
+.barInfo {
+  flex: none;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.barInfo b {
+  font-size: var(--fs-16);
+  color: var(--fg);
+}
+
+.barInfo .matchAll b {
+  color: var(--st-done-fg);
+}
+
+/* 확인 창 — 지시 초과·지시 외 / 입력 취소 */
+.askTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn-fg);
+}
+
+.askBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--fs-14);
+}
+
+p.askBody {
+  display: block;
+}
+
+.askItem {
+  font-size: var(--fs-16);
+}
+
+.askRows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-group);
+  background: var(--surface);
+}
+
+.askRows dt {
+  color: var(--muted);
+}
+
+.askRows dd {
+  margin: 0;
+  text-align: right;
+}
+
+.askAfter {
+  color: var(--danger-hover);
+  font-weight: 700;
+}
+
+.dangerBtn {
+  font: inherit;
+  font-size: var(--fs-14);
+  font-weight: 700;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  color: #fff;
+  cursor: pointer;
+}
+
+/* 완료 화면 [상차 재개] — [처음으로]와 같은 너비 (정의서 v1.5 D20) */
+.wide {
+  width: 100%;
+  min-height: 44px;
+}
+
+.dangerBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

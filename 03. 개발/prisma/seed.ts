@@ -135,6 +135,18 @@ const CODE_GROUPS: {
     ],
   },
   {
+    code: "LOAD_REOPEN",
+    name: "상차 재개",
+    description: "상차완료 후 검수 시작 전 상차 재개 시 필수 (정의서 v1.5 ④·D20, 임시안)",
+    confirmed: false,
+    codes: [
+      ["R01", "스캔 누락"],
+      ["R02", "타 차량 이관"],
+      ["R03", "추가 적재"],
+      ["R99", "기타", true],
+    ],
+  },
+  {
     code: "RCV_DIFF",
     name: "검수 차이·반송",
     description: "입고검수 이상 처리 시 선택 (정의서 ⑥ 이상 유형 기준 임시안)",

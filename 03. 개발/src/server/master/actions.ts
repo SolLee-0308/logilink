@@ -14,6 +14,7 @@ import type { UserRole } from "@/domain/master";
 import { CLIENT_PREFIX_PATTERN, PREFIX_EXHAUSTED_MSG, composeClientCode, nextClientSerial } from "@/domain/client-code";
 import { ITEM_SERIAL_MAX, cleanClientCode, composeItemCode, nextItemSerial } from "@/domain/item-code";
 import { deactivateBlock, removeCenterBlock } from "@/domain/unclosed";
+import { EXPIRE_GRACE_MAX, isValidGraceDays, isValidWeeklyOff, normalizeWeeklyOff } from "@/domain/business-day";
 import { countUnclosed } from "@/server/master/unclosed";
 import { fetchPublicHolidays } from "@/server/master/public-holidays";
 import { todayKst } from "@/lib/format";
@@ -72,8 +73,10 @@ async function log(tx: Tx, tableName: string, recordKey: string, action: string,
 function diff<T extends Record<string, unknown>>(before: T, after: Partial<T>) {
   const b: Record<string, unknown> = {};
   const a: Record<string, unknown> = {};
+  // 배열(정기 휴무 요일 등)은 값으로 비교한다 — 참조 비교면 저장할 때마다 바뀐 것으로 남는다
+  const same = (x: unknown, y: unknown) => (Array.isArray(x) && Array.isArray(y) ? JSON.stringify(x) === JSON.stringify(y) : x === y);
   for (const k of Object.keys(after)) {
-    if (before[k] !== after[k]) {
+    if (!same(before[k], after[k])) {
       b[k] = before[k];
       a[k] = after[k];
     }
@@ -1168,6 +1171,9 @@ interface CenterInput {
   inboundTel: string;
   managerUserId: number | null;
   dailyCloseTime: string;
+  businessDayStart: string;
+  expireGraceDays: number;
+  weeklyOffDays: number[];
   isActive: boolean;
 }
 
@@ -1179,6 +1185,9 @@ function centerErrors(v: CenterInput, isNew: boolean) {
   Object.assign(e, addressErrors(v));
   if (!isValidPhone(v.inboundTel)) e.inboundTel = v.inboundTel.trim() ? MSG.phone : "입고 문의 전화를 입력하세요";
   if (!isValidTime(v.dailyCloseTime)) e.dailyCloseTime = "일마감 예정 시각을 HH:mm(00:00~23:59)으로 입력하세요";
+  if (!isValidTime(v.businessDayStart)) e.businessDayStart = "업무일 시작 시각을 HH:mm(00:00~23:59)으로 입력하세요";
+  if (!isValidGraceDays(v.expireGraceDays)) e.expireGraceDays = `기한경과 취소 유예를 0~${EXPIRE_GRACE_MAX}일로 입력하세요`;
+  if (!Array.isArray(v.weeklyOffDays) || !isValidWeeklyOff(v.weeklyOffDays)) e.weeklyOffDays = "정기 휴무 요일은 7일 모두 고를 수 없습니다";
   return e;
 }
 
@@ -1196,6 +1205,9 @@ export async function saveCenter(input: CenterInput): Promise<ActionResult<{ id:
     inboundTel: formatPhone(input.inboundTel),
     managerUserId: input.managerUserId,
     dailyCloseTime: input.dailyCloseTime,
+    businessDayStart: input.businessDayStart,
+    expireGraceDays: input.expireGraceDays,
+    weeklyOffDays: normalizeWeeklyOff(input.weeklyOffDays),
     isActive: input.isActive,
   };
 

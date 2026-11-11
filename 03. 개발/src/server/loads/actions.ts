@@ -39,6 +39,10 @@ export async function correctLoadInput(input: { inputId: number; qty: number; co
   return refresh(await svc.correctLoadInput(await getPdaActor(), input));
 }
 
+export async function reopenLoad(input: svc.ReopenInput) {
+  return refresh(await svc.reopenLoad(await getPdaActor(), input));
+}
+
 export async function completeLoad(input: svc.CompleteInput) {
   return refresh(await svc.completeLoad(await getPdaActor(), input));
 }

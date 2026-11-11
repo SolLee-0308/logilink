@@ -264,6 +264,12 @@ export interface CenterRow extends Audit {
   managerUserId: number | null;
   managerName: string | null;
   dailyCloseTime: string;
+  /** 업무일 시작 시각 HH:mm */
+  businessDayStart: string;
+  /** 기한경과 취소 유예(영업일) */
+  expireGraceDays: number;
+  /** 정기 휴무 요일 (0 일 ~ 6 토) */
+  weeklyOffDays: number[];
   isActive: boolean;
   /** 이 센터 소속 사용 중 사용자 수 (사용 안 함 전환 경고용) */
   activeUserCount: number;

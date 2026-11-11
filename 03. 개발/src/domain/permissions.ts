@@ -22,7 +22,8 @@ export type Resource =
   | "asn"
   | "asnStatus"
   | "loading"
-  | "inspection";
+  | "inspection"
+  | "dashboard";
 export type Op = "view" | "edit";
 
 /** 3PL 관리자는 3PL 운영담당 권한을 모두 포함한다 */
@@ -54,6 +55,8 @@ const MATRIX: Record<Resource, Record<Op, readonly UserRole[]>> = {
   loading: { view: ["SHIPPER_LOADER"], edit: ["SHIPPER_LOADER"] },
   // 입고검수(PDA): 3PL 입고검수자 (정의서 ⑥). 소속 센터 차량만, 센터가 없는 계정은 전체. 결과 조회는 웹 ASN 화면에서
   inspection: { view: ["TPL_INSPECTOR"], edit: ["TPL_INSPECTOR"] },
+  // 웹 대시보드: 3PL 관리자·운영담당 (2026-11-11). 화주사 대시보드를 만들면 SHIPPER_STAFF 추가
+  dashboard: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: [] },
   // 그 외 기준정보 — 기존 유지 (매트릭스 확정 전)
   master: { view: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"], edit: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"] },
 };
@@ -95,13 +98,14 @@ export function resourceOfPath(href: string): Resource {
   if (href.startsWith("/plans/inquiry")) return "planInquiry";
   if (href.startsWith("/plans/asn-status")) return "asnStatus";
   if (href.startsWith("/plans/asn")) return "asn";
+  if (href.startsWith("/dashboard")) return "dashboard";
   return "master";
 }
 
 /**
  * 로그인 후 첫 화면.
- * 화주사: 품목 조회 (임시 — 화주사 대시보드를 만들면 대시보드로 바꾼다) / 3PL: 승인 대기
+ * 화주사: 품목 조회 (임시 — 화주사 대시보드를 만들면 대시보드로 바꾼다) / 3PL: 대시보드 (2026-11-11, 이전 승인 대기)
  */
 export function homePathOf(roles: readonly UserRole[]): string {
-  return isShipperRole(roles) ? "/master/items" : "/plans/approval";
+  return isShipperRole(roles) ? "/master/items" : "/dashboard";
 }
