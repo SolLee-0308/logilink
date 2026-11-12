@@ -126,6 +126,7 @@ function toView(r: RcvFull, meId: number | null): RcvView {
       kind: i.kind,
       unit: i.unit,
       addQty: i.addQty,
+      baseQty: i.baseQty,
       workerName: i.workerName,
       inputAt: iso(i.inputAt)!,
       canceled: !!i.canceledAt,
@@ -196,21 +197,27 @@ const rcvRow = (r: Prisma.RcvGetPayload<{ include: typeof ROW_INCLUDE }>): PdaRc
   ).length,
 });
 
-export async function pdaRcvHome(me: PlanActor): Promise<PdaRcvHome | null> {
+/**
+ * PDA 입고검수 — 검수 대기·검수 중·확정 차량 (2026-11-12 Sol: 검수 내역을 합침)
+ * 날짜 규칙: 검수 대기·검수 중은 남은 일이라 날짜와 상관없이 모두, 확정은 그 날짜(확정 시각 KST)
+ */
+export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHome | null> {
   if (!canInspect(me)) return null;
   const today = todayKst();
+  const day = date && date <= today ? date : today;
   const scope = rcvCenterScope(me);
-  const [loads, working, doneCount] = await Promise.all([
+  const [loads, working, done] = await Promise.all([
     db.load.findMany({
       where: { ...scope, status: "COMPLETED", rcvs: { none: { status: { in: [...ACTIVE_RCV] } } } },
       orderBy: [{ completedAt: "asc" }, { id: "asc" }],
       include: { client: { select: { name: true } }, center: { select: { name: true } }, loadOrder: { select: { orderNo: true } }, _count: { select: { lines: true } } },
     }),
     db.rcv.findMany({ where: { ...scope, status: "WORKING" }, orderBy: { id: "desc" }, include: ROW_INCLUDE }),
-    db.rcv.count({ where: { ...scope, status: "CONFIRMED", confirmedAt: kstDay(today) } }),
+    db.rcv.findMany({ where: { ...scope, status: "CONFIRMED", confirmedAt: kstDay(day) }, orderBy: [{ confirmedAt: "desc" }, { id: "desc" }], include: ROW_INCLUDE }),
   ]);
   return {
     today,
+    date: day,
     waiting: loads.map((l) => ({
       rcvId: null,
       rcvNo: null,
@@ -230,7 +237,7 @@ export async function pdaRcvHome(me: PlanActor): Promise<PdaRcvHome | null> {
       issueCount: 0,
     })),
     working: working.map(rcvRow),
-    doneCount,
+    done: done.map(rcvRow),
   };
 }
 

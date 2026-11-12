@@ -45,19 +45,23 @@ async function compress(file: File): Promise<string> {
  * 2) 품목마다 0(미도착) 확인·차이 사유·훼손 사진·소비기한·로트
  * 3) 여러 검수자가 함께 입력, 본인 입력만 취소·정정, 다른 검수자 입력은 몇 초마다 반영
  * 4) 검수 확정: 검수자·품목 합계를 보고 확정, 미입력 품목은 [돌아가서 스캔] / [남은 품목 전부 0 처리] → 자동 배분
+ * 2026-11-12 Sol: 상차 작업과 같은 UI — 확정 확인·수량 경고·입력 취소는 아래에서 올라오는 창, 토스트 대신 그 품목 줄 강조,
+ *   머리는 차량·상차 구분 + 짧은 상태 줄, 상차확인서·지시서·검수자는 접힌 '검수 정보', 완료 화면은 방금 확정/목록 조회 구분
  */
 export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reasons: ReasonOption[] }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  /** 방금 입력·정정·취소한 품목 — 목록에서 그 줄로 옮겨 잠깐 강조 (토스트 대신, 상차 작업과 같게 2026-11-12 Sol) */
+  const [flash, setFlash] = useState<{ itemId: number; n: number } | null>(null);
+  /** 확인 창 — 수량 경고(그대로 입력) / 내 입력 취소 (화면 안 경고·브라우저 확인창 대신, 상차 작업과 같게) */
+  const [ask, setAsk] = useState<{ type: "warn"; message: string } | { type: "cancel"; input: RcvInputView } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scan, setScan] = useState("");
   const [preview, setPreview] = useState<RcvScanPreview | null>(null);
   const [kind, setKind] = useState<"GOOD" | "DAMAGED">("GOOD");
   const [qty, setQty] = useState("");
-  const [warn, setWarn] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: number; qty: string } | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [unentered, setUnentered] = useState<string[] | null>(null);
@@ -65,8 +69,20 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
   const scanRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const working = view.status === "WORKING";
+  /**
+   * 확정 화면을 어떻게 열었는지 (상차 작업과 같게 2026-11-12 Sol) — me: 내가 방금 확정 / other: 검수 중 다른 검수자가 확정 /
+   * null: 목록에서 지난 결과를 엶. 방금 확정한 경우에만 "확정했습니다"와 체크 원을 보여 준다.
+   */
+  const [doneBy, setDoneBy] = useState<"me" | "other" | null>(null);
+  const meDone = useRef(false);
+  const prevStatus = useRef(initial.status);
 
   useEffect(() => setNotice(takeNotice()), []);
+
+  useEffect(() => {
+    if (prevStatus.current === "WORKING" && view.status === "CONFIRMED") setDoneBy(meDone.current ? "me" : "other");
+    prevStatus.current = view.status;
+  }, [view.status]);
 
   const reload = useCallback(async () => {
     const r = await reloadRcv(view.id);
@@ -79,25 +95,18 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
     return () => clearInterval(t);
   }, [working, finishing, reload]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   const resetScan = () => {
     setScan("");
     setPreview(null);
     setQty("");
-    setWarn(null);
+    setAsk(null);
     setKind("GOOD");
     setTimeout(() => scanRef.current?.focus(), 0);
   };
 
-  /** 결과를 보여 주고 최신 내용으로 다시 읽는다 */
+  /** 품목 줄에서 고친 결과 — 실패만 알리고 최신 내용으로 다시 읽는다 (바뀐 값은 펼친 줄에 바로 보인다) */
   const after = async (r: { ok: boolean; message?: string; error?: string }) => {
-    if (r.ok) setToast(r.message || null);
-    else setError(r.error ?? null);
+    if (!r.ok) setError(r.error ?? null);
     await reload();
   };
 
@@ -124,11 +133,13 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
       setError(null);
       const r = await addRcvInput({ rcvId: view.id, scan: preview.scan, qty: Number(qty), kind, deviceId: deviceId(), confirm });
       if (r.ok) {
-        setToast(r.message);
+        const itemId = preview.itemId;
         resetScan();
         await reload();
-      } else if (r.code === "CONFIRM") setWarn(r.error);
+        setFlash({ itemId, n: Date.now() });
+      } else if (r.code === "CONFIRM") setAsk({ type: "warn", message: r.error });
       else {
+        setAsk(null);
         setError(r.error);
         if (r.code === "STATE") await reload();
       }
@@ -137,8 +148,10 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
   const onCancelInput = (i: RcvInputView) =>
     start(async () => {
       setError(null);
-      if (!window.confirm(`${i.itemName} +${i.addQty} ${i.unit} 입력을 취소할까요?`)) return;
-      await after(await cancelRcvInput({ inputId: i.id }));
+      setAsk(null);
+      const r = await cancelRcvInput({ inputId: i.id });
+      await after(r);
+      if (r.ok) setFlash({ itemId: i.itemId, n: Date.now() });
     });
 
   const onCorrect = () =>
@@ -146,9 +159,18 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
       if (!editing) return;
       setError(null);
       const r = await correctRcvInput({ inputId: editing.id, qty: Number(editing.qty), deviceId: deviceId() });
+      const itemId = view.inputs.find((x) => x.id === editing.id)?.itemId;
       if (r.ok) setEditing(null);
       await after(r);
+      if (r.ok && itemId) setFlash({ itemId, n: Date.now() });
     });
+
+  /** 확인 창 [수량 고치기]·[그만두기] — 고치던 수량 칸으로 돌아간다 */
+  const closeAsk = () => {
+    const warned = ask?.type === "warn";
+    setAsk(null);
+    if (warned) setTimeout(() => qtyRef.current?.select(), 0);
+  };
 
   const onComplete = (zeroRest = false) =>
     start(async () => {
@@ -156,10 +178,10 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
       setConflict(null);
       const r = await confirmRcv({ rcvId: view.id, lastInputId: view.lastInputId, zeroRest });
       if (r.ok) {
+        meDone.current = true;
         await reload();
         setFinishing(false);
         setUnentered(null);
-        setToast(r.message);
       } else if (r.code === "CONFIRM" && r.fieldErrors?.unentered) setUnentered(r.fieldErrors.unentered.split("\n"));
       else if (r.code === "CONFLICT") {
         setConflict(r.error);
@@ -172,32 +194,30 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
 
   const myInputs = view.inputs.filter((i) => i.mine && !i.canceled);
   const anyEntered = view.lines.some((l) => l.state !== "todo");
-  const attention = view.lines.filter((l) => lineProblem(l, reasons));
+  /** 세는 동안 바로 손볼 품목(훼손 사진) — 아래 띠·품목 줄에 표시. 차이 사유는 확정 확인 창에서 받는다 (2026-11-12 Sol) */
+  const attention = view.lines.filter((l) => workProblem(l));
+  /** 확정 확인 창 — 차이 품목(사유 고르기)·사진 없는 훼손 품목, 하나라도 남으면 확정 버튼을 막는다 */
+  // 0(실물 없음) 확인 품목은 사유가 "미도착"으로 자동이라 고르지 않는다 (2026-11-12 Sol)
+  const diffLines = view.lines.filter((l) => l.state !== "todo" && !l.zeroConfirm && (l.needsReason || !!l.reasonCode));
+  const photoMissing = view.lines.filter((l) => workProblem(l));
+  const confirmBlocked = view.lines.some((l) => lineProblem(l, reasons));
+
+  const planned = view.lines.filter((l) => !l.mismatch);
+  const enteredCount = planned.filter((l) => l.state !== "todo").length;
 
   /**
-   * 차량 머리 — 상차 작업과 같은 모양 (2026-11-06 Sol 결정: 화면 구성 일관성).
-   * 차량번호·상태 알약 + 상태 한 줄(검수 중 · 시작 · 마지막 입력 · 화주사 · 상차확인서), 타임라인 없음.
+   * 차량 머리 — 상차 작업과 같은 모양 (2026-11-06 Sol 결정: 화면 구성 일관성, 2026-11-12 Sol: 상차 작업과 더 같게).
+   * 차량번호·상차 구분 알약 + 상태 한 줄(검수 중 · 시작 · 화주사). 상차확인서·지시서·검수자는 아래 '검수 정보'로.
    */
-  const lastInput = view.inputs.find((i) => !i.canceled);
   const head = (
     <section className={styles.vHead}>
       <span className={styles.idHead}>
         <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
-        <Pill tone={working ? "blue" : "green"}>{working ? "검수중" : "검수확정"}</Pill>
+        <Pill tone={view.load.type === "ORDERED" ? "blue" : "amber"}>{LOAD_TYPE_LABEL[view.load.type]}</Pill>
       </span>
       <span className={styles.vStatus}>
-        {working ? (
-          <>
-            <b>검수 중</b> · {hm(view.createdAt)} 시작{lastInput ? ` · 마지막 입력 ${hm(lastInput.inputAt)}` : ""}
-          </>
-        ) : (
-          <>
-            <b>검수확정</b> · {view.confirmedAt ? hm(view.confirmedAt) : "-"}
-          </>
-        )}
-        {" · "}
-        {view.clientName} · {LOAD_TYPE_LABEL[view.load.type]} · <span className="mono">{view.load.loadNo}</span>
+        <b>검수 중</b> · {hm(view.createdAt)} 시작 · {view.clientName}
       </span>
     </section>
   );
@@ -207,12 +227,15 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
     return (
       <>
         <section className={styles.success}>
-          <span className={styles.checkHalo} aria-hidden="true">
-            <span>
-              <Icon name="check" size={24} stroke={2.8} />
+          {/* 방금 확정했을 때만 체크 원 + "확정했습니다" — 목록에서 지난 결과를 열면 조회 제목 (상차 작업과 같게 2026-11-12 Sol) */}
+          {doneBy && (
+            <span className={styles.checkHalo} aria-hidden="true">
+              <span>
+                <Icon name="check" size={24} stroke={2.8} />
+              </span>
             </span>
-          </span>
-          <h2 className={styles.successTitle}>검수를 확정했습니다.</h2>
+          )}
+          <h2 className={styles.successTitle}>{doneBy === "other" ? "다른 검수자가 검수를 확정했습니다." : doneBy === "me" ? "검수를 확정했습니다." : "검수 결과"}</h2>
           <p className={styles.successSub}>입고예정에 자동 배분했습니다. 확정 뒤에는 고칠 수 없습니다(입고취소는 추후 제공).</p>
           <InfoRows
             rows={[
@@ -257,38 +280,40 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
     );
   }
 
-  /* ═════════ 검수 확정 확인 ═════════ */
-  if (finishing) {
-    return (
-      <>
-        {head}
-        <section className={styles.sheet}>
-          <h2 className={styles.h2}>검수 확정 확인</h2>
-          <p className={styles.help}>검수 확정은 차량당 한 번입니다. 확정하면 입고예정에 자동 배분하고, 이후에는 고칠 수 없습니다.</p>
-          <p className={styles.label}>검수자 {view.workers.length}명</p>
-          <ul className={styles.workers}>
-            {view.workers.map((w) => (
-              <li key={w.workerId}>
-                <span className={styles.avatarSm} aria-hidden="true">
-                  {w.name.slice(0, 1)}
-                </span>
-                <span className={styles.workerText}>
-                  <b>{w.name}</b>
-                  <span className={styles.dim}>
-                    입력 {w.count}건 · 마지막 {hm(w.lastAt)}
-                  </span>
-                </span>
-              </li>
+  /*
+   * ═════════ 검수 확정 확인 — 작업 화면 위에 아래에서 올라오는 확인 창 (상차완료와 같게 2026-11-12 Sol) ═════════
+   * 손볼 품목(사유·사진)은 창을 닫고 목록에서 고친다. 미입력 품목은 창 안에서 [돌아가서 스캔] / [남은 품목 전부 0 처리].
+   */
+  const finishSheet = finishing && (
+    <div className={styles.modalScrim} onClick={(e) => e.target === e.currentTarget && !pending && !unentered && setFinishing(false)}>
+      <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="rcv-finish-title">
+        <h2 id="rcv-finish-title" className={styles.h2}>
+          검수 확정
+        </h2>
+        <p className={styles.help}>검수 확정은 차량당 한 번입니다. 확정하면 입고예정에 자동 배분하고, 이후에는 고칠 수 없습니다.</p>
+        <p className={styles.finishSum}>
+          입력 <b className="mono">{enteredCount}</b>
+          <span className="mono">/{planned.length}</span>품목
+          {diffLines.length > 0 && <span className={styles.warnInline}> · 차이 {diffLines.length}</span>}
+        </p>
+        {/* 차이 품목 — 수량을 보고 여기서 사유를 고른다 (2026-11-12 Sol: 세는 동안에는 묻지 않고 확정 때 한 번) */}
+        {diffLines.length > 0 && (
+          <ul className={styles.reasonList} aria-label="차이 품목 사유">
+            {diffLines.map((l) => (
+              <ReasonPick key={l.itemId} view={view} line={l} reasons={reasons} pending={pending} onDone={after} />
             ))}
           </ul>
-          {view.workers.length > 1 && <p className={styles.warnText}>다른 검수자가 아직 세고 있지 않은지 확인하세요.</p>}
-        </section>
-        <RcvLines view={view} reasons={reasons} pending={pending} onDone={after} editable />
-        {conflict && (
-          <p className={styles.error} role="alert">
-            {conflict}
+        )}
+        {photoMissing.length > 0 && (
+          <p className={styles.warnText}>
+            훼손 사진이 없는 품목: {photoMissing.map((l) => l.itemName).join(", ")} — 창을 닫고 품목 줄에서 찍으세요.
           </p>
         )}
+        {/* 검수자 — 이름 한 줄 (상차완료 확인과 같게). 여러 명이면 아직 세는 사람이 없는지 확인 */}
+        <p className={styles.finishSum}>
+          검수자 {view.workers.length}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
+        </p>
+        {view.workers.length > 1 && <p className={styles.warnText}>다른 검수자가 아직 세고 있지 않은지 확인하세요.</p>}
         {unentered && (
           <div className={styles.confirm} role="alertdialog" aria-label="입력하지 않은 품목">
             <p>
@@ -299,35 +324,87 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
                 <li key={n}>{n}</li>
               ))}
             </ul>
-            <div className={styles.btnRow}>
-              <button type="button" className={styles.secondary} onClick={() => (setUnentered(null), setFinishing(false), resetScan())} disabled={pending}>
-                돌아가서 스캔
-              </button>
-              <button type="button" className={styles.primary} onClick={() => onComplete(true)} disabled={pending}>
-                남은 품목 전부 0 처리
-              </button>
-            </div>
           </div>
+        )}
+        {conflict && (
+          <p className={styles.error} role="alert">
+            {conflict}
+          </p>
         )}
         {error && (
           <p className={styles.error} role="alert">
             {error}
           </p>
         )}
-        {/* 미입력 경고창이 떠 있으면 경고창의 두 버튼으로만 고른다 */}
-        {!unentered && (
-          <div className={`${styles.btnRow} ${styles.bottomBar}`}>
+        {unentered ? (
+          <div className={styles.btnRow}>
+            <button type="button" className={styles.secondary} onClick={() => (setUnentered(null), setFinishing(false), resetScan())} disabled={pending}>
+              돌아가서 스캔
+            </button>
+            <button type="button" className={styles.primary} onClick={() => onComplete(true)} disabled={pending || confirmBlocked}>
+              남은 품목 전부 0 처리
+            </button>
+          </div>
+        ) : (
+          <div className={styles.btnRow}>
             <button type="button" className={styles.secondary} onClick={() => setFinishing(false)} disabled={pending}>
               더 검수
             </button>
-            <button type="button" className={styles.primary} onClick={() => onComplete(false)} disabled={pending}>
+            <button type="button" className={styles.primary} onClick={() => onComplete(false)} disabled={pending || confirmBlocked}>
               검수 확정
             </button>
           </div>
         )}
-      </>
-    );
-  }
+      </section>
+    </div>
+  );
+
+  /* ═════════ 확인 창 — 수량 경고 / 입력 취소 (상차 작업과 같게 2026-11-12 Sol). 밖을 눌러도 닫지 않는다 ═════════ */
+  const askSheet = ask && (
+    <div className={styles.modalScrim}>
+      <section className={styles.modalSheet} role="alertdialog" aria-modal="true" aria-labelledby="rcv-ask-title" aria-describedby="rcv-ask-body">
+        {ask.type === "warn" ? (
+          <>
+            <h2 id="rcv-ask-title" className={`${styles.h2} ${styles.askTitle}`}>
+              <Icon name="alert" size={18} /> 수량 확인
+            </h2>
+            <p id="rcv-ask-body" className={styles.askBody}>
+              {ask.message}
+            </p>
+            <div className={styles.btnRow}>
+              <button type="button" className={styles.secondary} onClick={closeAsk} disabled={pending} autoFocus>
+                수량 고치기
+              </button>
+              <button type="button" className={styles.primary} onClick={() => onAdd(true)} disabled={pending}>
+                그대로 입력
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 id="rcv-ask-title" className={styles.h2}>
+              입력 취소
+            </h2>
+            <p id="rcv-ask-body" className={styles.askBody}>
+              <b className={styles.askItem}>{ask.input.itemName}</b>{" "}
+              <span className="mono">
+                +{ask.input.addQty.toLocaleString()} {ask.input.unit}
+              </span>
+              {ask.input.kind !== "GOOD" && <span className={styles.metaWarn}> · {ask.input.kind === "DAMAGED" ? "훼손" : "불일치"}</span>}
+            </p>
+            <div className={styles.btnRow}>
+              <button type="button" className={styles.secondary} onClick={closeAsk} disabled={pending} autoFocus>
+                그만두기
+              </button>
+              <button type="button" className={styles.dangerBtn} onClick={() => onCancelInput(ask.input)} disabled={pending}>
+                입력 취소
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
 
   /* ═════════ 검수 중 ═════════ */
   return (
@@ -397,7 +474,7 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
             {!preview.mismatch && (
               <div className={styles.segment} role="radiogroup" aria-label="검수 구분">
                 {(["GOOD", "DAMAGED"] as const).map((k) => (
-                  <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? styles.segOn : styles.seg} onClick={() => (setKind(k), setWarn(null))} disabled={pending}>
+                  <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? styles.segOn : styles.seg} onClick={() => (setKind(k), setAsk(null))} disabled={pending}>
                     {RCV_KIND_LABEL[k]}
                   </button>
                 ))}
@@ -412,30 +489,17 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
                 id="pda-rcv-qty"
                 className={`${styles.field} ${styles.qty} mono`}
                 value={qty}
-                onChange={(e) => (setQty(e.target.value.replace(/\D/g, "")), setWarn(null))}
+                onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
                 placeholder="0"
                 autoComplete="off"
                 enterKeyHint="done"
                 disabled={pending}
               />
-              <button type="submit" className={styles.primary} disabled={pending || !(Number(qty) > 0) || !!warn}>
+              <button type="submit" className={styles.primary} disabled={pending || !(Number(qty) > 0) || !!ask}>
                 + 입력
               </button>
             </div>
-            {warn && (
-              <div className={styles.confirm} role="alert">
-                <p>{warn}</p>
-                <div className={styles.btnRow}>
-                  <button type="button" className={styles.secondary} onClick={() => setWarn(null)} disabled={pending}>
-                    수량 고치기
-                  </button>
-                  <button type="button" className={styles.primary} onClick={() => onAdd(true)} disabled={pending}>
-                    그대로 입력
-                  </button>
-                </div>
-              </div>
-            )}
             <button type="button" className={styles.link} onClick={resetScan} disabled={pending}>
               다른 품목 스캔
             </button>
@@ -446,14 +510,9 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
             {error}
           </p>
         )}
-        {toast && (
-          <p className={styles.toast} role="status">
-            {toast}
-          </p>
-        )}
       </section>
 
-      <RcvLines view={view} reasons={reasons} pending={pending} onDone={after} editable />
+      <RcvLines view={view} reasons={reasons} pending={pending} onDone={after} editable flash={flash} />
 
       {/* 내 입력 — 상차 작업과 같이 아래 접힌 줄 */}
       <details className={styles.fold}>
@@ -515,7 +574,7 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
                           <button type="button" className={styles.small} onClick={() => setEditing({ id: i.id, qty: String(i.addQty) })} disabled={pending}>
                             정정
                           </button>
-                          <button type="button" className={styles.smallDanger} onClick={() => onCancelInput(i)} disabled={pending}>
+                          <button type="button" className={styles.smallDanger} onClick={() => setAsk({ type: "cancel", input: i })} disabled={pending}>
                             취소
                           </button>
                         </span>
@@ -529,24 +588,60 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
         </div>
       </details>
 
-      <div className={styles.bottomBar}>
-        {/* 미입력 개수는 표시하지 않는다 — 확정할 때 경고창으로 묻는다 (2026-11-06 Sol) */}
-        {attention.length > 0 && <p className={styles.barNote}>확인 필요 {attention.length}개</p>}
+      {/* 검수 정보 — 기본은 접어 두고 눌러서 펼친다 (상차 작업의 '상차 정보'와 같게 2026-11-12 Sol) */}
+      <details className={styles.fold}>
+        <summary className={styles.foldHead}>
+          검수 정보
+          <span className={`${styles.detailSum} mono`}>{view.load.loadNo}</span>
+          <span className={styles.detailChev}>
+            <Icon name="chevD" size={16} />
+          </span>
+        </summary>
+        <InfoRows
+          tone="white"
+          rows={[
+            ["상차확인서", <span key="l" className="mono">{view.load.loadNo}</span>],
+            ["지시서", view.load.orderNo ? <span key="o" className="mono">{view.load.orderNo}</span> : "ASN 없음 (무지시)"],
+            ["상차완료", hm(view.load.completedAt)],
+            ...(view.load.driverName ? ([["기사", view.load.driverName]] as [string, React.ReactNode][]) : []),
+            ["검수자", view.workers.length ? view.workers.map((w) => w.name).join(", ") : "-"],
+          ]}
+        />
+      </details>
+
+      {/* 아래 띠 — 확인 필요 수 + [검수 확정] (상차 작업과 같은 줄 배치). 미입력 개수는 표시하지 않는다 — 확정할 때 묻는다 (2026-11-06 Sol) */}
+      <div className={`${styles.bottomBar} ${styles.barRow}`}>
+        {attention.length > 0 && (
+          <span className={`${styles.barInfo} ${styles.warnInline}`}>
+            확인 필요 <b className="mono">{attention.length}</b>
+          </span>
+        )}
         {/* 1개 이상 검수했을 때만 (2026-11-06 Sol) */}
         <button
           type="button"
           className={styles.blackPill}
-          onClick={() => start(async () => (setConflict(null), setError(null), await reload(), setFinishing(true)))}
-          disabled={pending || !anyEntered}
+          onClick={() => start(async () => (setConflict(null), setError(null), setUnentered(null), await reload(), setFinishing(true)))}
+          disabled={pending || !anyEntered || !!ask}
         >
           검수 확정
         </button>
       </div>
+      {finishSheet}
+      {askSheet}
     </>
   );
 }
 
-/** 확정 전에 손봐야 할 것 — 사유 없음(미리 고를 값도 없음)·상세 없음·훼손 사진 없음. 미입력 품목은 확정 때 따로 묻는다 */
+/**
+ * 세는 동안 바로 손볼 것 — 훼손 사진만 (발견한 사람이 그 자리에서 찍는다).
+ * 상차 수량과의 차이는 다른 검수자가 아직 세는 중일 수 있어 확정 때 묻는다 (2026-11-12 Sol: 동시 검수 중 사유 요구 불편)
+ */
+function workProblem(l: RcvLineView): string | null {
+  if (l.state !== "todo" && l.damaged > 0 && l.imageIds.length === 0) return "훼손 사진을 찍으세요";
+  return null;
+}
+
+/** 확정 전에 갖춰야 할 것 — 사유 없음(미리 고를 값도 없음)·상세 없음·훼손 사진 없음. 미입력 품목은 확정 때 따로 묻는다 */
 function lineProblem(l: RcvLineView, reasons: ReasonOption[]): string | null {
   if (l.state === "todo") return null;
   if (l.needsReason && !l.reasonCode) return "차이 사유를 고르세요";
@@ -562,13 +657,24 @@ function RcvLines({
   pending,
   onDone,
   editable = false,
+  flash,
 }: {
   view: RcvView;
   reasons: ReasonOption[];
   pending: boolean;
   onDone: (r: { ok: boolean; message?: string; error?: string }) => Promise<void>;
   editable?: boolean;
+  /** 방금 입력·정정·취소한 품목 — 그 줄로 옮겨 잠깐 강조 (상차 작업과 같게) */
+  flash?: { itemId: number; n: number } | null;
 }) {
+  const [lit, setLit] = useState<number | null>(null);
+  useEffect(() => {
+    if (!flash) return;
+    document.getElementById(`rcv-line-${flash.itemId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setLit(flash.itemId);
+    const t = setTimeout(() => setLit(null), 1800);
+    return () => clearTimeout(t);
+  }, [flash]);
   const planned = view.lines.filter((l) => !l.mismatch);
   const entered = planned.filter((l) => l.state !== "todo").length;
   return (
@@ -582,7 +688,7 @@ function RcvLines({
       </h2>
       <ul className={`${styles.rcvLines} ${styles.rcvFlat}`}>
         {view.lines.map((l) => (
-          <RcvLineItem key={l.itemId} view={view} line={l} reasons={reasons} pending={pending} onDone={onDone} editable={editable && view.status === "WORKING"} />
+          <RcvLineItem key={l.itemId} view={view} line={l} reasons={reasons} pending={pending} onDone={onDone} editable={editable && view.status === "WORKING"} lit={lit === l.itemId} />
         ))}
       </ul>
     </section>
@@ -596,6 +702,7 @@ function RcvLineItem({
   pending,
   onDone,
   editable,
+  lit = false,
 }: {
   view: RcvView;
   line: RcvLineView;
@@ -603,11 +710,13 @@ function RcvLineItem({
   pending: boolean;
   onDone: (r: { ok: boolean; message?: string; error?: string }) => Promise<void>;
   editable: boolean;
+  lit?: boolean;
 }) {
   const [busy, startBusy] = useTransition();
   const [text, setText] = useState(l.reasonText ?? "");
   const fileRef = useRef<HTMLInputElement>(null);
-  const problem = lineProblem(l, reasons);
+  // 세는 동안에는 훼손 사진만 바로 손본다 — 차이 사유는 확정 확인 창에서 (2026-11-12 Sol)
+  const problem = workProblem(l);
   const chosen = reasons.find((r) => r.code === l.reasonCode);
   // 손볼 것이 생기면 펼친다. 해결돼도 저절로 접지 않는다 (방금 올린 사진·고른 사유가 보이게)
   const [open, setOpen] = useState(editable && !!problem);
@@ -617,25 +726,43 @@ function RcvLineItem({
   const dis = pending || busy;
   const run = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>) => startBusy(async () => onDone(await fn()));
 
+  // 검수자별 이 품목 수량(기준 단위) — 검수자가 2명 이상일 때만, 안 넣은 사람은 null
+  const byWorker: [string, number | null][] = (() => {
+    if (view.workers.length < 2 && l.workers.length < 2) return [];
+    const sum = new Map<string, number>();
+    for (const i of view.inputs) if (!i.canceled && i.itemId === l.itemId) sum.set(i.workerName, (sum.get(i.workerName) ?? 0) + i.baseQty);
+    const names = [...new Set([...sum.keys(), ...view.workers.map((w) => w.name)])];
+    return names.map((n) => [n, sum.has(n) ? sum.get(n)! : null]);
+  })();
+
   const qtyText = l.mismatch
     ? `반송 ${f(l, l.mismatchQty)}`
     : `${f(l, l.good)}${l.damaged ? ` · 반송 ${f(l, l.damaged)}` : ""} / ${f(l, l.expect)}`;
 
   return (
-    <li className={styles.rcvLine}>
+    <li id={`rcv-line-${l.itemId}`} className={`${styles.rcvLine} ${lit ? styles.lit : ""} ${l.zeroConfirm ? styles.rcvZero : ""}`}>
       <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary className={styles.rcvSum}>
           <span className={styles.lineName}>
             {l.itemName}
+            {/* 누가 몇 개 넣었는지 — 다른 검수자가 아직 세는 중인지 짐작할 수 있게 (2026-11-12 Sol). 검수자가 2명 이상이면 안 넣은 사람은 — */}
             <span className={`${styles.dim} mono`}>
               {l.itemCode}
-              {l.workers.length ? ` · ${l.workers.join(", ")}` : ""}
+              {byWorker.length > 0 && ` · ${byWorker.map(([n, q]) => `${n} ${q === null ? "—" : f(l, q)}`).join(" · ")}`}
             </span>
           </span>
           <span className={styles.lineQty}>
             <b className="mono">{qtyText}</b>
             <span className={`${styles.stText} ${problem && editable ? styles.rst_problem : styles[`rst_${l.state}`]}`}>{problem && editable ? "확인 필요" : RCV_LINE_STATE_LABEL[l.state]}</span>
           </span>
+          {/* 진행 막대 — 상차 수량 대비 센 수량(정상+반송), 상차 작업의 품목 줄과 같은 색 */}
+          {!l.mismatch && l.expect > 0 && (
+            <span className={`${styles.rcvBar} ${styles[BAR_TONE[l.state]] ?? ""}`} aria-hidden="true">
+              <span className={styles.lnBar}>
+                <span style={{ width: `${Math.min(100, ((l.good + l.damaged) / l.expect) * 100)}%` }} />
+              </span>
+            </span>
+          )}
         </summary>
         <div className={styles.rcvBody}>
           {problem && editable && <p className={styles.metaWarn}>{problem}</p>}
@@ -644,7 +771,9 @@ function RcvLineItem({
               {l.zeroConfirm ? "0 확인 풀기" : "실물 없음 · 0(미도착)으로 확인"}
             </button>
           )}
+          {/* 0(실물 없음) 확인 품목은 사유 드롭다운을 두지 않는다 — 사유는 서버가 "미도착"으로 자동 지정 (2026-11-12 Sol) */}
           {l.state !== "todo" &&
+            !l.zeroConfirm &&
             (l.needsReason || l.reasonCode) &&
             (editable ? (
               <>
@@ -681,7 +810,8 @@ function RcvLineItem({
                 {l.reasonText ? ` — ${l.reasonText}` : ""}
               </p>
             ))}
-          {(l.expiryManaged || l.lotManaged) && !l.mismatch && (
+          {/* 0(실물 없음) 확인 품목은 소비기한·로트를 받지 않는다 — 받을 실물이 없음 (2026-11-12 Sol) */}
+          {(l.expiryManaged || l.lotManaged) && !l.mismatch && !l.zeroConfirm && (
             <div className={styles.btnRow}>
               {l.expiryManaged && (
                 <label className={styles.miniField}>
@@ -751,6 +881,70 @@ function RcvLineItem({
           )}
         </div>
       </details>
+    </li>
+  );
+}
+
+/** 진행 막대 색 — 상차 작업 품목 줄의 상태 색을 그대로 쓴다 */
+const BAR_TONE: Record<RcvLineState, string> = { todo: "st_none", short: "st_short", match: "st_match", over: "st_over", zero: "st_none", mismatch: "st_extra" };
+
+/**
+ * 검수 확정 확인 창의 차이 품목 한 줄 — 수량(센 / 상차)과 상태를 보고 사유를 고른다 (2026-11-12 Sol).
+ * 사유는 품목 줄에서 미리 골라 둘 수도 있고, 고른 값이 여기에 그대로 보인다.
+ */
+function ReasonPick({
+  view,
+  line: l,
+  reasons,
+  pending,
+  onDone,
+}: {
+  view: RcvView;
+  line: RcvLineView;
+  reasons: ReasonOption[];
+  pending: boolean;
+  onDone: (r: { ok: boolean; message?: string; error?: string }) => Promise<void>;
+}) {
+  const [busy, startBusy] = useTransition();
+  const [text, setText] = useState(l.reasonText ?? "");
+  const chosen = reasons.find((r) => r.code === l.reasonCode);
+  const dis = pending || busy;
+  const run = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>) => startBusy(async () => onDone(await fn()));
+  const qty = l.mismatch ? `반송 ${f(l, l.mismatchQty)}` : `${f(l, l.good + l.damaged)} / ${f(l, l.expect)}`;
+  const missing = !l.reasonCode || (!!chosen?.requiresText && !l.reasonText?.trim());
+  return (
+    <li className={missing ? styles.reasonMissing : undefined}>
+      <span className={styles.reasonHead}>
+        <span className={styles.diffName}>{l.itemName}</span>
+        <span className={`mono ${styles.diffQty}`}>{qty}</span>
+        <span className={`${styles.stText} ${styles[`rst_${l.state}`]}`}>{RCV_LINE_STATE_LABEL[l.state]}</span>
+      </span>
+      <select
+        className={styles.field}
+        value={l.reasonCode ?? ""}
+        onChange={(e) => run(() => setRcvLineInfo({ rcvId: view.id, itemId: l.itemId, reasonCode: e.target.value || null, reasonText: text }))}
+        disabled={dis}
+        aria-label={`${l.itemName} 차이 사유`}
+      >
+        <option value="">차이 사유를 고르세요</option>
+        {reasons.map((r) => (
+          <option key={r.code} value={r.code}>
+            {r.name}
+          </option>
+        ))}
+      </select>
+      {chosen?.requiresText && (
+        <textarea
+          className={`${styles.field} ${styles.textarea}`}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => text !== (l.reasonText ?? "") && run(() => setRcvLineInfo({ rcvId: view.id, itemId: l.itemId, reasonCode: l.reasonCode, reasonText: text }))}
+          placeholder="상세 내용 (필수)"
+          maxLength={500}
+          rows={2}
+          disabled={dis}
+        />
+      )}
     </li>
   );
 }
