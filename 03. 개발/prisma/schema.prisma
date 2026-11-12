@@ -119,6 +119,7 @@ model Center {
   loads        Load[]
   rcvs         Rcv[]
   clientLinks  ClientCenter[]
+  dailyCloses  DailyClose[]
 
   @@map("tb_center")
 }
@@ -537,6 +538,7 @@ enum PlanAction {
   EXPIRE_CANCEL // 일마감 기한경과 취소
   CLOSE // 3PL 잔량 종결
   RECEIVE // 입고검수 확정 — 자동 배분 (부분입고·입고완료)
+  RECEIVE_CANCEL // 입고취소 역전표 — 배분 되돌림 (2026-11-12)
 }
 
 /// 입고예정 헤더 (TB_INB_PLAN_H) — 화주사·센터·입고예정일 1건 단위
@@ -738,6 +740,7 @@ enum AsnAction {
   RECEIVE // 입고검수 확정 (입고완료)
   LOAD_REOPEN // 상차 재개 (정의서 v1.5 D20, 상차완료 → 상차중)
   LOAD_DEPART // 출차 (2026-11-12 Sol, 상태는 상차완료 그대로)
+  RECEIVE_CANCEL // 입고취소 역전표 (입고완료 → 상차완료, 2026-11-12)
 }
 
 /// ASN 헤더 (TB_ASN_H) — 차량 1대 단위. 입고예정번호를 두지 않고 라인이 입고예정 라인을 가리킨다 (D9)
@@ -993,6 +996,7 @@ model LoadInput {
 enum RcvStatus {
   WORKING // 검수중
   CONFIRMED // 확정 (자동 배분 완료)
+  CANCELED // 입고취소 (역전표로 배분을 되돌림, 2026-11-12) — 같은 차량은 다시 검수할 수 있다
 }
 
 /// 검수 입력 구분 — 정상 / 훼손·오염 반송 / 품목 불일치 반송(상차 실적에 없는 품목)
@@ -1024,11 +1028,15 @@ model Rcv {
   confirmUserId  Int?      @map("confirm_user_id")
   confirmedBy    String?   @map("confirmed_by") @db.VarChar(50)
   confirmedAt    DateTime? @map("confirm_dt") @db.Timestamptz(3)
+  /// 이 검수 실적을 확정한 일마감 (2026-11-12, 정의서 ⑦·D18) — 확정 전이면 null. 귀속 업무일은 확정 시각으로 정한다(D21)
+  dailyCloseId   Int?      @map("daily_close_id")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   createdBy      String    @map("created_by") @db.VarChar(50)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  load   Load       @relation(fields: [loadId], references: [id], onDelete: Restrict)
+  load       Load        @relation(fields: [loadId], references: [id], onDelete: Restrict)
+  dailyClose DailyClose? @relation(fields: [dailyCloseId], references: [id], onDelete: Restrict)
+  reverseDoc RcvReverse?
   client Client     @relation(fields: [clientId], references: [id])
   center Center     @relation(fields: [centerId], references: [id])
   lines  RcvLine[]
@@ -1040,7 +1048,66 @@ model Rcv {
   @@index([loadId])
   @@index([centerId, rcvDate])
   @@index([clientId, status])
+  @@index([centerId, dailyCloseId])
   @@map("tb_rcv_h")
+}
+
+/**
+ * 입고취소 역전표 (TB_RCV_REVERSE, 정의서 ⑥ "입고취소 역전표 후 재검수", 2026-11-12) — 검수 1건당 최대 1장.
+ * 원래 배분은 지우지 않고 "되돌림(reverse)"으로 표시해 이 역전표에 연결한다. 입고예정 누계·상태, ASN 상태를 되돌린다.
+ * 임시안: 3PL 관리자만, 일마감 전 확정 실적만(적치 모듈 전까지 "적치 시작 전"을 대신함), 사유 필수.
+ */
+model RcvReverse {
+  id            Int      @id @default(autoincrement())
+  /// RV-YYYYMMDD-NNNN
+  reverseNo     String   @unique @map("reverse_no") @db.VarChar(20)
+  rcvId         Int      @unique @map("rcv_id")
+  clientId      Int      @map("client_id")
+  centerId      Int      @map("center_id")
+  reasonCode    String   @map("reason_cd") @db.VarChar(20)
+  reasonName    String   @map("reason_nm") @db.VarChar(100)
+  reasonText    String?  @map("reason_text") @db.VarChar(500)
+  /// 되돌린 수량 합계 (기준 단위) — 입고·반송
+  goodBaseQty   Int      @map("good_base_qty")
+  returnBaseQty Int      @map("return_base_qty")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy     String   @map("created_by") @db.VarChar(50)
+  createUserId  Int      @map("create_user_id")
+
+  rcv    Rcv        @relation(fields: [rcvId], references: [id], onDelete: Restrict)
+  allocs RcvAlloc[]
+
+  @@index([centerId, createdAt])
+  @@map("tb_rcv_reverse")
+}
+
+/**
+ * 일마감 (TB_DAILY_CLOSE, 정의서 ⑦·D18·D21, 2026-11-12) — 센터·업무일당 1회.
+ * 아직 일마감되지 않은 검수 확정 실적을 확정하고(실적 → dailyCloseId), 기한경과 승인 전 입고예정을 취소한다.
+ * 전표를 닫지 않으므로 미종결 입고예정과는 무관하다. 되돌리기 없음.
+ */
+model DailyClose {
+  id            Int      @id @default(autoincrement())
+  centerId      Int      @map("center_id")
+  /// 마감한 업무일 (센터 업무일 시작 시각 기준)
+  businessDate  DateTime @map("business_dt") @db.Date
+  closedAt      DateTime @default(now()) @map("closed_at") @db.Timestamptz(3)
+  closedBy      String   @map("closed_by") @db.VarChar(50)
+  closeUserId   Int      @map("close_user_id")
+  /// 확정한 검수 실적 수(차량)·품목 줄 수
+  rcvCount      Int      @map("rcv_cnt")
+  rcvLineCount  Int      @map("rcv_line_cnt")
+  /// 확정 수량 합계 (기준 단위) — 입고(정상)·반송(훼손·품목 불일치)
+  goodBaseQty   Int      @map("good_base_qty")
+  returnBaseQty Int      @map("return_base_qty")
+  /// 기한경과로 취소한 입고예정 수
+  expireCount   Int      @map("expire_cnt")
+
+  center Center @relation(fields: [centerId], references: [id])
+  rcvs   Rcv[]
+
+  @@unique([centerId, businessDate])
+  @@map("tb_daily_close")
 }
 
 /// 검수 품목별 합계 (TB_RCV_D) — 기대수량 = 상차완료 수량. 차이 = 정상 + 반송 − 기대 (C7)
@@ -1129,12 +1196,15 @@ model RcvAlloc {
   planLineId Int?         @map("plan_line_id")
   asnLineId  Int?         @map("asn_line_id")
   allocQty   Int          @map("alloc_qty")
-  /// 입고취소 역전표로 되돌린 배분 (4단계)
+  /// 입고취소 역전표로 되돌린 배분 (4단계) — 되돌린 배분은 합계에서 빠진다
   reverse    Boolean      @default(false) @map("reverse_yn")
+  /// 되돌린 역전표 (2026-11-12)
+  reverseId  Int?         @map("reverse_id")
   createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
   rcv      Rcv              @relation(fields: [rcvId], references: [id], onDelete: Cascade)
   rcvLine  RcvLine          @relation(fields: [rcvLineId], references: [id], onDelete: Cascade)
+  reverseDoc RcvReverse?    @relation(fields: [reverseId], references: [id], onDelete: Restrict)
   planLine InboundPlanLine? @relation(fields: [planLineId], references: [id])
   asnLine  AsnLine?         @relation(fields: [asnLineId], references: [id])
 

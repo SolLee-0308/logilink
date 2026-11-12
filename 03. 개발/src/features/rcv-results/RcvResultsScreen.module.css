@@ -1,0 +1,30 @@
+/* 입고검수 실적 (2026-11-12) */
+
+.link {
+  color: var(--violet-700);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.sub {
+  display: block;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.sum {
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.sum b {
+  color: var(--fg);
+}
+
+.unit {
+  font-size: var(--fs-12);
+  color: var(--soft);
+}

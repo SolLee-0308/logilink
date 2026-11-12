@@ -10,7 +10,7 @@
  */
 import type { StatusTone } from "./plan-status";
 
-export const RCV_STATUSES = ["WORKING", "CONFIRMED"] as const;
+export const RCV_STATUSES = ["WORKING", "CONFIRMED", "CANCELED"] as const;
 export type RcvStatus = (typeof RCV_STATUSES)[number];
 export type RcvKind = "GOOD" | "DAMAGED" | "MISMATCH";
 export type RcvAllocKind = "GOOD" | "RETURN";
@@ -18,6 +18,7 @@ export type RcvAllocKind = "GOOD" | "RETURN";
 export const RCV_STATUS_META: Record<RcvStatus, { label: string; tone: StatusTone }> = {
   WORKING: { label: "검수중", tone: "part" },
   CONFIRMED: { label: "검수확정", tone: "done" },
+  CANCELED: { label: "입고취소", tone: "cancel" },
 };
 export const RCV_KIND_LABEL: Record<RcvKind, string> = { GOOD: "정상", DAMAGED: "훼손·오염 반송", MISMATCH: "품목 불일치 반송" };
 
@@ -137,4 +138,4 @@ export const planStatusAfterReceive = (lines: { baseQty: number; rcvQty: number;
   lines.every((l) => planLineRemain(l) <= 0) ? ("COMPLETED" as const) : ("PARTIAL" as const);
 
 export const RCV_CONFLICT_MSG = "그사이 다른 검수자가 입력했습니다. 최신 합계를 다시 확인한 뒤 확정하세요.";
-export const RCV_DONE_MSG = "이미 검수 확정된 차량입니다. 확정 뒤에는 고칠 수 없습니다(입고취소는 추후 제공).";
+export const RCV_DONE_MSG = "이미 검수 확정된 차량입니다. 확정 뒤에는 고칠 수 없습니다. 잘못 확정했으면 3PL 관리자가 일마감 전에 입고취소한 뒤 다시 검수합니다.";

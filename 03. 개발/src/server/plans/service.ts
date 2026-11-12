@@ -10,16 +10,21 @@ import { fail, type ActionResult } from "@/server/action-result";
 import type { SessionUser } from "@/server/session";
 import type { Prisma } from "@/generated/prisma/client";
 import { can } from "@/domain/permissions";
-import { CANCEL_GROUP, PLAN_REJECT_GROUP } from "@/domain/master";
+import { CANCEL_GROUP, PLAN_REJECT_GROUP, REMAIN_CLOSE_GROUP } from "@/domain/master";
 import { PLAN_STATUS_META, type PlanStatus } from "@/domain/plan-status";
 import { CONFLICT_MSG, SAVE_CONFLICT_MSG, canReview, canShipperEdit, nextPlanNo, planNoPrefix } from "@/domain/plan-rules";
-import { approvedCancelBlock } from "@/domain/inquiry-rules";
+import { approvedCancelBlock, OPEN_ASN } from "@/domain/inquiry-rules";
+import { MAX_CLOSE_BATCH, remainCloseBlock, remainOf } from "@/domain/close-rules";
+import { PRE_APPROVAL } from "@/domain/business-day";
+import { dailyTargets, rcvSums } from "@/server/plans/closing";
 import { expiryTooEarlyMsg, minExpiryDate } from "@/domain/plan-entry";
 import { minExpiryDays } from "@/server/plans/entry";
 import { todayKst } from "@/lib/format";
 
 /** 승인 건 취소 시점 version 불일치 (그사이 검수 배분 등으로 바뀜) */
 const INQUIRY_CONFLICT_MSG = "그사이 내용이 바뀐 입고예정입니다. 최신 내용을 확인한 뒤 다시 처리하세요.";
+/** 일마감 도중 실적·취소 대상이 바뀜 */
+const DAILY_CONFLICT_MSG = "그사이 확정할 검수 실적이나 기한경과 대상이 바뀌었습니다. 화면을 새로 고쳐 다시 확인한 뒤 일마감하세요.";
 
 type Tx = Prisma.TransactionClient;
 export type PlanActor = Pick<SessionUser, "id" | "name" | "roles" | "clientId" | "centerId">;
@@ -360,3 +365,146 @@ export async function rejectPlan(
   );
 }
 
+/* ═════════ 3PL: 잔량 종결 (정의서 ⑦ · 4-2 · D17, 2026-11-12) ═════════ */
+
+/**
+ * 잔량 종결 — 건별·일괄. 고른 건을 한 번에 처리하며, 한 건이라도 막히면 아무것도 바꾸지 않는다(어느 건이 왜 막혔는지 알려 준다).
+ * 건마다: 승인·부분입고 + 오는 중 ASN 없음 + 잔량 있음 + 화면에서 본 version 그대로일 때만.
+ * 라인별 잔량(승인 − 입고 − 반송 − 종결)을 종결 수량으로 옮기고 상태를 종결로 바꾼다. 사유 필수(REMAIN_CLOSE).
+ */
+export async function closeRemainPlans(
+  me: PlanActor,
+  input: { items: { id: number; version: number }[]; reasonCode: string; reasonText?: string },
+): Promise<ActionResult<{ count: number }>> {
+  if (!can(me.roles, "closing", "edit")) return forbidden();
+  const items = [...new Map((input.items ?? []).map((i) => [i.id, i])).values()];
+  if (!items.length) return fail("VALIDATION", "종결할 입고예정을 고르세요.");
+  if (items.length > MAX_CLOSE_BATCH) return fail("VALIDATION", `한 번에 ${MAX_CLOSE_BATCH}건까지 종결할 수 있습니다.`);
+  const text = input.reasonText?.trim() ?? "";
+  if (text.length > 500) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
+  return guarded(
+    () =>
+      db.$transaction(async (tx) => {
+        const { reason, error } = await checkReason(tx, REMAIN_CLOSE_GROUP, input.reasonCode, text);
+        if (error) return error;
+        const ids = items.map((i) => i.id);
+        // 헤더를 id 순서로 잠근다 (동시에 검수 배분·다른 종결이 들어오지 않게)
+        await tx.$queryRaw`SELECT id FROM tb_inb_plan_h WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`;
+        const plans = await tx.inboundPlan.findMany({ where: { id: { in: ids } }, include: { lines: { orderBy: { id: "asc" } } } });
+        const lineIds = plans.flatMap((p) => p.lines.map((l) => l.id));
+        if (lineIds.length) await tx.$queryRaw`SELECT id FROM tb_inb_plan_d WHERE id = ANY(${lineIds}::int[]) ORDER BY id FOR UPDATE`;
+        const openAsn = await tx.asnLine.findMany({
+          where: { planId: { in: ids }, asn: { status: { in: [...OPEN_ASN] } } },
+          select: { planId: true, asnId: true },
+          distinct: ["planId", "asnId"],
+        });
+        const blocked: string[] = [];
+        for (const it of items) {
+          const p = plans.find((x) => x.id === it.id);
+          if (!p || (me.centerId && p.centerId !== me.centerId)) return notFound();
+          if (p.version !== it.version) blocked.push(`${p.planNo}: 그사이 내용이 바뀌었습니다.`);
+          else {
+            const why = remainCloseBlock({ status: p.status, openAsnCount: openAsn.filter((a) => a.planId === p.id).length, remain: p.lines.reduce((s, l) => s + remainOf(l), 0) });
+            if (why) blocked.push(`${p.planNo}: ${why}`);
+          }
+        }
+        if (blocked.length) return fail("STATE", `종결하지 못한 건이 있어 아무것도 처리하지 않았습니다.\n${blocked.join("\n")}`);
+
+        const now = new Date();
+        for (const p of plans) {
+          for (const l of p.lines) {
+            const r = remainOf(l);
+            if (r > 0) await tx.inboundPlanLine.update({ where: { id: l.id }, data: { closeQty: { increment: r } } });
+          }
+          const u = await tx.inboundPlan.updateMany({
+            where: { id: p.id, version: p.version, status: { in: ["APPROVED", "PARTIAL"] } },
+            data: { status: "CLOSED", version: { increment: 1 }, closeReasonCode: reason.code, closeReasonText: text || null, closedAt: now, closedBy: me.name, updatedBy: me.name },
+          });
+          if (u.count === 0) throw new Race();
+          await tx.inboundPlanHistory.create({
+            data: {
+              planId: p.id, action: "CLOSE", version: p.version + 1, revisionNo: p.revisionNo, actor: me.name, actorId: me.id,
+              reasonCode: reason.code, reasonName: reason.name, reasonText: text || null,
+            },
+          });
+        }
+        return ok(plans.length === 1 ? `${plans[0].planNo} 잔량을 종결했습니다.` : `${plans.length}건의 잔량을 종결했습니다.`, { count: plans.length });
+      }),
+    INQUIRY_CONFLICT_MSG,
+  );
+}
+
+/* ═════════ 3PL: 일마감 (정의서 ⑦ · D18 · D21, 2026-11-12) ═════════ */
+
+/** 기한경과 취소 사유 — 일마감 자동 처리 전용 (CANCEL 그룹, 사람이 고르는 목록에서는 뺀다) */
+const EXPIRE_REASON_CODE = "X04";
+
+/**
+ * 일마감 — 센터의 지금 업무일을 마감한다(센터·업무일당 1회, 되돌리기 없음).
+ * 1) 아직 일마감되지 않은 검수 확정 실적을 확정한다(실적 → 이 일마감).
+ * 2) 기한경과 승인 전 입고예정을 취소한다(사유 "기한경과(일마감 자동)", 이력 기한경과 취소).
+ * 화면에서 본 대상(실적·취소 건 id)과 지금 대상이 다르면 아무것도 하지 않고 다시 확인하게 한다.
+ * 전표를 닫지 않으므로 미종결 입고예정·승인 이후 건은 건드리지 않는다.
+ */
+export async function runDailyClose(
+  me: PlanActor,
+  input: { centerId: number; businessDate: string; rcvIds: number[]; expireIds: number[] },
+): Promise<ActionResult<{ dailyCloseId: number }>> {
+  if (!can(me.roles, "closing", "edit")) return forbidden();
+  if (me.centerId && me.centerId !== input.centerId) return fail("FORBIDDEN", "소속 센터만 일마감할 수 있습니다.");
+  return guarded(
+    () =>
+      db.$transaction(async (tx) => {
+        // 같은 센터 일마감이 동시에 두 번 돌지 않게 센터 행을 잠근다
+        await tx.$queryRaw`SELECT id FROM tb_center WHERE id = ${input.centerId} FOR UPDATE`;
+        const center = await tx.center.findUnique({ where: { id: input.centerId } });
+        if (!center) return fail("NOT_FOUND", "센터를 찾을 수 없습니다.");
+        const now = new Date();
+        const { today, rcvs, expire } = await dailyTargets(tx, center, now);
+        if (today !== input.businessDate) return fail("STATE", `업무일이 바뀌었습니다(지금 ${today}). 화면을 새로 고쳐 다시 확인하세요.`);
+        const done = await tx.dailyClose.findUnique({ where: { centerId_businessDate: { centerId: center.id, businessDate: new Date(`${today}T00:00:00Z`) } } });
+        if (done) return fail("STATE", `${center.name} ${today} 업무일은 이미 일마감했습니다 (${done.closedBy}).`);
+        const same = (a: number[], b: number[]) => a.length === b.length && [...a].sort((x, y) => x - y).every((v, i) => v === [...b].sort((x, y) => x - y)[i]);
+        if (!same(rcvs.map((r) => r.id), input.rcvIds) || !same(expire.map((p) => p.id), input.expireIds)) return fail("CONFLICT", DAILY_CONFLICT_MSG);
+
+        const reason = expire.length ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: CANCEL_GROUP, code: EXPIRE_REASON_CODE } } }) : null;
+        if (expire.length && !reason) return fail("STATE", "기한경과 취소 사유 코드(X04)가 없습니다. 기준정보 › 사유 코드를 확인하세요.");
+
+        const sums = rcvs.map((r) => rcvSums(r.lines));
+        const close = await tx.dailyClose.create({
+          data: {
+            centerId: center.id,
+            businessDate: new Date(`${today}T00:00:00Z`),
+            closedAt: now,
+            closedBy: me.name,
+            closeUserId: me.id,
+            rcvCount: rcvs.length,
+            rcvLineCount: sums.reduce((s, x) => s + x.lineCount, 0),
+            goodBaseQty: sums.reduce((s, x) => s + x.good, 0),
+            returnBaseQty: sums.reduce((s, x) => s + x.ret, 0),
+            expireCount: expire.length,
+          },
+        });
+        if (rcvs.length) {
+          const u = await tx.rcv.updateMany({ where: { id: { in: rcvs.map((r) => r.id) }, status: "CONFIRMED", dailyCloseId: null }, data: { dailyCloseId: close.id } });
+          if (u.count !== rcvs.length) throw new Race();
+        }
+        if (expire.length) {
+          const ids = expire.map((p) => p.id);
+          await tx.$queryRaw`SELECT id FROM tb_inb_plan_h WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`;
+          for (const p of expire) {
+            const u = await tx.inboundPlan.updateMany({
+              where: { id: p.id, version: p.version, status: { in: [...PRE_APPROVAL] } },
+              data: { status: "CANCELED", version: { increment: 1 }, cancelReasonCode: reason!.code, cancelReasonText: null, canceledAt: now, canceledBy: `${me.name} (일마감)`, updatedBy: me.name },
+            });
+            if (u.count === 0) throw new Race();
+            await tx.inboundPlanHistory.create({
+              data: { planId: p.id, action: "EXPIRE_CANCEL", version: p.version + 1, revisionNo: p.revisionNo, actor: me.name, actorId: me.id, reasonCode: reason!.code, reasonName: reason!.name },
+            });
+          }
+        }
+        return ok(`${center.name} ${today} 일마감을 마쳤습니다 · 검수 실적 ${rcvs.length}건 확정${expire.length ? ` · 기한경과 ${expire.length}건 취소` : ""}`, { dailyCloseId: close.id });
+      }),
+    DAILY_CONFLICT_MSG,
+  );
+}

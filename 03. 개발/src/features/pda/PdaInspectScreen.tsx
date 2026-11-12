@@ -236,7 +236,7 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
             </span>
           )}
           <h2 className={styles.successTitle}>{doneBy === "other" ? "다른 검수자가 검수를 확정했습니다." : doneBy === "me" ? "검수를 확정했습니다." : "검수 결과"}</h2>
-          <p className={styles.successSub}>입고예정에 자동 배분했습니다. 확정 뒤에는 고칠 수 없습니다(입고취소는 추후 제공).</p>
+          <p className={styles.successSub}>입고예정에 자동 배분했습니다. 확정 뒤에는 고칠 수 없습니다. 잘못 확정했으면 3PL 관리자가 일마감 전에 웹에서 입고취소한 뒤 다시 검수합니다.</p>
           <InfoRows
             rows={[
               ["검수 번호", <b key="n" className="mono">{view.rcvNo}</b>],

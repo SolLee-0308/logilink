@@ -14,7 +14,9 @@ import { fail, type ActionResult } from "@/server/action-result";
 import type { PlanActor } from "@/server/plans/service";
 import { resolveScan, type Resolved } from "@/server/loads/service";
 import { asDate, canInspect, rcvCenterScope, ACTIVE_RCV } from "@/server/rcv/queries";
-import { RCV_DIFF_GROUP } from "@/domain/master";
+import { RCV_CANCEL_GROUP, RCV_DIFF_GROUP } from "@/domain/master";
+import { can } from "@/domain/permissions";
+import { RCV_REVERSE_PREFIX, REVERSE_LOCKED_PLAN, planStatusAfterReverse, rcvCancelBlock } from "@/domain/rcv-cancel-rules";
 import { ASN_COUNTED, DISTRIBUTABLE_PLAN, docNoPrefix, nextDocNo, normalizeVehicleNo } from "@/domain/asn-rules";
 import { addQtyError, normalizeDocNo, normalizeScan, qtyInUnit } from "@/domain/load-rules";
 import {
@@ -543,6 +545,105 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
         });
         if (!r.count) return fail("STATE", "이미 검수 확정된 차량입니다.");
         return ok(`검수 확정 · ${rcv.rcvNo} — 입고예정 ${touchedPlans.size}건에 자동 배분했습니다.`, { rcvNo: rcv.rcvNo });
+      },
+      { timeout: 30_000 },
+    ),
+  );
+}
+
+/* ═════════ 입고취소 역전표 (정의서 ⑥ "입고취소 역전표 후 재검수", 2026-11-12) ═════════ */
+
+/**
+ * 입고취소 — 확정된 검수 실적을 역전표로 되돌린다. 확정 기록은 고치지 않고(핵심 원칙 2), 역전표를 만들어
+ * 원래 배분을 "되돌림"으로 표시한다(합계에서 빠짐). 입고예정 입고·반송 누계와 상태, ASN(입고완료 → 상차완료)·상차지시서를 되돌리고,
+ * 같은 차량을 다시 검수할 수 있게 검수 상태를 '입고취소'로 바꾼다.
+ * 임시안: 3PL 관리자만, 사유 필수(RCV_CANCEL), 일마감 전 실적만, 배분된 입고예정이 종결·취소되었으면 불가 (rcv-cancel-rules.ts).
+ */
+export async function reverseRcv(
+  me: PlanActor,
+  input: { rcvId: number; version: number; reasonCode: string; reasonText?: string },
+): Promise<ActionResult<{ reverseNo: string }>> {
+  if (!can(me.roles, "rcvResults", "edit")) return forbidden();
+  const text = input.reasonText?.trim() ?? "";
+  if (text.length > 500) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
+  return guarded(() =>
+    db.$transaction(
+      async (tx) => {
+        const rcv = await lockRcv(tx, input.rcvId);
+        if (!rcv || !inScope(me, rcv)) return notFound();
+        if (rcv.version !== input.version) return fail("CONFLICT", "그사이 바뀐 검수 실적입니다. 화면을 새로 고쳐 다시 확인하세요.");
+        const reason = input.reasonCode
+          ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: RCV_CANCEL_GROUP, code: input.reasonCode } } })
+          : null;
+        if (!reason || !reason.isActive) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonCode: "입고취소 사유를 고르세요." });
+        if (reason.requiresText && !text) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonText: `"${reason.name}"을(를) 고르면 상세 내용을 입력해야 합니다.` });
+
+        // 확정·배분과 같은 줄에 세운다 (같은 화주사 배분이 동시에 바뀌지 않게)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${7_700_000 + rcv.clientId})`;
+        const allocs = await tx.rcvAlloc.findMany({
+          where: { rcvId: rcv.id, reverse: false },
+          include: { planLine: { select: { id: true, planId: true, plan: { select: { planNo: true, status: true } } } } },
+        });
+        const lockedPlanNos = [...new Set(allocs.filter((a) => a.planLine && REVERSE_LOCKED_PLAN.includes(a.planLine.plan.status)).map((a) => a.planLine!.plan.planNo))];
+        const block = rcvCancelBlock({ status: rcv.status, dailyClosed: !!rcv.dailyCloseId, lockedPlanNos });
+        if (block) return fail("STATE", block);
+
+        const today = todayKst();
+        const used = await tx.rcvReverse.findMany({ where: { reverseNo: { startsWith: docNoPrefix(RCV_REVERSE_PREFIX, today) } }, select: { reverseNo: true } });
+        const lines = await tx.rcvLine.findMany({ where: { rcvId: rcv.id }, select: { goodBaseQty: true, damagedBaseQty: true, mismatchBaseQty: true } });
+        const doc = await tx.rcvReverse.create({
+          data: {
+            reverseNo: nextDocNo(RCV_REVERSE_PREFIX, today, used.map((u) => u.reverseNo)),
+            rcvId: rcv.id,
+            clientId: rcv.clientId,
+            centerId: rcv.centerId,
+            reasonCode: reason.code,
+            reasonName: reason.name,
+            reasonText: text || null,
+            goodBaseQty: lines.reduce((s, l) => s + l.goodBaseQty, 0),
+            returnBaseQty: lines.reduce((s, l) => s + l.damagedBaseQty + l.mismatchBaseQty, 0),
+            createdBy: me.name,
+            createUserId: me.id,
+          },
+        });
+
+        // 원래 배분을 되돌림으로 표시하고 입고예정 누계를 뺀다
+        const touched = new Set<number>();
+        if (allocs.length) await tx.rcvAlloc.updateMany({ where: { id: { in: allocs.map((a) => a.id) }, reverse: false }, data: { reverse: true, reverseId: doc.id } });
+        for (const a of allocs) {
+          if (!a.planLine) continue;
+          await tx.inboundPlanLine.update({
+            where: { id: a.planLine.id },
+            data: a.kind === "GOOD" ? { rcvQty: { decrement: a.allocQty } } : { returnQty: { decrement: a.allocQty } },
+          });
+          touched.add(a.planLine.planId);
+        }
+        for (const planId of touched) {
+          const plan = await tx.inboundPlan.findUniqueOrThrow({ where: { id: planId }, include: { lines: true } });
+          const next = planStatusAfterReverse(plan.lines);
+          await tx.inboundPlan.update({ where: { id: plan.id }, data: { status: next, version: { increment: 1 }, updatedBy: me.name } });
+          await tx.inboundPlanHistory.create({
+            data: {
+              planId: plan.id, action: "RECEIVE_CANCEL", version: plan.version + 1, revisionNo: plan.revisionNo, actor: me.name, actorId: me.id,
+              reasonCode: reason.code, reasonName: reason.name, reasonText: `입고취소 ${doc.reverseNo} (검수 ${rcv.rcvNo})${text ? ` — ${text}` : ""}`,
+            },
+          });
+        }
+
+        // ASN 입고완료 → 상차완료, 상차지시서 검수완료 → 상차완료 (다시 검수할 수 있게)
+        const load = await tx.load.findUniqueOrThrow({ where: { id: rcv.loadId }, select: { asnId: true } });
+        if (load.asnId) {
+          const asn = await tx.asn.findUniqueOrThrow({ where: { id: load.asnId } });
+          if (asn.status === "RECEIVED") await tx.asn.update({ where: { id: asn.id }, data: { status: "LOADED", version: { increment: 1 }, updatedBy: me.name } });
+          await tx.loadOrder.updateMany({ where: { asnId: asn.id, status: "INSPECTED" }, data: { status: "LOADED" } });
+          await tx.asnHistory.create({
+            data: { asnId: asn.id, action: "RECEIVE_CANCEL", version: asn.version + 1, actor: me.name, actorId: me.id, reasonCode: reason.code, reasonName: reason.name, reasonText: `입고취소 ${doc.reverseNo} (검수 ${rcv.rcvNo})${text ? ` — ${text}` : ""}` },
+          });
+        }
+
+        const r = await tx.rcv.updateMany({ where: { id: rcv.id, status: "CONFIRMED", dailyCloseId: null }, data: { status: "CANCELED", version: { increment: 1 } } });
+        if (!r.count) return fail("STATE", "이미 입고취소했거나 일마감된 실적입니다.");
+        return ok(`입고취소 ${doc.reverseNo} · 검수 ${rcv.rcvNo} — 입고예정 ${touched.size}건을 되돌렸습니다. 같은 차량을 다시 검수할 수 있습니다.`, { reverseNo: doc.reverseNo });
       },
       { timeout: 30_000 },
     ),

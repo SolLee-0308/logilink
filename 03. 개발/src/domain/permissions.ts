@@ -23,7 +23,9 @@ export type Resource =
   | "asnStatus"
   | "loading"
   | "inspection"
-  | "dashboard";
+  | "dashboard"
+  | "closing"
+  | "rcvResults";
 export type Op = "view" | "edit";
 
 /** 3PL 관리자는 3PL 운영담당 권한을 모두 포함한다 */
@@ -57,6 +59,11 @@ const MATRIX: Record<Resource, Record<Op, readonly UserRole[]>> = {
   inspection: { view: ["TPL_INSPECTOR"], edit: ["TPL_INSPECTOR"] },
   // 웹 대시보드 (2026-11-11): 3PL 관리자·운영담당 — 소속 센터 / 화주사 담당자 — 자기 화주사 건·이용 센터
   dashboard: { view: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"], edit: [] },
+  // 잔량 종결·일마감 (정의서 ⑦, 2026-11-12): 3PL 관리자·운영담당만. 종결은 3PL만 할 수 있다 — 화주사는 입고예정에 종결 요청 메모만
+  closing: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: ["TPL_ADMIN", "TPL_OPERATOR"] },
+  // 입고검수 실적 (2026-11-12): 3PL 관리자·운영담당 조회 전용 — 소속 센터(센터 없는 계정은 전체). 화주사는 ASN 상세의 검수 결과로 본다
+  // 입고취소(역전표, edit)는 3PL 관리자만 — 일마감 전 확정 실적 (2026-11-12)
+  rcvResults: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: ["TPL_ADMIN"] },
   // 그 외 기준정보 — 기존 유지 (매트릭스 확정 전)
   master: { view: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"], edit: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"] },
 };
@@ -99,6 +106,8 @@ export function resourceOfPath(href: string): Resource {
   if (href.startsWith("/plans/asn-status")) return "asnStatus";
   if (href.startsWith("/plans/asn")) return "asn";
   if (href.startsWith("/dashboard")) return "dashboard";
+  if (href.startsWith("/closing")) return "closing";
+  if (href.startsWith("/rcv-results")) return "rcvResults";
   return "master";
 }
 

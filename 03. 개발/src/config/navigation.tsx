@@ -81,8 +81,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "입고 운영",
     items: [
-      { label: "입고검수 실적", icon: <IconClipboard /> },
-      { label: "잔량 종결·일마감", icon: <IconClock /> },
+      // 3PL: 검수 확정·검수 중 실적 조회 — 업무일·센터·화주사·일마감 여부, 행을 누르면 ASN·상차 현황 상세(무지시는 상차 상세)의 검수 결과로 (2026-11-12)
+      { label: "입고검수 실적", href: "/rcv-results", icon: <IconClipboard /> },
+      // 3PL: 미종결 입고예정 잔량 종결(건별·일괄) + 일마감 탭 (정의서 ⑦, 2026-11-12 — 일마감 탭은 다음 단계)
+      { label: "잔량 종결·일마감", href: "/closing", icon: <IconClock /> },
     ],
   },
   {
