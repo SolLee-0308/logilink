@@ -77,6 +77,11 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
                 <th scope="row">상차완료</th>
                 <td className="mono">{fmtDateTime(d.completedAt)}</td>
               </tr>
+              {/* 출차 (2026-11-12 Sol) — 출차 전에 인쇄하면 "출차 전" */}
+              <tr>
+                <th scope="row">출차</th>
+                <td className="mono">{d.departure ? (d.departure.auto ? `자동 출차 · ${fmtDateTime(d.departure.at)}` : fmtDateTime(d.departure.at)) : "출차 전"}</td>
+              </tr>
             </tbody>
           </table>
           <table className={styles.kv}>

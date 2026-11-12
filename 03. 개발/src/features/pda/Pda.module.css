@@ -576,13 +576,23 @@
   color: var(--muted);
 }
 
+/* 목록 카드의 진행 단계 — 체크 없는 작은 점 (2026-11-12 Sol) */
 .stepsCompact .stepTrack {
-  top: 9px;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  height: 2px;
 }
 
 .stepsCompact .stepDot {
-  width: 20px;
-  height: 20px;
+  width: 10px;
+  height: 10px;
+  margin-bottom: 4px;
+  border-width: 0;
+}
+
+.stepsCompact .stepDone .stepDot {
+  box-shadow: none;
 }
 
 .card .stepDot {
@@ -1259,6 +1269,37 @@ select.field {
 .tileRej .k {
   color: inherit;
   opacity: 0.85;
+}
+
+/* 아이콘 칸 (2026-11-12 Sol) — 왼쪽 위 둥근 아이콘 + 옆에 이름, 숫자는 오른쪽 아래. 높이 조금 더 */
+.tileIcon {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 76px;
+  padding: 10px 12px 10px 10px;
+}
+
+.tileGlyph {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: inherit;
+}
+
+.tileIcon .k {
+  min-width: 0;
+}
+
+.tileIcon b {
+  grid-column: 1 / -1;
+  justify-self: end;
+  align-self: end;
 }
 
 .rows {
@@ -2005,4 +2046,125 @@ p.askBody {
 .dangerBtn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* ═════════ 상차등록 + 상차내역 합침 (2026-11-12 Sol) ═════════ */
+/* 날짜 + 보기 한 줄 (2026-11-12 Sol A안) — 왼쪽 작은 날짜 칸 + 건수 붙은 보기 버튼 4개, 선택된 것만 흰 버튼 */
+.heroChips {
+  display: grid;
+  grid-template-columns: auto repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  border: 1px solid var(--ink-line);
+}
+
+/* 날짜 칸 — 누르면 달력(숨긴 date 입력의 showPicker). 지난 날짜면 노란 칸 */
+.heroDateChip {
+  position: relative;
+  display: flex;
+  margin-right: 2px;
+}
+
+.heroDateChip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 34px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: #fff;
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.heroDateChip input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+}
+
+.heroDatePast button {
+  background: var(--st-wait-bg);
+  border-color: var(--st-wait-bg);
+  color: var(--st-wait-fg);
+}
+
+.heroChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-text);
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.heroChip b {
+  color: #fff;
+  font-weight: 700;
+}
+
+.heroChipOn {
+  background: #fff;
+  color: var(--fg);
+}
+
+.heroChipOn b {
+  color: var(--violet-700);
+}
+
+.heroChip:disabled {
+  cursor: progress;
+}
+
+/* 상차 중인 차량 카드 — 연한 주황 바탕 + 왼쪽 주황 띠로 상차할 차량과 구분 (2026-11-12 Sol: [상차 중] 알약 대신 카드 색, 대시보드 "상차 중" 칸과 같은 색) */
+.cardWorking {
+  /* 2026-11-12 Sol: 상차 중 배지색(#ffe9d6)보다 연하게 — 배지색 40% + 흰색 */
+  background: color-mix(in srgb, var(--st-part-bg) 40%, #fff);
+  border-color: color-mix(in srgb, var(--st-part-fg) 18%, transparent);
+  border-left: 4px solid #f08c00;
+}
+
+.cardWorking:active {
+  background: var(--st-part-bg);
+}
+
+/* 상차완료 차량 카드 — 대시보드 "상차완료" 칸의 연두(초록) 계열, 상차 중 카드와 같은 연하기 (2026-11-12 Sol) */
+.cardDone {
+  background: color-mix(in srgb, var(--st-done-bg) 40%, #fff);
+  border-color: color-mix(in srgb, var(--st-done-fg) 18%, transparent);
+  border-left: 4px solid #40a964;
+}
+
+.cardDone:active {
+  background: var(--st-done-bg);
+}
+
+/* 카드 오른쪽 위 알약 묶음 (2026-11-12 Sol: 상차완료 카드의 [차이 있음]·[출차 전]) */
+.pills {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }

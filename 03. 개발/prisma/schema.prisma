@@ -737,6 +737,7 @@ enum AsnAction {
   LOAD_COMPLETE // 상차완료 (상차확인서 발행)
   RECEIVE // 입고검수 확정 (입고완료)
   LOAD_REOPEN // 상차 재개 (정의서 v1.5 D20, 상차완료 → 상차중)
+  LOAD_DEPART // 출차 (2026-11-12 Sol, 상태는 상차완료 그대로)
 }
 
 /// ASN 헤더 (TB_ASN_H) — 차량 1대 단위. 입고예정번호를 두지 않고 라인이 입고예정 라인을 가리킨다 (D9)
@@ -884,6 +885,11 @@ model Load {
   completeUserId Int?       @map("complete_user_id")
   completedBy    String?    @map("completed_by") @db.VarChar(50)
   completedAt    DateTime?  @map("complete_dt") @db.Timestamptz(3)
+  /// 출차 (2026-11-12 Sol) — PDA 상차담당이 [출차]를 누른 시각. 출차 후에는 상차 재개 불가.
+  /// 누르지 않았으면 상차완료한 업무일이 지나면 출차로 본다(값은 비어 있고 조회 때 판단)
+  departedAt     DateTime?  @map("depart_dt") @db.Timestamptz(3)
+  departedBy     String?    @map("departed_by") @db.VarChar(50)
+  departUserId   Int?       @map("depart_user_id")
   createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   createdBy      String     @map("created_by") @db.VarChar(50)
   updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -907,7 +913,8 @@ model Load {
 /// 상차 실적 처리 행위
 enum LoadAction {
   COMPLETE // 상차완료 (상차확인서 발행)
-  REOPEN // 상차 재개 (검수 시작 전, 사유 필수)
+  REOPEN // 상차 재개 (출차·검수 시작 전, 사유 필수)
+  DEPART // 출차 (2026-11-12 Sol)
 }
 
 /// 상차 실적 처리 이력 (TB_LOAD_HIS) — 상차완료·재개를 차수와 함께 남긴다 (정의서 v1.5 D20). 무지시 상차는 ASN 이력이 없어 여기에만 남는다

@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Barcode } from "@/components/ui/Barcode";
-import { LINE_STATE_LABEL, LOAD_TYPE_LABEL, UNORDERED_REASON_CODE, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_CONFIRM_MSG, LINE_STATE_LABEL, LOAD_TYPE_LABEL, UNORDERED_REASON_CODE, qtyInUnit } from "@/domain/load-rules";
 import { fmtDateTime } from "@/lib/format";
-import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, previewScan, reloadLoad, reopenLoad } from "@/server/loads/actions";
+import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, departLoad, previewScan, reloadLoad, reopenLoad } from "@/server/loads/actions";
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { LoadInputView, LoadLineView, LoadView, ScanPreview } from "@/features/loads/types";
 import { deviceId, takeNotice } from "./device";
@@ -35,6 +35,8 @@ const overAsk = (source: "add" | "edit", fe?: Record<string, string>): Ask | nul
  * 2) 지시 외 품목·지시수량 초과는 경고 후 확인하면 받는다 (사유는 상차완료 때 한 번, 2026-11-05 Sol)
  * 3) 본인 입력만 취소·정정, 다른 작업자 입력은 몇 초마다 합계에 반영
  * 4) 상차완료: 작업자·품목 합계를 보고 확인, 차이가 있으면 사유 선택 → 상차확인서 발행
+ * 5) 상차 재개(v1.5 D20): 지시 상차만, 출차·검수 시작 전까지 사유와 함께 재개 → 다시 완료하면 같은 번호 다음 차수 (무지시 재개 안 함, 2026-11-12)
+ * 6) 출차(2026-11-12 Sol): 상차완료 화면 [출차] → 확인 창 → 이후 재개 불가. 안 누르면 상차완료한 업무일이 지나면 자동 출차
  * 화면 배치(2026-11-05 참고 UI): 차량 머리·진행 단계 → 스캔 카드 → 품목 → 상차 정보 → 내 입력 타임라인 → 아래 고정 [상차완료]
  */
 export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initial: LoadView; reasons: ReasonOption[]; reopenReasons?: ReasonOption[] }) {
@@ -56,18 +58,46 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
   const [conflict, setConflict] = useState<string | null>(null);
   /** 상차 재개 창 (정의서 v1.5 D20) — 사유 코드·상세 */
   const [reopening, setReopening] = useState<{ code: string; text: string } | null>(null);
+  /** 출차 확인 창 (2026-11-12 Sol) */
+  const [departing, setDeparting] = useState(false);
   const scanRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const working = view.status === "WORKING";
   const ordered = view.type === "ORDERED";
+  /**
+   * 완료 화면을 어떻게 열었는지 (2026-11-12 Sol) — me: 내가 방금 완료 / other: 작업 중 다른 작업자가 완료 / null: 목록에서 지난 확인서를 엶.
+   * 방금 완료한 경우에만 "발행했습니다"와 체크 원을 보여 준다.
+   */
+  const [doneBy, setDoneBy] = useState<"me" | "other" | null>(null);
+  const meDone = useRef(false);
+  const prevStatus = useRef(initial.status);
 
   useEffect(() => setNotice(takeNotice()), []);
+
+  useEffect(() => {
+    if (prevStatus.current === "WORKING" && view.status === "COMPLETED") setDoneBy(meDone.current ? "me" : "other");
+    if (view.status === "WORKING") {
+      meDone.current = false;
+      setDoneBy(null);
+    }
+    prevStatus.current = view.status;
+  }, [view.status]);
 
   const reload = useCallback(async () => {
     const r = await reloadLoad(view.id);
     if (r.ok && r.data) setView(r.data);
     return r.ok ? r.data : undefined;
   }, [view.id]);
+
+  // 완료 화면 — 다시 볼 때 최신 상태를 읽는다(그사이 검수가 시작됐으면 [상차 재개]를 안내 문구로) (2026-11-12)
+  useEffect(() => {
+    if (working) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void reload();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [working, reload]);
 
   // 다른 작업자 입력 반영 — 화면이 보일 때만, 상차완료되면 멈춘다
   useEffect(() => {
@@ -152,7 +182,7 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
       }
     });
 
-  /** 상차 재개 — 검수 시작 전에만. 성공하면 작업 화면으로 돌아간다(기존 입력 유지) */
+  /** 상차 재개 — 출차·검수 시작 전에만. 성공하면 작업 화면으로 돌아간다(기존 입력 유지) */
   const onReopen = () =>
     start(async () => {
       if (!reopening) return;
@@ -162,6 +192,36 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
         setReopening(null);
         setReason(view.type === "UNORDERED" ? UNORDERED_REASON_CODE : "");
         setReasonText("");
+        setNotice(r.message);
+        await reload();
+      } else {
+        setError(r.error);
+        if (r.code === "STATE") await reload();
+      }
+    });
+
+  /** [상차 재개] — 누를 때 최신 상태를 먼저 읽는다. 그사이 검수가 시작됐으면 창을 열지 않고 안내 문구로 바뀐다 */
+  const openReopen = () =>
+    start(async () => {
+      setError(null);
+      const v = await reload();
+      if (v?.canReopen) setReopening({ code: "", text: "" });
+    });
+
+  /** [출차] — 최신 상태를 읽고 확인 창. 그사이 재개됐거나 이미 출차됐으면 창을 열지 않는다 */
+  const openDepart = () =>
+    start(async () => {
+      setError(null);
+      const v = await reload();
+      if (v?.canDepart) setDeparting(true);
+    });
+
+  const onDepart = () =>
+    start(async () => {
+      setError(null);
+      const r = await departLoad({ loadId: view.id });
+      if (r.ok) {
+        setDeparting(false);
         setNotice(r.message);
         await reload();
       } else {
@@ -192,6 +252,7 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
       const r = await completeLoad({ loadId: view.id, lastInputId: view.lastInputId, reasonCode: view.hasDiff ? reason : null, reasonText: view.hasDiff ? reasonText : null });
       if (r.ok) {
         // 최신 상태(상차완료)를 먼저 읽고 화면을 바꾼다
+        meDone.current = true;
         await reload();
         setFinishing(false);
       } else if (r.code === "CONFLICT") {
@@ -221,8 +282,13 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
         <Pill tone={tone}>{LOAD_TYPE_LABEL[view.type]}</Pill>
         {view.revisionNo > 1 && <Pill tone="amber">재개 · {view.revisionNo}차</Pill>}
       </span>
+      {/* 재개한 차량은 처음 시작 시각 대신 재개 시각·사유 (2026-11-12 Sol, D20) */}
       <span className={styles.vStatus}>
-        <b>상차 중</b> · {timeOf(view.createdAt)} 시작 · {view.centerName}
+        <b>상차 중</b> ·{" "}
+        {view.revisionNo > 1 && view.lastReopen
+          ? `${timeOf(view.lastReopen.at)} 재개${view.lastReopen.reasonName ? `(${view.lastReopen.reasonName})` : ""}`
+          : `${timeOf(view.createdAt)} 시작`}{" "}
+        · {view.centerName}
       </span>
     </section>
   );
@@ -232,14 +298,26 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
     return (
       <>
         <section className={styles.success}>
-          <span className={styles.checkHalo} aria-hidden="true">
-            <span>
-              <Icon name="check" size={24} stroke={2.8} />
+          {/* 방금 완료했을 때만 체크 원 + "발행했습니다" — 목록에서 지난 확인서를 열면 조회 제목 (2026-11-12 Sol) */}
+          {doneBy && (
+            <span className={styles.checkHalo} aria-hidden="true">
+              <span>
+                <Icon name="check" size={24} stroke={2.8} />
+              </span>
             </span>
-          </span>
+          )}
           <h2 className={styles.successTitle}>
-            상차확인서를 발행했습니다.
+            {doneBy === "other"
+              ? "다른 작업자가 상차완료했습니다."
+              : doneBy === "me"
+                ? view.revisionNo > 1
+                  ? `상차확인서 ${view.revisionNo}차를 발행했습니다.`
+                  : "상차확인서를 발행했습니다."
+                : `상차확인서${view.revisionNo > 1 ? ` · ${view.revisionNo}차` : ""}`}
           </h2>
+          {doneBy && view.revisionNo > 1 && (
+            <p className={styles.warnText}>이전 차수 확인서는 쓰지 마세요. 인쇄했다면 웹에서 다시 인쇄하세요.</p>
+          )}
           <p className={styles.successSub}>입고검수는 이 바코드로 시작합니다.</p>
           <InfoRows
             rows={[
@@ -253,6 +331,8 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
               ["차량번호", <span key="v" className="mono">{view.vehicleNo}</span>],
               ["도착 센터", view.centerName],
               ["완료", `${view.completedAt ? timeOf(view.completedAt) : "-"} · ${view.completedBy ?? "-"}`],
+              // 출차 (2026-11-12 Sol) — 출차 전 / 시각·처리자 / 업무일이 지나 자동 출차
+              ["출차", <DepartText key="dep" view={view} />],
               // ASN 대비 상차 — 품목 목록 대신 요약만 (2026-11-07 Sol 피드백)
               ["ASN 대비 상차", <LoadSummary key="sum" view={view} />],
               ...(view.diffReasonName ? ([["차이 사유", `${view.diffReasonName}${view.diffReasonText ? ` — ${view.diffReasonText}` : ""}`]] as [string, React.ReactNode][]) : []),
@@ -261,23 +341,76 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
           <div className={styles.barcode}>
             <Barcode value={view.loadNo} height={52} module={2} />
           </div>
-          <button type="button" className={styles.blackPill} onClick={() => router.push("/pda")}>
-            처음으로
-          </button>
-          {/* 상차 재개 — 검수 시작 전에만 (정의서 v1.5 D20) */}
-          {view.canReopen ? (
-            <button type="button" className={`${styles.secondary} ${styles.wide}`} onClick={() => { setError(null); setReopening({ code: "", text: "" }); }} disabled={pending}>
-              상차 재개
+          {/*
+            출차 전: [출차](주 버튼) + [상차 재개](지시 상차만) + 처음으로 / 출차 후: 처음으로만 (2026-11-12 Sol)
+            출차는 되돌릴 수 없어 확인 창을 거친다. 재개는 지시 상차 + 출차 전 + 검수 전 (정의서 v1.5 D20)
+          */}
+          {view.canDepart ? (
+            <button type="button" className={styles.blackPill} onClick={openDepart} disabled={pending}>
+              <Icon name="truck" size={18} /> 출차
             </button>
           ) : (
-            <p className={styles.help}>입고검수가 시작되어 상차를 재개할 수 없습니다.</p>
+            <button type="button" className={styles.blackPill} onClick={() => router.push("/pda")}>
+              처음으로
+            </button>
           )}
-          {error && !reopening && (
+          {view.canReopen ? (
+            <>
+              <button type="button" className={`${styles.secondary} ${styles.wide}`} onClick={openReopen} disabled={pending}>
+                상차 재개
+              </button>
+              <p className={styles.help}>빠뜨린 품목이 있으면 출차 전까지 재개해서 더 실을 수 있습니다.</p>
+            </>
+          ) : (
+            <p className={styles.help}>
+              {view.departure
+                ? "출차한 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다."
+                : view.type === "UNORDERED"
+                  ? "무지시 상차는 재개할 수 없습니다. 더 실을 물량은 새 무지시 상차로 등록하세요."
+                  : "입고검수가 시작되어 상차를 재개할 수 없습니다."}
+            </p>
+          )}
+          {view.canDepart && (
+            <button type="button" className={styles.link} onClick={() => router.push("/pda")} disabled={pending}>
+              처음으로 (출차는 나중에)
+            </button>
+          )}
+          {error && !reopening && !departing && (
             <p className={styles.error} role="alert">
               {error}
             </p>
           )}
         </section>
+        {departing && (
+          <div className={styles.modalScrim}>
+            <section className={styles.modalSheet} role="alertdialog" aria-modal="true" aria-labelledby="depart-title" aria-describedby="depart-body">
+              <h2 id="depart-title" className={styles.h2}>
+                <Icon name="truck" size={18} /> 출차
+              </h2>
+              <p id="depart-body" className={styles.askBody}>
+                <b className={`mono ${styles.askItem}`}>{view.vehicleNo}</b>{" "}
+                <span className="mono">
+                  {view.loadNo}
+                  {view.revisionNo > 1 ? ` · ${view.revisionNo}차` : ""}
+                </span>
+              </p>
+              <p className={styles.help}>{DEPART_CONFIRM_MSG}</p>
+              {error && (
+                <p className={styles.error} role="alert">
+                  {error}
+                </p>
+              )}
+              <div className={styles.btnRow}>
+                <button type="button" className={styles.secondary} onClick={() => setDeparting(false)} disabled={pending} autoFocus>
+                  그만두기
+                </button>
+                <button type="button" className={styles.primary} onClick={onDepart} disabled={pending}>
+                  출차
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
         {reopening && (
           <div className={styles.modalScrim}>
             <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="reopen-title">
@@ -285,7 +418,7 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
                 상차 재개
               </h2>
               <p className={styles.help}>
-                다시 상차완료하면 확인서가 <b>{view.revisionNo + 1}차</b>로 바뀝니다. 인쇄한 확인서는 다시 인쇄해야 합니다.
+                다시 상차완료하면 확인서가 <b>{view.revisionNo + 1}차</b>로 바뀝니다(인쇄했다면 웹에서 다시 인쇄). 지시 품목과 오늘 ASN에 있는 품목만 실을 수 있고, ASN에 없는 새 품목은 실을 수 없습니다.
               </p>
               <label htmlFor="pda-reopen" className={styles.label}>
                 재개 사유
@@ -349,7 +482,17 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
         <h2 id="finish-title" className={styles.h2}>
           상차완료
         </h2>
-        <p className={styles.help}>완료하면 더 입력할 수 없습니다.</p>
+        {/* 재개 규칙 반영 (2026-11-12 Sol, D20) — 완료 후에도 검수 전까지 재개 가능(지시 상차만) */}
+        <p className={styles.help}>
+          {ordered
+            ? "완료하면 상차확인서가 발행됩니다. 출차 전까지는 [상차 재개]로 더 실을 수 있습니다."
+            : "완료하면 상차확인서가 발행됩니다. 무지시 상차는 완료 후 재개할 수 없습니다."}
+        </p>
+        {view.revisionNo > 1 && (
+          <p className={styles.warnText}>
+            완료하면 확인서가 {view.revisionNo}차로 바뀝니다. 이전에 인쇄한 확인서는 웹에서 다시 인쇄하세요.
+          </p>
+        )}
         {ordered && orderLineCount > 0 && (
           <p className={styles.finishSum}>
             <MatchText matched={matchedCount} total={orderLineCount} />
@@ -833,4 +976,12 @@ function LoadSummary({ view }: { view: LoadView }) {
       {parts.length > 0 && <span className={styles.dim}> · {parts.map(([k, v]) => `${k} ${v}`).join(" · ")}</span>}
     </span>
   );
+}
+
+/** 출차 표시 (2026-11-12 Sol) — 출차 전 / "14:30 · 처리자" / "자동 출차(업무일 마감) 11-13 06:00" */
+function DepartText({ view }: { view: LoadView }) {
+  const d = view.departure;
+  if (!d) return <span className={styles.warnInline}>출차 전</span>;
+  if (d.auto) return <span>자동 출차(업무일 마감) · {fmtDateTime(d.at).slice(5, 16)}</span>;
+  return <span>{timeOf(d.at)} · {d.by ?? "-"}</span>;
 }

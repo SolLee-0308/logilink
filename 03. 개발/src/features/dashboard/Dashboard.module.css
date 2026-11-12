@@ -81,8 +81,23 @@
   color: var(--soft);
 }
 
+/* 0건 칸은 한 단계 물러나게 — 바탕을 낮추고 글자를 흐리게 (2026-11-12 Sol: 0이 아닌 칸만 눈에 띄게) */
+.zero {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.zero .tileLabel {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .zero .tileValue b {
   color: var(--soft);
+}
+
+.zero .tileNote {
+  color: var(--placeholder);
 }
 
 .danger {
@@ -96,9 +111,141 @@
 }
 
 /* ② 오늘 흐름 */
+
+/* ASN 차량 진행 막대 (2026-11-12) — 칸 색은 ASN 상태 배지 톤을 따른다 (대기 회색 · 상차중 주황 · 검수 대기 노랑 · 입고완료 초록) */
+.progress {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.progressHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.progressHead h3 {
+  margin: 0;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.progressSum {
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.progressSum b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.progressPct {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--st-done-bg);
+  color: var(--st-done-fg);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+.progressEmpty {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--soft);
+  font-size: var(--fs-13);
+}
+
+.bar {
+  display: flex;
+  gap: 2px;
+  height: 32px;
+  border-radius: var(--r-control);
+  overflow: hidden;
+}
+
+.seg {
+  flex-basis: 0;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-13);
+}
+
+.seg b {
+  font-weight: 600;
+}
+
+.segReg {
+  background: var(--st-close-bg);
+  color: var(--st-close-fg);
+}
+
+.segLoading {
+  background: var(--st-part-bg);
+  color: var(--st-part-fg);
+}
+
+.segLoaded {
+  background: var(--st-wait-bg);
+  color: var(--st-wait-fg);
+}
+
+.segReceived {
+  background: var(--st-done-bg);
+  color: var(--st-done-fg);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.legendArrow {
+  margin: 0 10px;
+  color: var(--soft);
+}
+
+.legendZero,
+.legendZero b {
+  color: var(--soft);
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
 .flow {
   display: grid;
-  grid-template-columns: 1fr 2fr 1.4fr;
+  grid-template-columns: 1fr 1.4fr;
   gap: 20px;
 }
 
@@ -184,6 +331,59 @@
   .watch {
     grid-template-columns: 1fr;
   }
+}
+
+/* 0건 주의 카드를 모은 한 줄 (2026-11-12) */
+.clear {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-group);
+  background: var(--surface);
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.watch + .clear {
+  margin-top: 12px;
+}
+
+.clear > b {
+  color: var(--st-done-fg);
+  font-weight: 600;
+}
+
+.clearMark {
+  color: var(--st-done-fg);
+  font-weight: 700;
+}
+
+.clearItem .mono {
+  color: var(--soft);
+}
+
+/* 센터 설정값 접기 */
+.rules {
+  margin-top: 12px;
+}
+
+.rules summary {
+  cursor: pointer;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.rules summary:hover {
+  color: var(--fg);
+}
+
+.rules[open] summary {
+  margin-bottom: 8px;
 }
 
 .plain {
