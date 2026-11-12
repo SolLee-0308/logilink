@@ -43,6 +43,8 @@ export interface RcvInputView {
   kind: RcvKind;
   unit: ItemUnit;
   addQty: number;
+  /** 기준 단위 수량 — 품목별·검수자별 합계용 (2026-11-12) */
+  baseQty: number;
   workerName: string;
   inputAt: string;
   canceled: boolean;
@@ -126,11 +128,17 @@ export interface PdaRcvRow {
   issueCount: number;
 }
 
+/** 입고검수 목록 거르기 (2026-11-12 Sol: 검수 내역 메뉴를 입고검수에 합침) */
+export type PdaRcvFilter = "all" | "todo" | "working" | "done";
+
 export interface PdaRcvHome {
   today: string;
+  /** 조회 날짜 — 오늘 이하. 확정만 이 날짜(확정 시각 KST)로 거르고, 대기·검수 중은 날짜와 상관없이 모두 */
+  date: string;
   waiting: PdaRcvRow[];
   working: PdaRcvRow[];
-  doneCount: number;
+  /** 조회 날짜에 검수 확정한 차량, 최근이 앞 */
+  done: PdaRcvRow[];
 }
 
 export interface PdaRcvHistory {

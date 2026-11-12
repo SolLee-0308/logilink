@@ -54,7 +54,7 @@ async function main() {
   const home = (await pdaRcvHome(seoyeon))!;
   ok(home.waiting.some((w) => w.loadNo === ld(2)) && home.waiting.some((w) => w.loadNo === ld(3)), "첫 화면: 상차완료 2대(지시·무지시)가 검수 대기", home.waiting.map((w) => w.loadNo));
   ok(!home.waiting.some((w) => w.loadNo === ld(1)), "첫 화면: 상차 중인 차량은 검수 대기에 없다");
-  ok(home.working.length === 0 && home.doneCount === 0, "첫 화면: 검수 중·확정 없음");
+  ok(home.working.length === 0 && home.done.length === 0, "첫 화면: 검수 중·확정 없음");
   ok((await pdaRcvHome(outsider))!.waiting.length === 0, "다른 센터 검수자에게는 용인1센터 차량이 보이지 않는다");
 
   /* 권한·시작 조건 (R1 · C6) */
