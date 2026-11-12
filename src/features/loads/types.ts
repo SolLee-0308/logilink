@@ -1,6 +1,6 @@
 import type { ItemUnit } from "@/domain/master";
 import type { AsnStatus } from "@/domain/asn-rules";
-import type { LineState, LoadStatus, LoadType } from "@/domain/load-rules";
+import type { Departure, LineState, LoadStatus, LoadType } from "@/domain/load-rules";
 import type { CenterOption } from "@/features/plans/types";
 
 /** 품목별 지시·상차 합계 (기준 단위). 보여 줄 때는 showUnit으로 묶어 표시한다 */
@@ -54,6 +54,16 @@ export interface LoadView {
   type: LoadType;
   status: LoadStatus;
   version: number;
+  /** 상차확인서 차수 — 상차 재개 때 +1 (정의서 v1.5 D20) */
+  revisionNo: number;
+  /** 지시 상차 + 상차완료 + 출차 전 + 검수(진행·확정)가 없을 때만 재개 가능 (무지시는 재개 안 함, 2026-11-12) */
+  canReopen: boolean;
+  /** 출차 (2026-11-12 Sol) — [출차] 시각·처리자, 또는 상차완료한 업무일이 지나 자동 출차. 출차 전이면 null */
+  departure: Departure | null;
+  /** 상차완료 + 출차 전이면 [출차] 가능 */
+  canDepart: boolean;
+  /** 마지막 상차 재개 */
+  lastReopen: { at: string; by: string; reasonName: string | null; reasonText: string | null } | null;
   clientName: string;
   centerId: number;
   centerName: string;
@@ -103,6 +113,14 @@ export interface PdaWorkingRow {
   vehicleNo: string;
   centerName: string;
   orderNo: string | null;
+  /** 상차를 시작한 날 (상차일) */
+  loadDate: string;
+  /** 지시 상차의 ASN 출고일 — 무지시는 null */
+  shipDate: string | null;
+  /** 상차확인서 차수 — 2 이상이면 재개한 차량 (D20) */
+  revisionNo: number;
+  /** 상차완료 차량의 출차 — 출차 전이면 null (2026-11-12) */
+  departure: Departure | null;
   inputCount: number;
   workerCount: number;
   /** 상차완료한 차량만 */
@@ -130,11 +148,17 @@ export interface PdaLoadDashboard {
   recent: PdaWorkingRow[];
 }
 
+/** 상차등록 목록 거르기 (2026-11-12 Sol: 상차내역 메뉴를 상차등록에 합침) */
+export type PdaLoadFilter = "all" | "todo" | "working" | "done";
+
 export interface PdaHome {
   today: string;
+  /** 조회 날짜 — 오늘 이하. 상차할 차량은 출고일(오늘이면 출고일 지난 차량 포함), 상차완료는 상차일로 거른다 */
+  date: string;
   orders: PdaOrderRow[];
+  /** 작업 중인 차량 — 날짜와 상관없이 모두 */
   working: PdaWorkingRow[];
-  /** 오늘 상차완료한 차량 */
+  /** 조회 날짜에 상차완료한 차량 */
   done: PdaWorkingRow[];
   centers: CenterOption[];
   defaultCenterId: string;

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { PdaLoadDashboard } from "@/features/loads/types";
 import { fmtDateTime } from "@/lib/format";
-import { Icon } from "./PdaParts";
+import { Icon, type IconName } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 /**
@@ -11,12 +11,13 @@ import styles from "./Pda.module.css";
 export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
   const total = data.todo + data.working + data.done;
   const pct = total ? Math.round((data.done / total) * 100) : 0;
-  // 칸 색 = 상태 배지 색 (상차할은 기본, 2026-11-07 Sol 피드백) — 작업 중 = 상차중(주황), 상차완료(초록), 차이 있음(붉은)
-  const tiles: [string, number, string, string][] = [
-    ["상차할", data.todo, "/pda", ""],
-    ["작업 중", data.working, "/pda", styles.tilePart],
-    ["상차완료", data.done, "/pda/loads", styles.tileDone],
-    ["차이 있음", data.diffDone, "/pda/loads", styles.tileRej],
+  // 칸 색 = 상태 배지 색 (상차할 차량은 기본, 2026-11-07 Sol 피드백) — 상차 중(주황), 상차완료(초록), 차이 있음(붉은)
+  // 2026-11-12 Sol: 칸마다 아이콘, 이름 "상차할"→"상차할 차량", "작업 중"→"상차 중"
+  const tiles: [string, number, string, string, IconName][] = [
+    ["상차할 차량", data.todo, "/pda?st=todo", "", "truck"],
+    ["상차 중", data.working, "/pda?st=working", styles.tilePart, "box"],
+    ["상차완료", data.done, "/pda?st=done", styles.tileDone, "check"],
+    ["차이 있음", data.diffDone, "/pda?st=done", styles.tileRej, "alert"],
   ];
   return (
     <>
@@ -38,8 +39,11 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
       </section>
 
       <section className={styles.tiles}>
-        {tiles.map(([k, v, href, tone]) => (
-          <Link key={k} href={href} className={`${styles.tile} ${tone}`}>
+        {tiles.map(([k, v, href, tone, icon]) => (
+          <Link key={k} href={href} className={`${styles.tile} ${styles.tileIcon} ${tone}`}>
+            <span className={styles.tileGlyph}>
+              <Icon name={icon} size={18} stroke={2} />
+            </span>
             <span className={styles.k}>{k}</span>
             <b>{v}</b>
           </Link>
@@ -49,7 +53,7 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
       <section className={styles.section}>
         <h2 className={styles.h2}>
           최근 상차완료
-          <Link href="/pda/loads" className={styles.h2Link}>
+          <Link href="/pda?st=done" className={styles.h2Link}>
             전체 보기 <Icon name="chevR" size={14} />
           </Link>
         </h2>
@@ -59,7 +63,7 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
           <ul className={styles.rows}>
             {data.recent.map((r) => (
               <li key={r.loadId}>
-                <Link href={`/pda/load/${r.loadId}?from=${data.today}`}>
+                <Link href={`/pda/load/${r.loadId}?st=done`}>
                   <b className="mono">{r.vehicleNo}</b>
                   <span className="mono">{r.loadNo}</span>
                   <span>{fmtDateTime(r.completedAt).slice(11)}</span>

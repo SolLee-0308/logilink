@@ -1,19 +1,21 @@
 import "server-only";
 /**
- * 상차등록 처리 — 화주사 상차담당(PDA). 지시 상차 시작·무지시 상차 시작·추가수량 입력·본인 입력 취소·정정·상차완료.
- * 근거: 정의서 v1.4 ④ · 4-2 · 9장 · C5 · C6 · D10~D13
+ * 상차등록 처리 — 화주사 상차담당(PDA). 지시 상차 시작·무지시 상차 시작·추가수량 입력·본인 입력 취소·정정·상차완료·상차 재개.
+ * 근거: 정의서 v1.5 ④ · 4-2 · 9장 · C5 · C6 · D10~D13 · D20
  * 처리자를 인자로 받아 서버 액션(actions.ts)과 점검 스크립트가 같은 규칙을 쓴다.
  *
  * - 작업자 잠금 없음(D11): 같은 차량을 여러 작업자가 동시에 입력한다. 입력은 실적 행을 잠근 뒤 한 줄씩 쌓는다.
  * - 품목 차단(C5·D10): 같은 화주사·같은 센터의 당일 ASN 품목만. 지시수량 초과·지시 외 품목은 경고 후 확인하면 받는다.
- * - 상차완료(C6): 차량당 1회. 확인 화면에서 본 마지막 입력 id가 바뀌었으면 막는다. ASN 대비 차이가 있으면 사유 필수.
+ * - 상차완료(C6): 확인 화면에서 본 마지막 입력 id가 바뀌었으면 막는다. ASN 대비 차이가 있으면 사유 필수.
+ * - 상차 재개(C6·D20, v1.5): 지시 상차만, 출차·검수 시작 전까지 사유와 함께 작업중으로 되돌린다. 확인서 번호 유지 + 차수 +1.
+ * - 출차(2026-11-12 Sol): 상차완료 뒤 PDA 상차담당이 [출차]. 이후 재개 불가. 안 누르면 상차완료한 업무일이 지나면 자동 출차.
  */
 import { z } from "zod";
 import { db } from "@/server/db";
 import { fail, type ActionResult } from "@/server/action-result";
 import type { PlanActor } from "@/server/plans/service";
 import { asDate, canLoad, todayAsnItemIds } from "@/server/loads/queries";
-import { LOAD_DIFF_GROUP, type ItemUnit } from "@/domain/master";
+import { LOAD_DIFF_GROUP, LOAD_REOPEN_GROUP, type ItemUnit } from "@/domain/master";
 import { docNoPrefix, looksLikeVehicleNo, nextDocNo, normalizeVehicleNo } from "@/domain/asn-rules";
 import {
   LOADABLE_ASN,
@@ -21,6 +23,7 @@ import {
   LOAD_DONE_MSG,
   LOAD_PREFIX,
   addQtyError,
+  departureOf,
   hasLoadDiff,
   normalizeDocNo,
   normalizeScan,
@@ -56,6 +59,12 @@ async function nextLoadNo(tx: Tx, today: string) {
 async function lockLoad(tx: Tx, id: number) {
   await tx.$queryRaw`SELECT id FROM tb_load_h WHERE id = ${id} FOR UPDATE`;
   return tx.load.findUnique({ where: { id } });
+}
+
+/** 출차 여부 — [출차]를 눌렀거나, 상차완료한 업무일(도착 센터 기준)이 지났으면 출차 (2026-11-12 Sol) */
+async function departureOfLoad(tx: Tx, load: { centerId: number; status: string; completedAt: Date | null; departedAt: Date | null; departedBy: string | null }) {
+  const center = await tx.center.findUniqueOrThrow({ where: { id: load.centerId }, select: { businessDayStart: true } });
+  return departureOf(load, center.businessDayStart);
 }
 
 /* ═════════ 지시 상차 시작 — 상차지시서 바코드 스캔 ═════════ */
@@ -229,11 +238,14 @@ export interface AddInput {
   confirm?: boolean;
 }
 
-function warningText(kind: "extra" | "over", r: Resolved, orderBase: number, after: number, showUnit: Resolved["unit"], showFactor: number) {
+/**
+ * 지시 초과·지시 외 경고 — PDA는 확인 창(모달)으로 보여 준다 (2026-11-11 Sol: 화면 안 경고 → 모달).
+ * 창에 필요한 값만 fieldErrors로 넘긴다: kind(over·extra) · item · order(지시) · after(싣고 나면)
+ */
+function warning(kind: "extra" | "over", r: Resolved, orderBase: number, after: number, showUnit: Resolved["unit"], showFactor: number) {
   const f = (n: number) => qtyInUnit(n, showUnit, showFactor, r.baseUnit);
-  return kind === "extra"
-    ? `${r.itemName}은(는) 이 차량의 지시 품목이 아닙니다(오늘 다른 ASN 품목). 그래도 싣겠습니까? 상차완료 때 차이 사유를 고릅니다.`
-    : `${r.itemName}: 지시 ${f(orderBase)}보다 많아집니다(입력 후 ${f(after)}). 그래도 싣겠습니까? 상차완료 때 차이 사유를 고릅니다.`;
+  const msg = kind === "extra" ? `${r.itemName}: 지시 외 품목입니다.` : `${r.itemName}: 지시 ${f(orderBase)}보다 많아집니다(입력 후 ${f(after)}).`;
+  return fail("CONFIRM", msg, { kind, item: r.itemName, order: kind === "extra" ? "" : f(orderBase), after: f(after) });
 }
 
 export async function addLoadInput(me: PlanActor, input: AddInput): Promise<ActionResult<{ inputId: number }>> {
@@ -258,7 +270,7 @@ export async function addLoadInput(me: PlanActor, input: AddInput): Promise<Acti
       const warn = overWarning({ ordered: load.loadType === "ORDERED", orderBase, loadBase, addBase });
       if (warn && !input.confirm) {
         const { showUnit, showFactor } = await showUnitOf(tx, load.asnId, orderBase, r);
-        return fail("CONFIRM", warningText(warn, r, orderBase, loadBase + addBase, showUnit, showFactor));
+        return warning(warn, r, orderBase, loadBase + addBase, showUnit, showFactor);
       }
 
       const row = await tx.loadInput.create({
@@ -336,7 +348,7 @@ export async function correctLoadInput(me: PlanActor, input: { inputId: number; 
       if (warn && newBase > cur.baseQty && !input.confirm) {
         const r: Resolved = { itemId: cur.itemId, itemCode: item.code, itemClientCode: null, itemName: item.name, unit: cur.unit, factor, baseUnit: item.baseUnit, by: "barcode" };
         const { showUnit, showFactor } = await showUnitOf(tx, load.asnId, line.orderBaseQty, r);
-        return fail("CONFIRM", warningText(warn, r, line.orderBaseQty, after, showUnit, showFactor));
+        return warning(warn, r, line.orderBaseQty, after, showUnit, showFactor);
       }
       await tx.loadInput.update({ where: { id: cur.id }, data: { canceledAt: new Date() } });
       const row = await tx.loadInput.create({
@@ -351,7 +363,7 @@ export async function correctLoadInput(me: PlanActor, input: { inputId: number; 
   );
 }
 
-/* ═════════ 상차완료 (차량당 1회, 상차확인서 발행) ═════════ */
+/* ═════════ 상차완료 (상차확인서 발행 — 재개 후 다시 완료하면 같은 번호의 다음 차수) ═════════ */
 
 export interface CompleteInput {
   loadId: number;
@@ -369,7 +381,7 @@ export async function completeLoad(me: PlanActor, input: CompleteInput): Promise
     db.$transaction(async (tx) => {
       const load = await lockLoad(tx, input.loadId);
       if (!load || load.clientId !== me.clientId) return notFound();
-      if (load.status !== "WORKING") return fail("STATE", "이미 상차완료된 차량입니다. 상차완료는 차량당 한 번만 합니다.");
+      if (load.status !== "WORKING") return fail("STATE", "이미 상차완료된 차량입니다. 더 실어야 하면 [상차 재개]를 누르세요.");
       const last = await tx.loadInput.findFirst({ where: { loadId: load.id }, orderBy: { id: "desc" }, select: { id: true } });
       if ((last?.id ?? 0) !== input.lastInputId) return fail("CONFLICT", LOAD_CONFLICT_MSG);
 
@@ -398,6 +410,12 @@ export async function completeLoad(me: PlanActor, input: CompleteInput): Promise
         },
       });
       if (!r.count) return fail("STATE", "이미 상차완료된 차량입니다.");
+      await tx.loadHistory.create({
+        data: {
+          loadId: load.id, action: "COMPLETE", revisionNo: load.revisionNo, actor: me.name, actorId: me.id,
+          reasonCode: reason?.code ?? null, reasonName: reason?.name ?? null, reasonText: reason ? text || null : null,
+        },
+      });
 
       // 지시 상차: ASN 상차완료(= ASN 확정), 상차지시서 상차완료
       if (ordered && load.asnId) {
@@ -411,7 +429,104 @@ export async function completeLoad(me: PlanActor, input: CompleteInput): Promise
           },
         });
       }
-      return ok(`상차완료 · 상차확인서 ${load.loadNo}을(를) 발행했습니다.`, { loadNo: load.loadNo });
+      const rev = load.revisionNo > 1 ? ` (${load.revisionNo}차)` : "";
+      return ok(`상차완료 · 상차확인서 ${load.loadNo}${rev}을(를) 발행했습니다.`, { loadNo: load.loadNo });
+    }),
+  );
+}
+
+/* ═════════ 상차 재개 (정의서 v1.5 ④ · C6 · D20) ═════════ */
+
+export interface ReopenInput {
+  loadId: number;
+  reasonCode: string;
+  reasonText?: string | null;
+}
+
+/**
+ * 상차완료 → 작업중. 같은 화주사 PDA 상차담당만, 그 차량의 검수(진행·확정)가 없을 때만, 사유 필수.
+ * 상차확인서 번호는 그대로 두고 차수 +1 (이전 차수로 인쇄한 종이는 무효 → 재인쇄). 기존 입력은 그대로 둔다.
+ * 지시 상차는 ASN을 상차중으로, 상차지시서를 발행으로 되돌린다. 검수 시작과는 실적 행 잠금으로 줄을 세운다.
+ */
+export async function reopenLoad(me: PlanActor, input: ReopenInput): Promise<ActionResult<{ revisionNo: number }>> {
+  if (!canLoad(me)) return forbidden();
+  const text = input.reasonText?.trim() ?? "";
+  if (text.length > 500) return fail("VALIDATION", "상세 내용은 500자 이내로 입력하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
+  return guarded(() =>
+    db.$transaction(async (tx) => {
+      const load = await lockLoad(tx, input.loadId);
+      if (!load || load.clientId !== me.clientId) return notFound();
+      if (load.status !== "COMPLETED") return fail("STATE", "상차 중인 차량입니다. 그대로 이어서 실으면 됩니다.");
+      // 무지시 상차는 재개하지 않는다 (2026-11-12 Sol) — 더 실을 물량은 새 무지시 상차로
+      if (load.loadType === "UNORDERED") return fail("STATE", "무지시 상차는 재개할 수 없습니다. 더 실을 물량은 새 무지시 상차로 등록하세요.");
+      // 출차한 차량은 재개하지 않는다 (2026-11-12 Sol) — [출차]를 눌렀거나 상차완료한 업무일이 지났으면 출차
+      if (await departureOfLoad(tx, load)) return fail("STATE", "출차한 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
+      const rcv = await tx.rcv.findFirst({ where: { loadId: load.id, status: { in: ["WORKING", "CONFIRMED"] } }, select: { id: true } });
+      if (rcv) return fail("STATE", "입고검수가 시작된 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
+
+      const code = input.reasonCode
+        ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: LOAD_REOPEN_GROUP, code: input.reasonCode } } })
+        : null;
+      if (!code || !code.isActive) return fail("VALIDATION", "재개 사유를 고르세요.", { reasonCode: "재개 사유를 고르세요." });
+      if (code.requiresText && !text) return fail("VALIDATION", `"${code.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`, { reasonText: "상세 내용을 입력하세요." });
+
+      const next = load.revisionNo + 1;
+      const r = await tx.load.updateMany({
+        where: { id: load.id, status: "COMPLETED" },
+        data: {
+          status: "WORKING", revisionNo: next, version: { increment: 1 },
+          // 재완료 때 다시 채운다 — 이전 완료 정보는 이력(TB_LOAD_HIS)에 남아 있다
+          completedAt: null, completedBy: null, completeUserId: null, diffReasonCode: null, diffReasonName: null, diffReasonText: null,
+        },
+      });
+      if (!r.count) return fail("STATE", "상차 중인 차량입니다.");
+      await tx.loadHistory.create({
+        data: { loadId: load.id, action: "REOPEN", revisionNo: next, actor: me.name, actorId: me.id, reasonCode: code.code, reasonName: code.name, reasonText: text || null },
+      });
+
+      if (load.loadType === "ORDERED" && load.asnId) {
+        const asn = await tx.asn.findUniqueOrThrow({ where: { id: load.asnId } });
+        await tx.asn.update({ where: { id: asn.id }, data: { status: "LOADING", version: { increment: 1 }, updatedBy: me.name } });
+        await tx.loadOrder.updateMany({ where: { asnId: asn.id }, data: { status: "ISSUED" } });
+        await tx.asnHistory.create({
+          data: { asnId: asn.id, action: "LOAD_REOPEN", version: asn.version + 1, actor: me.name, actorId: me.id, reasonCode: code.code, reasonName: code.name, reasonText: text || null },
+        });
+      }
+      return ok(`상차를 재개했습니다 · ${load.loadNo} ${next}차`, { revisionNo: next });
+    }),
+  );
+}
+
+/* ═════════ 출차 (2026-11-12 Sol) ═════════ */
+
+/**
+ * 출차 — 상차완료한 차량을 내보낸다. 상태는 상차완료 그대로 두고 출차 시각·처리자만 남긴다.
+ * 출차 후에는 상차 재개 불가, 되돌리기 없음. 지시·무지시 모두. 이미 출차(직접 또는 업무일이 지나 자동)면 막는다.
+ */
+export async function departLoad(me: PlanActor, input: { loadId: number }): Promise<ActionResult<{ departedAt: string }>> {
+  if (!canLoad(me)) return forbidden();
+  return guarded(() =>
+    db.$transaction(async (tx) => {
+      const load = await lockLoad(tx, input.loadId);
+      if (!load || load.clientId !== me.clientId) return notFound();
+      if (load.status !== "COMPLETED") return fail("STATE", "상차완료한 차량만 출차할 수 있습니다. 먼저 상차완료하세요.");
+      const dep = await departureOfLoad(tx, load);
+      if (dep) return fail("STATE", dep.auto ? "상차완료한 업무일이 지나 이미 출차로 처리된 차량입니다." : "이미 출차한 차량입니다.");
+
+      const now = new Date();
+      const r = await tx.load.updateMany({
+        where: { id: load.id, status: "COMPLETED", departedAt: null },
+        data: { departedAt: now, departedBy: me.name, departUserId: me.id, version: { increment: 1 } },
+      });
+      if (!r.count) return fail("STATE", "이미 출차했거나 상차가 다시 열린 차량입니다. 화면을 새로 고치세요.");
+      await tx.loadHistory.create({ data: { loadId: load.id, action: "DEPART", revisionNo: load.revisionNo, actor: me.name, actorId: me.id } });
+
+      if (load.loadType === "ORDERED" && load.asnId) {
+        const asn = await tx.asn.findUniqueOrThrow({ where: { id: load.asnId } });
+        await tx.asn.update({ where: { id: asn.id }, data: { version: { increment: 1 }, updatedBy: me.name } });
+        await tx.asnHistory.create({ data: { asnId: asn.id, action: "LOAD_DEPART", version: asn.version + 1, actor: me.name, actorId: me.id } });
+      }
+      return ok(`출차했습니다 · ${load.vehicleNo}`, { departedAt: now.toISOString() });
     }),
   );
 }

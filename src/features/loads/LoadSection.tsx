@@ -74,9 +74,35 @@ export function LoadSection({ load }: { load: LoadView }) {
         <ViewSection
           items={[
             ["상차 상태", <Badge key="s" tone={meta.tone}>{meta.label}</Badge>],
-            [done ? "상차확인서" : "상차 실적", <span key="n" className="mono">{load.loadNo}</span>],
+            [
+              done ? "상차확인서" : "상차 실적",
+              <span key="n" className="mono">
+                {load.loadNo}
+                {load.revisionNo > 1 && <b> · {load.revisionNo}차</b>}
+              </span>,
+            ],
+            // 상차 재개 (정의서 v1.5 D20) — 이전 차수로 인쇄한 확인서는 무효
+            ...(load.lastReopen
+              ? ([
+                  [
+                    "상차 재개",
+                    `${fmtDateTime(load.lastReopen.at)} · ${load.lastReopen.by} · ${load.lastReopen.reasonName ?? ""}${load.lastReopen.reasonText ? ` — ${load.lastReopen.reasonText}` : ""}`,
+                  ],
+                ] as [string, React.ReactNode][])
+              : []),
             ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
             ["상차완료", done ? `${fmtDateTime(load.completedAt)} · ${load.completedBy}` : null],
+            // 출차 (2026-11-12 Sol) — PDA [출차], 안 누르면 상차완료한 업무일이 지나 자동 출차
+            [
+              "출차",
+              !done
+                ? null
+                : load.departure
+                  ? load.departure.auto
+                    ? `자동 출차(업무일 마감) · ${fmtDateTime(load.departure.at)}`
+                    : `${fmtDateTime(load.departure.at)} · ${load.departure.by ?? "-"}`
+                  : "출차 전",
+            ],
           ]}
         />
         <ViewSection

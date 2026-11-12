@@ -198,7 +198,19 @@ export function AsnStatusScreen({
           </>
         ),
     },
-    { key: "status", header: "상태", render: (r) => <AsnStatusBadge status={r.status} /> },
+    {
+      key: "status",
+      header: "상태",
+      render: (r) => (
+        <>
+          <AsnStatusBadge status={r.status} />
+          {/* 상차완료 차량의 출차 (2026-11-12 Sol) — 센터가 도착 예상을 볼 수 있게 */}
+          {r.status === "LOADED" && (
+            <CellSub>{r.departure ? (r.departure.auto ? "자동 출차" : `출차 ${fmtShortDateTime(r.departure.at)}`) : "출차 전"}</CellSub>
+          )}
+        </>
+      ),
+    },
   ];
 
   return (

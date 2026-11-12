@@ -9,7 +9,7 @@ import type { PlanActor } from "@/server/plans/service";
 import { centerChoices } from "@/server/plans/entry";
 import { can } from "@/domain/permissions";
 import type { ItemUnit } from "@/domain/master";
-import { LOADABLE_ASN, TODAY_ASN_COUNTED, hasLoadDiff, lineState } from "@/domain/load-rules";
+import { LOADABLE_ASN, TODAY_ASN_COUNTED, departureOf, hasLoadDiff, lineState } from "@/domain/load-rules";
 import { todayKst } from "@/lib/format";
 import type { LoadConfirmPrint, LoadView, PdaHistory, PdaHome, PdaLoadDashboard, PdaWorkingRow } from "@/features/loads/types";
 
@@ -43,7 +43,7 @@ export async function todayAsnItemIds(clientId: number, centerId: number, today:
 
 const viewInclude = {
   client: { select: { name: true } },
-  center: { select: { name: true } },
+  center: { select: { name: true, businessDayStart: true } },
   asn: {
     select: {
       id: true, asnNo: true, status: true, shipDate: true, driverName: true, driverTel: true,
@@ -53,11 +53,15 @@ const viewInclude = {
   },
   lines: { include: { item: { select: { code: true, clientCode: true, name: true, baseUnit: true, uoms: { select: { unit: true, qty: true } } } } } },
   inputs: { orderBy: { id: "desc" }, include: { item: { select: { code: true, clientCode: true, name: true } } } },
+  // 상차 재개 가능 여부(검수 시작 전) · 마지막 재개 (정의서 v1.5 D20)
+  rcvs: { where: { status: { in: ["WORKING", "CONFIRMED"] } }, select: { id: true } },
+  histories: { where: { action: "REOPEN" }, orderBy: { id: "desc" }, take: 1 },
 } satisfies Prisma.LoadInclude;
 
 type LoadRow = Prisma.LoadGetPayload<{ include: typeof viewInclude }>;
 
 function toView(l: LoadRow, meId: number | null): LoadView {
+  const departure = departureOf(l, l.center.businessDayStart);
   // 보여 줄 단위: ASN 지시 단위 → 처음 스캔한 단위 → 기준 단위
   const asnUnit = new Map<number, ItemUnit>();
   for (const a of l.asn?.lines ?? []) if (!asnUnit.has(a.itemId)) asnUnit.set(a.itemId, a.unit);
@@ -100,6 +104,14 @@ function toView(l: LoadRow, meId: number | null): LoadView {
     type: l.loadType,
     status: l.status,
     version: l.version,
+    revisionNo: l.revisionNo,
+    // 지시 상차만, 상차완료 + 출차 전 + 검수 전 (무지시는 재개 안 함, 출차 후 재개 안 함 — 2026-11-12 Sol)
+    canReopen: l.status === "COMPLETED" && l.loadType === "ORDERED" && !departure && l.rcvs.length === 0,
+    departure,
+    canDepart: l.status === "COMPLETED" && !departure,
+    lastReopen: l.histories[0]
+      ? { at: iso(l.histories[0].at), by: l.histories[0].actor, reasonName: l.histories[0].reasonName, reasonText: l.histories[0].reasonText }
+      : null,
     clientName: l.client.name,
     centerId: l.centerId,
     centerName: l.center.name,
@@ -194,8 +206,9 @@ export async function getLoadConfirmPrint(me: PlanActor, id: number): Promise<Lo
 
 /** PDA 목록 카드 한 줄에 필요한 관계 */
 const ROW_INCLUDE = {
-  center: { select: { name: true } },
+  center: { select: { name: true, businessDayStart: true } },
   loadOrder: { select: { orderNo: true } },
+  asn: { select: { shipDate: true } },
   inputs: { where: { canceledAt: null }, select: { workerId: true } },
 } satisfies Prisma.LoadInclude;
 
@@ -208,6 +221,10 @@ const pdaRow = (l: RowLoad): PdaWorkingRow => ({
   vehicleNo: l.vehicleNo,
   centerName: l.center.name,
   orderNo: l.loadOrder?.orderNo ?? null,
+  loadDate: ymd(l.loadDate),
+  shipDate: l.asn ? ymd(l.asn.shipDate) : null,
+  revisionNo: l.revisionNo,
+  departure: departureOf(l, l.center.businessDayStart),
   inputCount: l.inputs.length,
   workerCount: new Set(l.inputs.map((i) => i.workerId)).size,
   completedAt: l.completedAt ? iso(l.completedAt) : null,
@@ -244,26 +261,32 @@ export async function pdaLoadDashboard(me: PlanActor): Promise<PdaLoadDashboard 
   };
 }
 
-/** PDA 첫 화면 — 오늘(과 출고일 지난) 상차할 지시서, 작업 중인 차량, 오늘 상차완료한 차량 */
-export async function pdaHome(me: PlanActor): Promise<PdaHome | null> {
+/**
+ * PDA 상차등록 — 상차할 지시서, 작업 중인 차량, 상차완료한 차량 (2026-11-12 Sol: 상차내역을 합침)
+ * 날짜 규칙: 상차할 차량은 출고일 = 그 날짜(오늘이면 출고일 지난 차량도), 상차완료는 상차일 = 그 날짜,
+ * 작업 중인 차량은 날짜와 상관없이 모두 보인다 (날을 넘긴 작업 중 차량이 목록에서 빠지지 않게).
+ */
+export async function pdaHome(me: PlanActor, date?: string): Promise<PdaHome | null> {
   if (!canLoad(me)) return null;
   const today = todayKst();
+  const day = date && date <= today ? date : today;
   const clientId = me.clientId!;
   const [asns, loads, { centers, defaultCenterId }] = await Promise.all([
     db.asn.findMany({
-      where: { clientId, status: { in: [...LOADABLE_ASN] }, shipDate: { lte: asDate(today) } },
+      where: { clientId, status: { in: [...LOADABLE_ASN] }, shipDate: day === today ? { lte: asDate(today) } : asDate(day) },
       orderBy: [{ shipDate: "asc" }, { asnNo: "asc" }],
       include: { center: { select: { name: true } }, loadOrder: { select: { orderNo: true, status: true } }, load: { select: { id: true } }, _count: { select: { lines: true } } },
     }),
     db.load.findMany({
-      where: { clientId, OR: [{ status: "WORKING" }, { status: "COMPLETED", loadDate: asDate(today) }] },
-      orderBy: { id: "desc" },
+      where: { clientId, OR: [{ status: "WORKING" }, { status: "COMPLETED", loadDate: asDate(day) }] },
+      orderBy: [{ completedAt: "desc" }, { id: "desc" }],
       include: ROW_INCLUDE,
     }),
     centerChoices(me),
   ]);
   return {
     today,
+    date: day,
     orders: asns
       .filter((a) => a.loadOrder && a.loadOrder.status === "ISSUED")
       .map((a) => ({
@@ -279,7 +302,11 @@ export async function pdaHome(me: PlanActor): Promise<PdaHome | null> {
         loadId: a.load?.id ?? null,
       })),
     working: loads.filter((l) => l.status === "WORKING").map(pdaRow),
-    done: loads.filter((l) => l.status === "COMPLETED").map(pdaRow),
+    // 출차 전 차량을 위로 (2026-11-12 Sol: 출차할 차량을 목록에서 찾기 쉽게), 그 안에서는 최근 완료 순
+    done: loads
+      .filter((l) => l.status === "COMPLETED")
+      .map(pdaRow)
+      .sort((a, b) => Number(!!a.departure) - Number(!!b.departure)),
     centers,
     defaultCenterId,
   };
@@ -292,7 +319,7 @@ export async function listUnorderedLoads(scope: Prisma.LoadWhereInput) {
     orderBy: { id: "asc" },
     include: {
       client: { select: { name: true } },
-      center: { select: { name: true } },
+      center: { select: { name: true, businessDayStart: true } },
       lines: { select: { loadBaseQty: true, item: { select: { code: true, name: true, baseUnit: true } } } },
       rcvs: { where: { status: "CONFIRMED" }, select: { confirmedAt: true } },
     },

@@ -254,3 +254,9 @@
     overflow-x: auto;
   }
 }
+
+/* 상차확인서 차수 — 상차 재개 후 재발행 (정의서 v1.5 D20) */
+.rev {
+  font-size: 0.7em;
+  font-weight: 700;
+}

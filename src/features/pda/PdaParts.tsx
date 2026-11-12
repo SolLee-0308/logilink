@@ -84,7 +84,10 @@ export interface Step {
   time?: string | null;
 }
 
-/** 진행 단계 — 지난 단계는 검정 점+체크, 남은 단계는 회색 점. 선은 마지막으로 지난 단계까지 검정 */
+/**
+ * 진행 단계 — 지난 단계는 검정 점+체크, 남은 단계는 회색 점. 선은 마지막으로 지난 단계까지 검정
+ * compact(목록 카드): 체크 없이 작은 점만 (2026-11-12 Sol)
+ */
 export function Steps({ steps, compact = false }: { steps: Step[]; compact?: boolean }) {
   const last = steps.reduce((n, s, i) => (s.done ? i : n), -1);
   const pct = steps.length > 1 ? (Math.max(last, 0) / (steps.length - 1)) * 100 : 0;
@@ -96,7 +99,7 @@ export function Steps({ steps, compact = false }: { steps: Step[]; compact?: boo
       <ol className={styles.stepList}>
         {steps.map((s) => (
           <li key={s.label} className={s.done ? styles.stepDone : undefined}>
-            <span className={styles.stepDot}>{s.done && <Icon name="check" size={compact ? 11 : 13} stroke={2.6} />}</span>
+            <span className={styles.stepDot}>{s.done && !compact && <Icon name="check" size={13} stroke={2.6} />}</span>
             <span className={styles.stepLabel}>{s.label}</span>
             {s.time ? <span className={styles.stepTime}>{s.time}</span> : null}
           </li>
