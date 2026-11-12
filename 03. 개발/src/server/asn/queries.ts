@@ -13,6 +13,7 @@ import type { ItemUnit } from "@/domain/master";
 import { todayKst } from "@/lib/format";
 import { getLoadOfAsn, listUnorderedLoads } from "@/server/loads/queries";
 import { getRcvOfLoad } from "@/server/rcv/queries";
+import { departureOf } from "@/domain/load-rules";
 import type { AsnDetail, AsnOptions, AsnRow, AsnTab, DistPlan, LoadOrderPrint } from "@/features/asn/types";
 
 const iso = (d: Date) => d.toISOString();
@@ -57,6 +58,7 @@ async function unorderedRows(scope: Prisma.LoadWhereInput): Promise<AsnRow[]> {
     asnNo: "",
     loadOrderNo: null,
     loadNo: l.loadNo,
+    departure: departureOf(l, l.center.businessDayStart),
     tab: received ? ("done" as const) : ("loading" as const),
     status: received ? ("RECEIVED" as const) : l.status === "WORKING" ? ("LOADING" as const) : ("LOADED" as const),
     centerId: l.centerId,
@@ -114,9 +116,9 @@ async function listAsnRows(where: Prisma.AsnWhereInput, base: string): Promise<A
     orderBy: [{ shipDate: "asc" }, { asnNo: "asc" }],
     include: {
       client: { select: { name: true } },
-      center: { select: { name: true } },
+      center: { select: { name: true, businessDayStart: true } },
       loadOrder: { select: { orderNo: true } },
-      load: { select: { loadNo: true } },
+      load: { select: { loadNo: true, status: true, completedAt: true, departedAt: true, departedBy: true } },
       lines: { select: { unit: true, qty: true, plan: { select: { planNo: true } }, item: { select: { code: true, name: true } } } },
     },
   });
@@ -130,6 +132,7 @@ async function listAsnRows(where: Prisma.AsnWhereInput, base: string): Promise<A
     asnNo: a.asnNo,
     loadOrderNo: a.loadOrder?.orderNo ?? null,
     loadNo: a.load?.loadNo ?? null,
+    departure: a.load ? departureOf(a.load, a.center.businessDayStart) : null,
     tab: tabOf(a.status),
     status: a.status,
     centerId: a.centerId,

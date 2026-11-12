@@ -7,9 +7,8 @@ import { StatusBadge } from "@/components/ui/Badges";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { weeklyOffLabel } from "@/domain/business-day";
 import { fmtShortDateTime } from "@/lib/format";
-import { FlowCard, HeadActions, More, Tile, centerCol } from "./DashboardParts";
+import { CenterRules, FlowCard, HeadActions, More, Tile, WatchGrid, centerCol } from "./DashboardParts";
 import type { DashAsnRow, DashCenter, DashPlanRow, DashRcvRow, TplDashboard } from "./types";
 import styles from "./Dashboard.module.css";
 
@@ -45,62 +44,80 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
         <FlowCard flow={flow} description="오늘 업무일 기준 — 입고예정은 입고예정일, ASN은 출고일, 검수는 확정 시각으로 셉니다. 취소 건은 빼고 셉니다." />
 
         {/* ③ 주의할 건 */}
-        <div className={styles.watch}>
-          <Card
-            title={<span id="dash-expire">기한경과 취소 대상</span>}
-            count={watch.expireCount}
-            description="승인 전(승인대기·반려)이고 유예 영업일이 지난 건입니다. 오늘 일마감 때 취소됩니다. 살릴 건은 마감 전에 승인하세요."
-          >
-            <DataTable
-              compact
-              caption="기한경과 취소 대상"
-              columns={expireColumns(multi)}
-              rows={watch.expire}
-              rowKey={(r) => String(r.id)}
-              onActivate={(k) => router.push(`/plans/approval/${k}`)}
-              empty="오늘 취소될 건이 없습니다."
-            />
-            <More shown={watch.expire.length} total={watch.expireCount} href="/plans/approval" />
-          </Card>
-
-          <Card title="출고일 지난 상차 대기" count={watch.overdueAsnCount} description="출고일이 지났는데 상차를 시작하지 않은 ASN 차량입니다. 화주사에 상황을 확인하세요.">
-            <DataTable
-              compact
-              caption="출고일 지난 상차 대기"
-              columns={asnColumns(multi)}
-              rows={watch.overdueAsn}
-              rowKey={(r) => String(r.id)}
-              onActivate={(k) => router.push(`/plans/asn-status/${k}`)}
-              empty="없습니다."
-            />
-            <More shown={watch.overdueAsn.length} total={watch.overdueAsnCount} href="/plans/asn-status?tab=wait" />
-          </Card>
-
-          <Card title="오늘 검수 차이" count={flow.rcvIssueVehicles} description="부족·초과·훼손·품목 불일치가 있었던 검수 확정 차량입니다.">
-            <DataTable
-              compact
-              caption="오늘 검수 차이"
-              columns={rcvColumns(multi)}
-              rows={watch.issueRcv}
-              rowKey={(r) => r.href}
-              onActivate={(k) => router.push(k)}
-              empty="차이 난 차량이 없습니다."
-            />
-          </Card>
-
-          <Card title="오래된 미종결 입고예정" count={watch.unclosedOverdue} description={`승인·부분입고 상태로 입고예정일에서 ${watch.alertDays}일 이상 지난 건입니다. 입고는 막지 않습니다.`}>
-            <p className={styles.plain}>
-              {watch.unclosedOverdue > 0 ? (
+        <WatchGrid
+          items={[
+            {
+              key: "expire",
+              anchorId: "dash-expire",
+              title: "기한경과 취소 대상",
+              count: watch.expireCount,
+              description: "승인 전(승인대기·반려)이고 유예 영업일이 지난 건입니다. 오늘 일마감 때 취소됩니다. 살릴 건은 마감 전에 승인하세요.",
+              body: (
                 <>
+                  <DataTable
+                    compact
+                    caption="기한경과 취소 대상"
+                    columns={expireColumns(multi)}
+                    rows={watch.expire}
+                    rowKey={(r) => String(r.id)}
+                    onActivate={(k) => router.push(`/plans/approval/${k}`)}
+                    empty="오늘 취소될 건이 없습니다."
+                  />
+                  <More shown={watch.expire.length} total={watch.expireCount} href="/plans/approval" />
+                </>
+              ),
+            },
+            {
+              key: "overdueAsn",
+              title: "출고일 지난 상차 대기",
+              count: watch.overdueAsnCount,
+              description: "출고일이 지났는데 상차를 시작하지 않은 ASN 차량입니다. 화주사에 상황을 확인하세요.",
+              body: (
+                <>
+                  <DataTable
+                    compact
+                    caption="출고일 지난 상차 대기"
+                    columns={asnColumns(multi)}
+                    rows={watch.overdueAsn}
+                    rowKey={(r) => String(r.id)}
+                    onActivate={(k) => router.push(`/plans/asn-status/${k}`)}
+                    empty="없습니다."
+                  />
+                  <More shown={watch.overdueAsn.length} total={watch.overdueAsnCount} href="/plans/asn-status?tab=wait" />
+                </>
+              ),
+            },
+            {
+              key: "issueRcv",
+              title: "오늘 검수 차이",
+              count: flow.rcvIssueVehicles,
+              description: "부족·초과·훼손·품목 불일치가 있었던 검수 확정 차량입니다.",
+              body: (
+                <DataTable
+                  compact
+                  caption="오늘 검수 차이"
+                  columns={rcvColumns(multi)}
+                  rows={watch.issueRcv}
+                  rowKey={(r) => r.href}
+                  onActivate={(k) => router.push(k)}
+                  empty="차이 난 차량이 없습니다."
+                />
+              ),
+            },
+            {
+              key: "unclosed",
+              title: "오래된 미종결 입고예정",
+              count: watch.unclosedOverdue,
+              description: `승인·부분입고 상태로 입고예정일에서 ${watch.alertDays}일 이상 지난 건입니다. 입고는 막지 않습니다.`,
+              body: (
+                <p className={styles.plain}>
                   잔량이 남은 채로 오래된 건이 <b className="mono">{watch.unclosedOverdue}</b>건 있습니다. 더 들어올 물량이 없으면 잔량 종결 대상입니다.{" "}
                   <Link href="/plans/inquiry?from=-&to=-">입고예정 조회에서 보기 →</Link>
-                </>
-              ) : (
-                "기준을 넘긴 미종결 건이 없습니다."
-              )}
-            </p>
-          </Card>
-        </div>
+                </p>
+              ),
+            },
+          ]}
+        />
 
         {/* ④ 일마감 */}
         <Card
@@ -113,6 +130,7 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
           }
         >
           <DataTable compact caption="센터별 일마감 상태" columns={closeColumns} rows={centers} rowKey={(r) => String(r.id)} empty="센터가 없습니다." />
+          <CenterRules centers={centers} />
         </Card>
       </div>
     </>
@@ -146,7 +164,6 @@ const rcvColumns = (multi: boolean): Column<DashRcvRow>[] => [
 const closeColumns: Column<DashCenter>[] = [
   { key: "name", header: "센터", render: (r) => r.name },
   { key: "date", header: "오늘 업무일", render: (r) => <span className="mono">{r.businessDate}</span> },
-  { key: "start", header: "업무일 시작", render: (r) => <span className="mono">{r.businessDayStart}</span> },
   { key: "close", header: "일마감 예정", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
   { key: "rcv", header: "오늘 확정 차량", align: "right", render: (r) => <span className="mono">{r.confirmedVehicles}대</span> },
   {
@@ -156,6 +173,4 @@ const closeColumns: Column<DashCenter>[] = [
     render: (r) => <span className={`mono ${r.expireTargets > 0 ? styles.dangerText : ""}`}>{r.expireTargets}건</span>,
   },
   { key: "grace", header: "유예 중", align: "right", render: (r) => <span className="mono">{r.expireGrace}건</span> },
-  { key: "rule", header: "유예 기준", render: (r) => `입고예정일 + ${r.expireGraceDays}영업일` },
-  { key: "off", header: "정기 휴무", render: (r) => weeklyOffLabel(r.weeklyOffDays) },
 ];

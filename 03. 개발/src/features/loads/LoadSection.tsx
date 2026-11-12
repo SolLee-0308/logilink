@@ -92,6 +92,17 @@ export function LoadSection({ load }: { load: LoadView }) {
               : []),
             ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
             ["상차완료", done ? `${fmtDateTime(load.completedAt)} · ${load.completedBy}` : null],
+            // 출차 (2026-11-12 Sol) — PDA [출차], 안 누르면 상차완료한 업무일이 지나 자동 출차
+            [
+              "출차",
+              !done
+                ? null
+                : load.departure
+                  ? load.departure.auto
+                    ? `자동 출차(업무일 마감) · ${fmtDateTime(load.departure.at)}`
+                    : `${fmtDateTime(load.departure.at)} · ${load.departure.by ?? "-"}`
+                  : "출차 전",
+            ],
           ]}
         />
         <ViewSection

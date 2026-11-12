@@ -52,3 +52,8 @@ export async function reloadLoad(id: number): Promise<ActionResult<LoadView>> {
   const v = await getPdaLoad(await getPdaActor(), id);
   return v ? { ok: true, message: "", data: v } : fail("NOT_FOUND", "상차 실적을 찾을 수 없습니다.");
 }
+
+/** 출차 (2026-11-12 Sol) — 상차완료 화면의 [출차] */
+export async function departLoad(input: { loadId: number }) {
+  return refresh(await svc.departLoad(await getPdaActor(), input));
+}

@@ -5,6 +5,7 @@
  * 2026-11-05 Sol 결정: 지시수량 초과는 입력할 때 경고·확인만 받고, 사유는 상차완료 때 차이 사유로 한 번만 받는다.
  */
 import type { ItemUnit } from "./master";
+import { businessDateOf, businessDayRange } from "./business-day";
 import type { StatusTone } from "./plan-status";
 
 export const LOAD_STATUSES = ["WORKING", "COMPLETED"] as const;
@@ -86,4 +87,33 @@ export const normalizeScan = (s: string) => s.replace(/[\r\n\t]/g, "").trim();
 export const normalizeDocNo = (s: string) => normalizeScan(s).replace(/\s+/g, "").toUpperCase();
 
 export const LOAD_CONFLICT_MSG = "그사이 다른 작업자가 입력했습니다. 최신 합계를 다시 확인한 뒤 상차완료하세요.";
-export const LOAD_DONE_MSG = "이미 상차완료된 차량입니다. 상차완료 뒤에는 입력할 수 없습니다. 차이는 입고검수에서 처리합니다.";
+export const LOAD_DONE_MSG = "이미 상차완료된 차량입니다. 더 실어야 하면 출차·입고검수 전에 [상차 재개]를 누르세요(지시 상차만).";
+
+/* ───────── 출차 (2026-11-12 Sol) ───────── */
+
+/**
+ * 출차 — PDA 상차담당이 상차완료 화면에서 [출차]를 누른다. 출차 후에는 상차 재개 불가(되돌리기 없음).
+ * 누르지 않았으면 상차완료한 업무일(도착 센터의 업무일 시작 시각 기준)이 지나면 출차로 본다 — 자동 출차.
+ * 자동 출차는 DB에 쓰지 않고 볼 때마다 판단한다(배치 없음). 시각은 그 업무일이 끝난 시각으로 보여 준다.
+ */
+export interface Departure {
+  /** 출차 시각 — 자동 출차면 완료한 업무일이 끝난 시각 */
+  at: string;
+  /** 처리자 — 자동 출차면 null */
+  by: string | null;
+  auto: boolean;
+}
+
+export function departureOf(
+  l: { status: string; completedAt: Date | null; departedAt: Date | null; departedBy: string | null },
+  businessDayStart: string,
+  now: Date = new Date(),
+): Departure | null {
+  if (l.status !== "COMPLETED" || !l.completedAt) return null;
+  if (l.departedAt) return { at: l.departedAt.toISOString(), by: l.departedBy, auto: false };
+  const doneDay = businessDateOf(l.completedAt, businessDayStart);
+  if (doneDay < businessDateOf(now, businessDayStart)) return { at: businessDayRange(doneDay, businessDayStart).lt.toISOString(), by: null, auto: true };
+  return null;
+}
+
+export const DEPART_CONFIRM_MSG = "출차하면 상차를 다시 열 수 없습니다. 차량 문을 닫고 상차확인서를 기사에게 넘긴 뒤 누르세요.";

@@ -4,6 +4,7 @@ import type { AsnAction, AsnStatus } from "@/domain/asn-rules";
 import type { PlanStatus } from "@/domain/plan-status";
 import type { CenterOption } from "@/features/plans/types";
 import type { LoadView } from "@/features/loads/types";
+import type { Departure } from "@/domain/load-rules";
 
 /** ASN 목록 탭 — 상차 대기(등록) / 상차 진행(상차중·상차완료) / 최근 입고완료 / 최근 취소 */
 export type AsnTab = "wait" | "loading" | "done" | "canceled";
@@ -26,6 +27,8 @@ export interface AsnRow {
   loadOrderNo: string | null;
   /** 상차 실적·상차확인서 번호 (상차를 시작한 뒤) */
   loadNo: string | null;
+  /** 상차완료 차량의 출차 — 출차 전이면 null (2026-11-12 Sol) */
+  departure: Departure | null;
   tab: AsnTab;
   status: AsnStatus;
   centerId: number;
