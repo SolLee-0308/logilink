@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogiLink 가상 센터 — 정지 화면 시안 v0.1</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+/* 근거: 03. 개발/src/styles/tokens.css (CI v1.0) · 정의서 v0.2 9장 */
+:root{
+  --violet-50:#efedfe;--violet-100:#e2defd;--violet-300:#a99ff8;--violet-500:#7c6cf2;--violet-600:#6c5ce7;--violet-700:#5b4bd6;
+  --ink:#161616;--bg:#ffffff;--surface:#fafafb;--line:#ececef;--line-2:#e2e2e7;--card-line:#d8d8de;--card-head:#f6f6f8;
+  --fg:#18181b;--muted:#6b6b73;--soft:#9a9aa2;--danger:#d92d20;--danger-soft:#fef0ef;--info-text:#3f3399;
+  --st-ok-bg:#dff1ff;--st-ok-fg:#075e9e;--st-part-bg:#ffe9d6;--st-part-fg:#a6430a;--st-done-bg:#e1f5e8;--st-done-fg:#1c7343;
+  --alloc-1:#3b6fe0;--alloc-2:#0f6f86;
+  --t-amb:#8a8a90;--t-chill:#2f86d1;--t-frz:#3f55c9;
+  --stage:#f1f0f8;
+  --f-display:"Sora","Pretendard Variable",Pretendard,"Noto Sans CJK KR",system-ui,sans-serif;
+  --f-body:"Pretendard Variable",Pretendard,"Noto Sans CJK KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:var(--f-body);color:var(--fg);background:var(--surface);font-size:13px;-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-rows:56px 1fr;height:100vh;min-height:620px}
+/* 상단 바 */
+.top{display:flex;align-items:center;gap:16px;padding:0 20px;background:var(--bg);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--f-display);font-weight:700;font-size:16px;letter-spacing:-.01em;white-space:nowrap}
+.brand i{width:22px;height:22px;border-radius:7px;background:var(--violet-500);display:inline-block;position:relative}
+.brand i:after{content:"";position:absolute;inset:6px;border:2px solid #fff;border-radius:3px;border-right-color:transparent}
+.brand small{font-family:var(--f-body);font-weight:500;color:var(--muted);font-size:13px}
+.scn{border:1px solid var(--card-line);border-radius:10px;padding:6px 10px;font-size:12.5px;white-space:nowrap}
+.scn b{font-weight:600}
+.steps{display:flex;gap:2px;margin-left:4px}
+.steps span{font-size:12px;color:var(--soft);padding:6px 9px;border-bottom:2px solid transparent;white-space:nowrap}
+.steps span em{font-style:normal;font-family:var(--f-mono);margin-right:4px}
+.steps span.done{color:var(--muted)}
+.steps span.on{color:var(--fg);font-weight:700;border-bottom-color:var(--violet-600)}
+.ctl{margin-left:auto;display:flex;align-items:center;gap:6px}
+.ctl button{font:inherit;font-size:12px;border:1px solid var(--card-line);background:var(--bg);border-radius:10px;padding:6px 10px;color:var(--muted)}
+.ctl button.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+.clock{font-family:var(--f-mono);font-size:13px;margin-left:6px}
+.ex{display:inline-block;border:1px dashed var(--soft);border-radius:6px;padding:1px 6px;font-size:11px;color:var(--muted);white-space:nowrap}
+/* 본문 */
+.main{display:grid;grid-template-columns:1fr 352px;min-height:0}
+.stage{position:relative;display:grid;grid-template-rows:1fr auto auto;min-width:0;background:var(--stage)}
+.mapwrap{position:relative;min-height:0}
+#map{position:absolute;inset:0;width:100%;height:100%}
+.cap{display:flex;align-items:center;gap:12px;margin:0 16px 10px;padding:10px 14px;background:var(--bg);border:1px solid var(--card-line);border-radius:12px}
+.cap .act{font-family:var(--f-mono);font-size:11.5px;color:var(--violet-700);background:var(--violet-50);border-radius:6px;padding:3px 7px;white-space:nowrap}
+.cap p{margin:0;font-size:13px;line-height:1.5;flex:1}
+.cap .rules{display:flex;gap:4px}
+.cap .rules span{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line-2);border-radius:6px;padding:2px 6px;color:var(--muted);white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;padding:0 18px 12px;font-size:11.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:10px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.08)}
+.ln{width:20px;height:0;border-top:2px dashed var(--violet-500);display:inline-block}
+/* 오른쪽 패널 */
+.side{background:var(--bg);border-left:1px solid var(--line);display:grid;grid-template-rows:auto 1fr;min-height:0}
+.board{padding:16px 16px 6px}
+.hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+.hd h2{margin:0;font-size:14px;font-weight:700}
+.hd small{color:var(--soft);font-size:11.5px}
+.ip{border:1px solid var(--card-line);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.ip header{display:flex;align-items:center;gap:8px;background:var(--card-head);padding:8px 12px;border-bottom:1px solid var(--line)}
+.ip header b{font-family:var(--f-mono);font-size:12.5px}
+.ip header .ord{font-size:11px;color:var(--soft);margin-left:auto}
+.bdg{font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px}
+.bdg.ok{background:var(--st-ok-bg);color:var(--st-ok-fg)}
+.bdg.part{background:var(--st-part-bg);color:var(--st-part-fg)}
+.rows{padding:6px 12px 8px}
+.row{display:grid;grid-template-columns:18px 34px 1fr 62px;align-items:center;gap:8px;height:22px}
+.row .it{font-family:var(--f-mono);font-weight:600;font-size:12px}
+.tb{font-size:10px;border-radius:5px;padding:1px 0;text-align:center}
+.tb.a{background:#f1f1f3;color:#5c5c63}.tb.c{background:#e3f0fb;color:#1f6fb0}.tb.f{background:#e5e8fb;color:#3445b0}
+.bar{height:6px;background:#efeff2;border-radius:99px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.bar .s1{background:var(--alloc-1)}.bar .s2{background:var(--alloc-2)}
+.row .q{font-family:var(--f-mono);font-size:11.5px;text-align:right;color:var(--muted)}
+.row .q b{color:var(--fg);font-weight:600}
+.akey{display:flex;gap:12px;font-size:11px;color:var(--muted);padding:0 2px 4px}
+.akey span{display:inline-flex;align-items:center;gap:5px}
+.log{border-top:1px solid var(--line);padding:12px 16px;overflow:auto;min-height:0}
+.log ol{list-style:none;margin:0;padding:0}
+.log li{display:grid;grid-template-columns:40px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f2;font-size:12px;line-height:1.45}
+.log li:first-child{background:var(--violet-50);margin:0 -8px;padding:7px 8px;border-radius:8px;border-bottom:0}
+.log time{font-family:var(--f-mono);color:var(--soft);font-size:11.5px}
+.log .r{font-family:var(--f-mono);font-size:10.5px;color:var(--soft);margin-left:4px}
+/* 지도 라벨 (SVG) */
+.zl rect{fill:#fff;stroke:var(--card-line)}
+.zl text{font-family:var(--f-body);font-size:14px;font-weight:600;fill:var(--fg)}
+.zl .sub{font-weight:500;fill:var(--muted);font-size:12.5px}
+.zl.fut rect{fill:#f4f4f6;stroke-dasharray:4 3;stroke:#b9b9c2}
+.zl.fut text{fill:#7b7b84}
+.zl.cold rect{stroke:#9cc4ea}
+.zl.ret rect{stroke:#f0b4ae}
+.zl.dim text{fill:var(--muted);font-weight:500}
+.vchip rect{fill:var(--ink)}
+.vchip text{font-family:var(--f-mono);font-size:13px;fill:#fff;font-weight:600}
+.vchip .st{font-family:var(--f-body);font-weight:500;fill:#c9c9cf}
+.vchip.on rect{fill:var(--violet-600)}
+.bub rect{fill:#fff;stroke:var(--card-line)}
+.bub text{font-size:13px;fill:var(--fg);font-family:var(--f-body)}
+.bub.ai rect{fill:var(--violet-50);stroke:var(--violet-300);stroke-dasharray:4 3}
+.bub.ai text{fill:var(--info-text)}
+@media (max-width:1366px){.main{grid-template-columns:1fr 316px}.steps span{padding:6px 6px}}
+@media (max-width:1180px){.steps span:not(.on){display:none}}
+@media (max-height:760px){.legend{display:none}.cap{margin-bottom:12px;padding:8px 12px}.board{padding-top:12px}.row{height:20px}}
+@media (max-width:760px){
+  .app{height:auto}.main{grid-template-columns:1fr}.mapwrap{height:420px}.side{border-left:0;border-top:1px solid var(--line)}
+  .scn,.ctl button:not(.pri){display:none}.legend{display:none}.cap{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand"><i></i>LogiLink <small>가상 센터 · 입고</small></div>
+    <div class="scn">시나리오 1 · <b>현장 변동이 있었던 날</b></div>
+    <nav class="steps" aria-label="막">
+      <span class="done"><em>1</em>입고예정</span><span class="done"><em>2</em>ASN</span><span class="done"><em>3</em>상차</span><span class="done"><em>4</em>이동</span><span class="on"><em>5</em>검수·배분</span><span><em>6</em>마감</span>
+    </nav>
+    <div class="ctl">
+      <button aria-label="이전">◀</button><button class="pri">▶ 재생</button><button aria-label="다음">▶|</button><button>1×</button>
+      <span class="clock">14:20</span><span class="ex">예시 시점</span>
+    </div>
+  </header>
+  <div class="main">
+    <section class="stage">
+      <div class="mapwrap"><svg id="map" role="img" aria-label="화주사 출고장부터 센터 도크·전실·창고까지의 아이소메트릭 배치도"></svg></div>
+      <div class="cap">
+        <span class="act">E11 진행 중</span>
+        <p><b>ASN-011</b>은 상온 A와 냉장 C가 섞인 차량입니다. 검수는 차량 1건으로 두고, A는 상온 검수 구역에서, C는 전실에서 검수한 뒤 한 번에 확정합니다.</p>
+        <div class="rules"><span>⑥</span><span>D15</span><span>S11</span></div>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:#f7f7fa"></i>상온</span>
+        <span><i class="sw" style="background:#e4f0fb"></i>냉장 · 전실</span>
+        <span><i class="sw" style="background:#d9e3f8"></i>냉동</span>
+        <span><i class="sw" style="background:#fbeceb"></i>반송</span>
+        <span><i class="sw" style="background:#efeff2;border-style:dashed"></i>추후 설계 (적치·출고)</span>
+        <span><i class="ln"></i>정상 동선</span>
+        <span><i class="ln" style="border-color:#e0786e"></i>예외(반송) 동선</span>
+        <span><span class="ex">예시값</span> 배치·도크 수·시각</span>
+      </div>
+    </section>
+    <aside class="side">
+      <div class="board">
+        <div class="hd"><h2>입고예정 보드</h2><small>논리 레이어 · 승인수량 대비 배분</small></div>
+        <div class="akey"><span><i class="sw" style="background:var(--alloc-1);border:0"></i>1단계 원 ASN</span><span><i class="sw" style="background:var(--alloc-2);border:0"></i>2단계 미종결 승인 순</span></div>
+        <div id="board"></div>
+      </div>
+      <div class="log">
+        <div class="hd"><h2>이벤트 로그</h2><small>시각은 예시값</small></div>
+        <ol id="log"></ol>
+      </div>
+    </aside>
+  </div>
+</div>
+<script>
+/* =====================================================================
+ * 정지 화면 시안 v0.1 — 정의서 v0.2 기준 (2026-11-11)
+ * 공간 배치·도크 수·시각은 예시값. 장면은 E11 진행 중 시점.
+ * ===================================================================== */
+const NS='http://www.w3.org/2000/svg';
+const TW=46, TH=23, ZH=27;
+const iso=(x,y,z=0)=>[(x-y)*TW/2,(x+y)*TH/2-z*ZH];
+const svg=document.getElementById('map');
+const L={}; ['slab','floor','flow','obj','label'].forEach(k=>{L[k]=el('g',{});svg.appendChild(L[k]);});
+function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e;}
+const pts=a=>a.map(p=>iso(...p).join(',')).join(' ');
+function poly(p,a,parent){return el('polygon',Object.assign({points:pts(p)},a),parent);}
+
+/* 색 */
+const C={
+  white:{t:'#ffffff',l:'#ecebf3',r:'#dedcea'},
+  box:{t:'#ffffff',l:'#eeedf4',r:'#e1dfeb'},
+  vio:{t:'#b7aefa',l:'#7c6cf2',r:'#6c5ce7'},
+  vioL:{t:'#e2defd',l:'#c9c2fb',r:'#b7aefa'},
+  vioD:{t:'#7c6cf2',l:'#5b4bd6',r:'#4d3fc0'},
+  wall:{t:'#ffffff',l:'#f1f0f6',r:'#e6e4ef'},
+  slab:{t:'#fdfdff',l:'#e3e1ee',r:'#d3d0e3'},
+  wood:{t:'#efe8db',l:'#dcd2bf',r:'#cfc4ae'},
+  glass:{t:'rgba(205,228,250,.9)',l:'rgba(186,216,246,.55)',r:'rgba(170,205,240,.55)'},
+  ink:{t:'#3a3a40',l:'#26262b',r:'#1c1c20'},
+  chill:{t:'#cfe5f8',l:'#a9cdef',r:'#94bfe8'},
+  frz:{t:'#c9d3f6',l:'#a3b2ee',r:'#8e9fe6'},
+};
+function box(x,y,z,w,d,h,c,parent,op){
+  const g=el('g',op?{opacity:op}:{},parent||L.obj);
+  poly([[x,y+d,z+h],[x+w,y+d,z+h],[x+w,y+d,z],[x,y+d,z]],{fill:c.l},g);
+  poly([[x+w,y,z+h],[x+w,y+d,z+h],[x+w,y+d,z],[x+w,y,z]],{fill:c.r},g);
+  poly([[x,y,z+h],[x+w,y,z+h],[x+w,y+d,z+h],[x,y+d,z+h]],{fill:c.t},g);
+  return g;
+}
+function floor(x,y,w,d,fill,a={}){return poly([[x,y,0],[x+w,y,0],[x+w,y+d,0],[x,y+d,0]],Object.assign({fill},a),L.floor);}
+
+/* 그리기 대기열 — 앞뒤 순서는 (x+y) 기준 */
+const Q=[];
+const add=(k,fn)=>Q.push({k,fn});
+
+/* ---------- 섬(바닥판) ---------- */
+function slab(x,y,w,d,t=.45){box(x,y,-t,w,d,t,C.slab,L.slab);}
+slab(-0.5,3.5,8,10);              // 화주사
+slab(12,-1,27.8,17.3);            // 센터
+// 운송 도로
+poly([[7.5,10.8,0],[12,10.8,0],[12,14.4,0],[7.5,14.4,0]],{fill:'#e8e7ef'},L.slab);
+for(let x=7.7;x<11.9;x+=1.1) poly([[x,12.55,0.01],[x+.55,12.55,0.01],[x+.55,12.65,0.01],[x,12.65,0.01]],{fill:'#ffffff'},L.slab);
+
+/* ---------- 바닥 구역 ---------- */
+floor(0,4,3.8,4.2,'#f3f1fe');                // Z1 화주사 사무실
+floor(0,8.6,7,4.4,'#f7f7fa');                // Z2 출고장
+floor(12.5,0,5.6,8.2,'#f3f1fe');             // Z7 3PL 사무실
+floor(12.5,10.4,26.8,5.6,'#efeff3');         // 마당
+floor(18.5,0,8,6,'#f2f2f4');                 // S1 상온 창고 (추후)
+floor(21,6,5.5,4,'#f7f7fa');                 // C3 상온 검수
+floor(18.5,6,2.5,4,'#fbeceb');               // C5 반송
+floor(26.5,5,6,5,'#e4f0fb');                 // C4 전실
+floor(26.5,0,9.8,5,'#e6eef8');               // S2 냉장 창고 (추후)
+floor(32.5,5,3.8,5,'#dde5f7');               // S3 냉동 창고 (추후)
+floor(36.3,0,3,10,'#efeff2');                // S4 출고 공간 (추후)
+(function hatch(){
+  const pat=el('pattern',{id:'fut',width:8,height:8,patternUnits:'userSpaceOnUse',patternTransform:'rotate(30)'},svg);
+  el('line',{x1:0,y1:0,x2:0,y2:8,stroke:'#cfcfd8','stroke-width':1.2},pat);
+  [[18.5,0,8,6],[26.5,0,9.8,5],[32.5,5,3.8,5],[36.3,0,3,10]].forEach(r=>floor(...r,'url(#fut)',{opacity:.6}));
+})();
+// 입고 완료 물량 패드 (C6)
+floor(23.5,6.1,2.6,1.1,'#ffffff',{stroke:'#a99ff8','stroke-dasharray':'4 3'});
+floor(27.5,5.1,2.2,1,'#ffffff',{stroke:'#a99ff8','stroke-dasharray':'4 3'});
+floor(31.3,7,1.1,2,'#ffffff',{stroke:'#a99ff8','stroke-dasharray':'4 3'});
+const DOCKS=[{id:'D1',x:21.5},{id:'D2',x:24.1},{id:'D3',x:27.6},{id:'D4',x:30.2}];
+DOCKS.forEach(d=>floor(d.x,9.1,1.6,.9,'#e2defd'));
+DOCKS.forEach(d=>poly([[d.x-.1,10.5,0],[d.x+1.7,10.5,0],[d.x+1.7,14.4,0],[d.x-.1,14.4,0]],{fill:'none',stroke:'#c9c8d4','stroke-width':1,'stroke-dasharray':'5 4'},L.floor));
+floor(37.1,9.1,1.4,.9,'#ececf0');
+
+/* ---------- 동선 (F4~F7) ---------- */
+function flow(path,color,dash='7 6'){
+  el('polyline',{points:pts(path.map(p=>[p[0],p[1],0.02])),fill:'none',stroke:color,'stroke-width':2.4,'stroke-dasharray':dash,'stroke-linecap':'round','stroke-linejoin':'round',opacity:.85},L.flow);
+  const a=path[path.length-2],b=path[path.length-1];
+  const [x1,y1]=iso(a[0],a[1]),[x2,y2]=iso(b[0],b[1]);const ang=Math.atan2(y2-y1,x2-x1);
+  el('path',{d:`M0,0 L-9,-5 L-9,5 Z`,fill:color,transform:`translate(${x2},${y2}) rotate(${ang*180/Math.PI})`},L.flow);
+}
+flow([[6.8,12.6],[17,12.6],[20.4,12.6]],'#7c6cf2');                 // F4
+flow([[22.3,9.6],[22.3,8.2],[24.7,8.2],[24.7,7.4]],'#7c6cf2');       // F5 상온
+flow([[28.9,9.6],[28.9,7.8],[31.1,7.8]],'#2f86d1');                  // F6 냉동 쪽
+flow([[28.4,7.2],[28.4,6.3]],'#2f86d1');                             // F6 냉장 쪽
+flow([[21.6,8.4],[19.9,8.4]],'#e0786e','4 5');                       // F7 반송
+
+/* ---------- 벽 ---------- */
+add(0,()=>{box(18.5,-0.25,0,20.8,.25,2.3,C.wall);});
+add(0.5,()=>{box(18.25,0,0,.25,10,2.3,C.wall);});
+add(1,()=>{box(12.5,-0.2,0,5.6,.2,1.6,C.wall);box(12.35,-0.2,0,.15,8.4,1.6,C.wall);});
+add(1,()=>{box(-0.2,3.8,0,4,.2,1.6,C.wall);box(-0.35,3.8,0,.15,4.4,1.6,C.wall);});
+add(24.5,()=>{box(18.5,5.95,0,5,.1,.7,C.wall,0,.95);box(26.1,5.95,0,.4,.1,.7,C.wall);});
+add(27,()=>{box(20.95,6,0,.08,4,.45,C.wall);});
+add(36.2,()=>{box(36.25,0,0,.1,10,1.4,C.wall,0,.8);});
+add(30.5,()=>{box(26.45,5,0,.1,5,1.5,C.glass);});
+add(31.5,()=>{box(26.5,4.95,0,1,.1,1.5,C.glass);box(29.7,4.95,0,2.8,.1,1.5,C.glass);});
+add(38.5,()=>{box(32.45,5,0,.1,2,1.5,C.glass);box(32.45,9.1,0,.1,.9,1.5,C.glass);});
+add(38.8,()=>{box(32.55,5.05,0,3.7,.1,1.5,C.frz,0,.55);});
+const front=[[18.5,21.5],[23.1,24.1],[25.7,27.6],[29.2,30.2],[31.8,37.1],[38.5,39.3]];
+front.forEach(([a,b],i)=>add(a+10+i*.01,()=>box(a,9.9,0,b-a,.12,.55,C.wall)));
+DOCKS.forEach(d=>add(d.x+10.5,()=>{box(d.x-.12,9.88,0,.12,.14,2.0,C.vio);box(d.x+1.6,9.88,0,.12,.14,2.0,C.vio);box(d.x-.12,9.88,2.0,1.84,.14,.14,C.vio);}));
+add(47.6,()=>{const g=el('g',{opacity:.45},L.obj);const x=37.1;box(x-.1,9.88,0,.1,.14,1.8,C.vioL,g);box(x+1.4,9.88,0,.1,.14,1.8,C.vioL,g);box(x-.1,9.88,1.8,1.6,.14,.12,C.vioL,g);});
+add(23,()=>{box(12.8,10.7,0,.18,.18,1.1,C.vio);box(12.8,10.8,1.0,.12,3.4,.1,C.vioL);});
+
+/* ---------- 랙 ---------- */
+function rack(x,y,n,op,cargo=C.box,lv=3){
+  const bay=1.4,h=2.2,dep=.9;
+  add(x+y+n*bay/2+.5,()=>{
+    const g=el('g',{opacity:op},L.obj);const W=n*bay;
+    const posts=[];for(let i=0;i<=n;i++)posts.push([x+i*bay,y]);
+    posts.forEach(p=>box(p[0]-.05,p[1]-.05,0,.1,.1,h,C.vio,g));
+    for(let l=0;l<lv;l++){const z=.15+l*.7;box(x,y,z,W,dep,.06,C.vio,g);
+      for(let i=0;i<n;i++){if((i+l)%5===3)continue;const bx=x+i*bay+.12,by=y+.08;
+        box(bx,by,z+.06,.55,.72,.42,cargo,g);box(bx+.65,by,z+.06,.55,.72,.36,cargo,g);}}
+    posts.forEach(p=>box(p[0]-.05,p[1]+dep-.05,0,.1,.1,h,C.vio,g));
+  });
+}
+const CHILL={t:'#f6fbff',l:'#e3eef9',r:'#d4e4f4'},FRZ={t:'#f4f6ff',l:'#e0e5fa',r:'#d0d7f4'};
+rack(19.1,.6,3,.5);rack(19.1,3.4,3,.5);
+rack(27.2,.6,6,.5,CHILL);rack(27.2,3.2,3,.5,CHILL);
+rack(33,5.6,2,.5,FRZ);rack(33,8,2,.5,FRZ);
+
+/* ---------- 팔레트 ---------- */
+function pallet(x,y,layers=2,temp,op){
+  add(x+y+.6,()=>{const g=el('g',op?{opacity:op}:{},L.obj);
+    box(x,y,0,.9,.9,.12,C.wood,g);
+    for(let i=0;i<layers;i++){box(x+.03,y+.03,.12+i*.34,.84,.84,.32,C.box,g);}
+    if(temp){const t={c:'#2f86d1',f:'#3f55c9'}[temp];const[px,py]=iso(x+.9,y+.45,.12+layers*.34-.12);el('rect',{x:px-1,y:py-6,width:4,height:12,rx:1.5,fill:t},g);}
+  });
+}
+pallet(23.7,6.15,2);pallet(24.8,6.15,3);        // C6 상온 · ASN-001 확정분
+pallet(21.8,7.2,3);pallet(22.9,7.6,3);          // ASN-011 A
+pallet(27.9,7.4,2,'c');                         // ASN-011 C (전실)
+pallet(37,2,2,null,.4);pallet(37,4,1,null,.4);  // 출고 공간 (추후)
+pallet(4.4,9,2);pallet(5.5,9,1);                // 화주사 출고장
+
+/* ---------- 차량 ---------- */
+function truck(x,y,dir,cold,op){
+  add(x+y+2.2,()=>{const g=el('g',op?{opacity:op}:{},L.obj);
+    const sh=dir==='y'?[[x+.1,y+.1,0],[x+1.75,y+.1,0],[x+1.75,y+4.3,0],[x+.1,y+4.3,0]]:[[x+.1,y+.1,0],[x+4.3,y+.1,0],[x+4.3,y+1.75,0],[x+.1,y+1.75,0]];
+    poly(sh,{fill:'rgba(70,60,140,.10)'},g);
+    if(dir==='y'){
+      box(x+.15,y+.3,0,1.3,3.8,.28,C.ink,g);box(x,y,.28,1.6,3.05,1.55,C.white,g);
+      box(x+.08,y+3.1,.28,1.44,1.05,1.12,C.vio,g);box(x+.2,y+3.15,1.0,1.2,.5,.32,{t:'#dcd8fb',l:'#c8c2f9',r:'#b8b0f6'},g);
+      if(cold)box(x+.35,y+2.85,1.3,.9,.18,.42,cold==='f'?C.frz:C.chill,g);
+    }else{
+      box(x+.3,y+.15,0,3.8,1.3,.28,C.ink,g);box(x,y,.28,3.05,1.6,1.55,C.white,g);
+      box(x+3.1,y+.08,.28,1.05,1.44,1.12,C.vio,g);
+      if(cold)box(x+2.85,y+.35,1.3,.18,.9,.42,cold==='f'?C.frz:C.chill,g);
+    }
+  });
+}
+truck(21.5,10.15,'y','c');truck(24.1,10.15,'y','c');truck(27.6,10.15,'y','c');truck(30.2,10.15,'y','f');
+truck(8.1,11.6,'x','f');
+
+/* ---------- 사람·사무 ---------- */
+function person(x,y,vest,pda){
+  add(x+y+.4,()=>{const[px,py]=iso(x,y,0);const g=el('g',{},L.obj);
+    el('ellipse',{cx:px,cy:py,rx:9,ry:4.5,fill:'rgba(60,50,120,.14)'},g);
+    el('rect',{x:px-5.5,y:py-27,width:11,height:21,rx:5.5,fill:vest},g);
+    el('rect',{x:px-4,y:py-9,width:3.2,height:9,rx:1.5,fill:'#3a3a40'},g);el('rect',{x:px+.8,y:py-9,width:3.2,height:9,rx:1.5,fill:'#3a3a40'},g);
+    el('circle',{cx:px,cy:py-33,r:5.6,fill:'#f2dcc9'},g);
+    el('path',{d:`M${px-5.6},${py-34} a5.6,5.6 0 0 1 11.2,0 z`,fill:'#3b3340'},g);
+    if(pda)el('rect',{x:px+4,y:py-22,width:5,height:8,rx:1,fill:'#1d1d20'},g);
+  });
+}
+function desk(x,y,screen=true){add(x+y+.3,()=>{box(x,y,0,1.3,.7,.62,C.white);if(screen)box(x+.35,y+.12,.62,.6,.06,.42,C.vioD);});}
+function forklift(x,y,op){
+  add(x+y+.8,()=>{const g=el('g',op?{opacity:op}:{},L.obj);
+    box(x,y,.1,.9,.65,.55,C.vio,g);box(x+.1,y+.1,.65,.55,.45,.5,C.vioL,g);
+    box(x+.92,y+.05,0,.06,.08,1.5,C.vioD,g);box(x+.92,y+.52,0,.06,.08,1.5,C.vioD,g);
+    box(x+.98,y+.08,.05,.6,.08,.03,C.ink,g);box(x+.98,y+.49,.05,.6,.08,.03,C.ink,g);
+  });
+}
+desk(.4,4.5);desk(2.1,4.5);
+person(1.1,5.8,'#c9c2fb');
+add(9.6,()=>{const[px,py]=iso(2.9,6.5,1.4);const g=el('g',{},L.obj);
+  el('ellipse',{cx:px,cy:py+38,rx:12,ry:5,fill:'rgba(124,108,242,.18)'},g);
+  el('circle',{cx:px,cy:py,r:19,fill:'none',stroke:'#c9c2fb','stroke-width':1.5,'stroke-dasharray':'3 4'},g);
+  el('rect',{x:px-13,y:py-11,width:26,height:21,rx:8,fill:'#ffffff',stroke:'#a99ff8','stroke-width':1.5},g);
+  el('rect',{x:px-9,y:py-7,width:18,height:12,rx:5,fill:'#6c5ce7'},g);
+  el('circle',{cx:px-3.5,cy:py-1,r:2,fill:'#fff'},g);el('circle',{cx:px+3.5,cy:py-1,r:2,fill:'#fff'},g);
+  el('line',{x1:px,y1:py-11,x2:px,y2:py-16,stroke:'#a99ff8','stroke-width':1.5},g);el('circle',{cx:px,cy:py-17,r:2,fill:'#7c6cf2'},g);
+});
+forklift(2.2,9.6);person(1.4,11.4,'#f2c14e',true);
+desk(13.2,1.2);desk(15.4,1.2);desk(13.2,3.8);
+person(14,2.4,'#7db4e6');
+add(21.5,()=>{box(16.3,4.6,0,.9,.9,1.6,C.white);for(let i=0;i<4;i++)box(17.2,4.72+i*.18,1.2-i*.26,.02,.12,.08,{t:'#7c6cf2',l:'#7c6cf2',r:'#7c6cf2'});box(16.25,4.55,1.6,1,1,.08,C.vio);});
+person(22.8,8.9,'#e8833a',true);
+person(29.1,8.2,'#e8833a',true);
+
+Q.sort((a,b)=>a.k-b.k).forEach(q=>q.fn());
+
+/* ---------- 라벨 ---------- */
+function chip(x,y,z,lines,cls='',dx=0,dy=0){
+  let[px,py]=iso(x,y,z);px+=dx;py+=dy;
+  const g=el('g',{class:'zl '+cls},L.label);
+  const t1=el('text',{x:0,y:0},g);t1.textContent=lines[0];
+  if(lines[1]){const t2=el('text',{x:0,y:16,class:'sub'},g);t2.textContent=lines[1];}
+  const bb=g.getBBox();const pad=8;
+  const r=el('rect',{x:bb.x-pad,y:bb.y-5,width:bb.width+pad*2,height:bb.height+10,rx:8},g);g.insertBefore(r,t1);
+  g.setAttribute('transform',`translate(${px-bb.width/2},${py})`);
+}
+chip(1.2,4,2.1,['화주사 사무실','Web · 입고예정 · ASN'],'',-34,-30);
+chip(3.5,12.6,1.7,['화주사 출고장','PDA · 상차등록']);
+chip(9.8,14.6,.2,['운송 구간','상태 변화 없음'],'dim',0,30);
+chip(14.4,14.2,.4,['센터 진입로'],'dim',0,18);
+chip(15.3,-0.3,2.3,['3PL 사무실','Web · 승인 · 배분 · 마감']);
+chip(21.6,6.4,2.7,['상온 검수 구역','PDA · 검수'],'',-8,0);
+chip(31,9.8,.3,['전실','냉장·냉동 검수'],'cold',0,24);
+chip(18.3,9.8,0,['반송 구역','재고 미반영'],'ret',-100,22);
+chip(22.4,2.6,3,['상온 창고','추후 설계 · 적치'],'fut');
+chip(31.6,1.8,3,['냉장 창고','추후 설계 · 적치'],'fut');
+chip(34.6,7.4,3.1,['냉동 창고','추후 설계 · 적치'],'fut',10,0);
+chip(37.8,4.4,2.6,['출고 공간','추후 설계 · 출고'],'fut',14,0);
+chip(26,14.9,0,['입고 도크 D1~D4','예시값 4개'],'dim',0,34);
+chip(32.5,9.6,.8,['냉동 창고 입구'],'cold',78,14);
+chip(30.6,4.9,1.6,['냉장 창고 입구'],'cold',-6,-40);
+chip(24.8,6.1,1.9,['입고 완료 물량'],'dim',52,-2);
+
+function vchip(x,y,z,no,st,on){
+  const[px,py]=iso(x,y,z);const g=el('g',{class:'vchip'+(on?' on':'')},L.label);
+  const t=el('text',{x:0,y:0},g);t.textContent=no;const s=el('text',{x:0,y:0,class:'st'},g);s.textContent=' · '+st;
+  s.setAttribute('x',t.getComputedTextLength()+2);
+  const bb=g.getBBox();const r=el('rect',{x:bb.x-8,y:bb.y-5,width:bb.width+16,height:bb.height+10,rx:8},g);g.insertBefore(r,t);
+  el('line',{x1:bb.width/2,y1:bb.y+bb.height+5,x2:bb.width/2,y2:bb.y+bb.height+15,stroke:on?'#6c5ce7':'#161616','stroke-width':1.5},g);
+  g.setAttribute('transform',`translate(${px-bb.width/2},${py})`);
+}
+vchip(22.3,13.4,2.7,'ASN-011','검수중',true);
+vchip(24.9,14.6,2.4,'무지시','검수 대기');
+vchip(28.4,13.4,2.7,'ASN-002','검수 대기');
+vchip(31,14.6,2.4,'ASN-003','검수 대기');
+vchip(9.6,12.4,2.7,'ASN-012','이동 중');
+
+function bub(x,y,z,txt,cls='',dx=0,dy=0){
+  let[px,py]=iso(x,y,z);px+=dx;py+=dy;const g=el('g',{class:'bub '+cls},L.label);
+  const t=el('text',{x:0,y:0},g);t.textContent=txt;const bb=g.getBBox();
+  const r=el('rect',{x:bb.x-9,y:bb.y-6,width:bb.width+18,height:bb.height+12,rx:10},g);g.insertBefore(r,t);
+  el('path',{d:`M${bb.width/2-5},${bb.y+bb.height+6} l5,7 l5,-7`,fill:cls==='ai'?'#efedfe':'#fff',stroke:cls==='ai'?'#a99ff8':'#d8d8de'},g);
+  g.setAttribute('transform',`translate(${px-bb.width/2},${py})`);
+}
+bub(22.8,8.9,2.25,'A 상온 검수 중');
+bub(29.1,8.2,2.25,'C 전실 검수 중');
+bub(2.9,6.5,2.55,'AI 판독 · 대기 (초안만 만듦)','ai');
+bub(16.75,5.05,2.5,'시스템 · 자동 배분');
+
+/* 화면 맞춤 */
+const bb=svg.getBBox();const m=18;
+svg.setAttribute('viewBox',`${bb.x-m} ${bb.y-m} ${bb.width+m*2} ${bb.height+m*2}`);
+svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+
+/* ---------- 입고예정 보드 (E10 확정 직후 상태) ---------- */
+const BOARD=[
+  {no:'IP-0001',st:['part','부분입고'],ord:'승인 1번째',lines:[['A','a',100,50,0],['B','a',100,100,0],['C','c',100,0,0],['D','c',100,0,0],['E','f',100,0,0],['F','f',100,0,0]]},
+  {no:'IP-0002',st:['ok','승인'],ord:'승인 2번째',lines:[['A','a',100,0,0],['C','c',30,0,0],['D','c',10,0,0],['F','f',80,0,0]]},
+];
+const TL={a:'상온',c:'냉장',f:'냉동'};
+document.getElementById('board').innerHTML=BOARD.map(p=>`
+ <article class="ip"><header><b>${p.no}</b><span class="bdg ${p.st[0]}">${p.st[1]}</span><span class="ord">${p.ord}</span></header>
+ <div class="rows">${p.lines.map(([it,t,q,s1,s2])=>`<div class="row"><span class="it">${it}</span><span class="tb ${t}">${TL[t]}</span>
+ <span class="bar"><i class="s1" style="width:${s1/q*100}%"></i><i class="s2" style="width:${s2/q*100}%"></i></span>
+ <span class="q"><b>${s1+s2}</b>/${q}</span></div>`).join('')}</div></article>`).join('');
+
+const LOG=[
+  ['14:20','ASN-011 검수 시작 · 상온 A는 상온 검수 구역, 냉장 C는 전실','⑥ S11'],
+  ['14:12','ASN-001 검수 확정 → 자동 배분 1단계 · IP-0001 A 50, B 100 → IP-0001 부분입고','C7 C8'],
+  ['13:40','6대 상차완료 · 상차확인서 발행 · 차이 사유 4대','C6'],
+  ['11:05','ASN 5건 등록 · 상차지시서 5장 발행','C4'],
+  ['10:30','IP-0002 승인','C2'],
+  ['10:10','IP-0001 승인','C2'],
+  ['09:40','IP-0001 저장 · AI 판독 초안을 확인 후 저장','C1'],
+];
+document.getElementById('log').innerHTML=LOG.map(([t,m,r])=>`<li><time>${t}</time><span>${m}<span class="r">${r}</span></span></li>`).join('');
+</script>
+</body>
+</html>
