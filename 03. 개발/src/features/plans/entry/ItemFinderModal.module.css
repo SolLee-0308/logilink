@@ -108,3 +108,21 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* 줄 하나 고르기(single) — 품목코드를 버튼으로 두어 키보드로도 고를 수 있게 */
+.pickBtn {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--violet-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.pickBtn:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

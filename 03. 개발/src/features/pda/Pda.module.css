@@ -1860,7 +1860,8 @@ select.field {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 18px 16px calc(14px + env(safe-area-inset-bottom));
+  /* 아래 여백을 넉넉히 — 버튼이 화면 아래 끝에 붙어 보이지 않게 (2026-11-13 Sol 피드백, 14px → 28px) */
+  padding: 18px 16px calc(28px + env(safe-area-inset-bottom));
   border-radius: var(--r-sheet) var(--r-sheet) 0 0;
   background: var(--bg);
   box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18);

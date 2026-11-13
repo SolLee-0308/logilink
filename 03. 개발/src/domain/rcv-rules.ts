@@ -66,11 +66,19 @@ export function rcvLineState(l: RcvLineQty): RcvLineState {
   return d < 0 ? "short" : d > 0 ? "over" : "match";
 }
 
-/** 사유를 고르지 않았을 때 미리 골라 둘 값 */
-export function defaultReason(l: RcvLineQty): string | null {
+/**
+ * 검수 차이 사유 — 사용자가 고르지 않고 수량으로 시스템이 정한다 (2026-11-13 Sol 결정, A안).
+ * 부족·초과는 수량 비교로 이미 알 수 있어 드롭다운으로 다시 고르면 수량과 어긋난 사유가 저장될 수 있었다.
+ * 한 라인에 사유는 하나 — 품목 불일치 > 미도착(0 확인) > 훼손 반송 > 수량 부족 > 수량 초과 순으로 정한다.
+ * 사유가 필요 없는 라인(차이·반송 없음)은 null.
+ */
+export function autoReason(l: RcvLineQty): string | null {
   if (l.mismatch) return RCV_REASON.MISMATCH;
   if (!l.hasInputs && l.zeroConfirm) return RCV_REASON.MISSING;
   if (l.damaged > 0) return RCV_REASON.DAMAGED;
+  const d = lineDiff(l);
+  if (d < 0) return RCV_REASON.SHORT;
+  if (d > 0) return RCV_REASON.OVER;
   return null;
 }
 

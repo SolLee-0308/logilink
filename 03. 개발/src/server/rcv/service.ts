@@ -28,7 +28,7 @@ import {
   RCV_PREFIX,
   RCV_REASON,
   allocate,
-  defaultReason,
+  autoReason,
   needsReason,
   planStatusAfterReceive,
   type RcvLineQty,
@@ -204,7 +204,7 @@ export async function addRcvInput(me: PlanActor, input: RcvAddInput): Promise<Ac
       if (line && !mismatch && !input.confirm && line.goodBaseQty + line.damagedBaseQty + addBase > line.expectBaseQty) {
         const { showUnit, showFactor } = await showUnitOf(tx, rcv.loadId, r);
         const f = (n: number) => qtyInUnit(n, showUnit, showFactor, r.baseUnit);
-        return fail("CONFIRM", `${r.itemName}: 상차 수량 ${f(line.expectBaseQty)}보다 많아집니다(입력 후 ${f(line.goodBaseQty + line.damagedBaseQty + addBase)}). 실제로 센 수량이 맞으면 그대로 입력하세요. 확정 때 차이 사유를 고릅니다.`);
+        return fail("CONFIRM", `${r.itemName}: 상차 수량 ${f(line.expectBaseQty)}보다 많아집니다(입력 후 ${f(line.goodBaseQty + line.damagedBaseQty + addBase)}). 실제로 센 수량이 맞으면 그대로 입력하세요. 차이 사유는 시스템이 수량으로 기록합니다.`);
       }
 
       if (!line) {
@@ -319,11 +319,10 @@ export async function setRcvZero(me: PlanActor, input: { rcvId: number; itemId: 
 
 export async function setRcvLineInfo(
   me: PlanActor,
-  input: { rcvId: number; itemId: number; reasonCode?: string | null; reasonText?: string | null; expiryDate?: string | null; lotNo?: string | null },
+  // 차이 사유는 시스템이 정하므로 받지 않는다 (2026-11-13 Sol, A안) — 소비기한·로트만
+  input: { rcvId: number; itemId: number; expiryDate?: string | null; lotNo?: string | null },
 ): Promise<ActionResult> {
   if (!canInspect(me)) return forbidden();
-  const text = input.reasonText?.trim() ?? "";
-  if (text.length > 500) return fail("VALIDATION", "상세 내용은 500자 이내로 입력하세요.", { reasonText: "500자 이내" });
   if (input.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.expiryDate)) return fail("VALIDATION", "소비기한을 날짜로 입력하세요.", { expiryDate: "날짜" });
   const lot = input.lotNo?.trim() ?? "";
   if (lot.length > 40) return fail("VALIDATION", "로트는 40자 이내로 입력하세요.", { lotNo: "40자 이내" });
@@ -335,13 +334,6 @@ export async function setRcvLineInfo(
       const line = await tx.rcvLine.findUnique({ where: { rcvId_itemId: { rcvId: rcv.id, itemId: input.itemId } } });
       if (!line) return fail("NOT_FOUND", "검수 품목을 찾을 수 없습니다.");
       const data: Prisma.RcvLineUpdateInput = {};
-      if (input.reasonCode !== undefined) {
-        if (input.reasonCode) {
-          const c = await reasonOf(tx, input.reasonCode);
-          if (!c) return fail("VALIDATION", "사유를 다시 고르세요.", { reasonCode: "사유를 다시 고르세요." });
-          Object.assign(data, { reasonCode: c.code, reasonName: c.name, reasonText: text || null });
-        } else Object.assign(data, { reasonCode: null, reasonName: null, reasonText: null });
-      }
       if (input.expiryDate !== undefined) data.expiryDate = input.expiryDate ? asDate(input.expiryDate) : null;
       if (input.lotNo !== undefined) data.lotNo = lot || null;
       await tx.rcvLine.update({ where: { id: line.id }, data });
@@ -434,20 +426,20 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
         if (!lines.some((l) => l.goodBaseQty + l.damagedBaseQty + l.mismatchBaseQty > 0 || l.zeroConfirm))
           return fail("STATE", "입력한 수량이 없습니다. 품목을 스캔해 수량을 입력하세요.");
 
-        // 사유(D19)·훼손 사진(C7) 검사
+        // 사유(D19)는 확정 시점의 수량으로 시스템이 정한다 (2026-11-13 Sol, A안) — 수량과 어긋난 사유가 남지 않게 항상 다시 쓴다.
+        // 차이가 없어진 라인에 남은 사유도 지운다. 훼손 사진(C7) 검사는 그대로
         for (const l of lines) {
           const lq = q(l);
-          if (!needsReason(lq)) continue;
-          if (!l.reasonCode) {
-            const preset = defaultReason(lq);
-            const c = preset ? await reasonOf(tx, preset) : null;
-            if (!c) return fail("VALIDATION", `${l.item.name}: 상차 수량과 차이가 있습니다. 차이 사유를 고르세요.`, { [`line-${l.itemId}`]: "차이 사유를 고르세요." });
-            await tx.rcvLine.update({ where: { id: l.id }, data: { reasonCode: c.code, reasonName: c.name } });
-            l.reasonCode = c.code;
+          if (!needsReason(lq)) {
+            if (l.reasonCode || l.reasonText) await tx.rcvLine.update({ where: { id: l.id }, data: { reasonCode: null, reasonName: null, reasonText: null } });
+            continue;
           }
-          const c = await reasonOf(tx, l.reasonCode);
-          if (!c) return fail("VALIDATION", `${l.item.name}: 사용하지 않는 사유입니다. 다시 고르세요.`, { [`line-${l.itemId}`]: "사유를 다시 고르세요." });
-          if (c.requiresText && !l.reasonText?.trim()) return fail("VALIDATION", `${l.item.name}: "${c.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`, { [`line-${l.itemId}`]: "상세 내용을 입력하세요." });
+          const code = autoReason(lq);
+          const c = code ? await reasonOf(tx, code) : null;
+          if (!c) return fail("STATE", `차이 사유 공통코드(${RCV_DIFF_GROUP} ${code ?? "-"})가 사용 중이 아닙니다. 3PL 관리자에게 공통코드 확인을 요청하세요.`);
+          if (l.reasonCode !== c.code || l.reasonName !== c.name || l.reasonText)
+            await tx.rcvLine.update({ where: { id: l.id }, data: { reasonCode: c.code, reasonName: c.name, reasonText: null } });
+          l.reasonCode = c.code;
           if (l.damagedBaseQty > 0) {
             const n = await tx.rcvImage.count({ where: { rcvId: rcv.id, itemId: l.itemId } });
             if (n < RCV_IMAGE_MIN) return fail("VALIDATION", `${l.item.name}: 훼손 반송은 사진을 ${RCV_IMAGE_MIN}장 이상 찍어야 합니다.`, { [`line-${l.itemId}`]: "사진을 찍으세요." });

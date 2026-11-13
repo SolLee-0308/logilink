@@ -15,6 +15,11 @@
   color: var(--muted);
 }
 
+/* 일시 아래 "업무일 MM-DD" — 연회색 (2026-11-13 Sol) */
+.day {
+  color: var(--soft);
+}
+
 .sum {
   font-size: var(--fs-13);
   color: var(--muted);

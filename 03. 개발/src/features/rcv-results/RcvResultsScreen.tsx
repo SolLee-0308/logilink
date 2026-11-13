@@ -11,7 +11,7 @@ import { ListToolbar } from "@/components/ui/SplitView";
 import { Tabs } from "@/components/ui/Tabs";
 import { LOAD_TYPE_LABEL } from "@/domain/load-rules";
 import { addDays } from "@/domain/inquiry-rules";
-import { fmtShortDateTime, includesText } from "@/lib/format";
+import { fmtDateTime, includesText } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
 import { reverseRcv } from "@/server/rcv/web-actions";
 import { MasterHeader, useAction } from "@/features/master/shared";
@@ -98,11 +98,18 @@ export function RcvResultsScreen({
         </Link>
       ),
     },
-    { key: "day", header: "업무일", render: (r) => <span className="mono">{r.businessDate}</span> },
+    // 업무일 열은 빼고 일시 아래 둘째 줄에 연회색 "업무일 MM-DD"로 (2026-11-13 Sol) — 새벽 확정 건이 어느 날 일마감에 드는지 보이게
     {
       key: "at",
-      header: confirmed ? "확정" : canceledTab ? "입고취소" : "시작",
-      render: (r) => <span className="mono">{fmtShortDateTime(confirmed ? r.confirmedAt : canceledTab ? (r.reverse?.at ?? null) : r.startedAt)}</span>,
+      header: confirmed ? "확정일" : canceledTab ? "입고취소" : "시작",
+      render: (r) => (
+        <>
+          <span className="mono">{fmtDateTime(confirmed ? r.confirmedAt : canceledTab ? (r.reverse?.at ?? null) : r.startedAt) || "-"}</span>
+          <span className={`${styles.sub} ${styles.day}`}>
+            업무일 <span className="mono">{r.businessDate.slice(5)}</span>
+          </span>
+        </>
+      ),
     },
     { key: "vehicle", header: "차량", render: (r) => <span className="mono">{r.vehicleNo}</span> },
     { key: "client", header: "화주사", render: (r) => r.clientName },

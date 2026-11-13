@@ -53,7 +53,8 @@ export function PdaHomeScreen({
 
   const go = (r: { ok: true; data?: { loadId: number; notice?: string } }) => {
     passNotice(r.data?.notice);
-    router.push(`/pda/load/${r.data!.loadId}`);
+    // 스캔으로 열어도 지금 날짜·거르기를 가지고 간다 — [처음으로]·← 가 같은 목록으로 (2026-11-13 Sol)
+    router.push(loadHref(r.data!.loadId));
   };
 
   const startOrder = (orderNo: string) =>

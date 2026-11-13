@@ -125,16 +125,13 @@ async function main() {
   const mm = v.lines.find((l) => l.mismatch)!;
   ok(!!mm && mm.mismatchQty === 20 && mm.reasonCode === "V04", "품목 불일치 라인: 20 EA, 사유 '품목 불일치(반송)'", mm);
 
-  // 사유 '기타'는 상세 필수
-  await setRcvLineInfo(seoyeon, { rcvId: rcvA, itemId: v.lines[0].itemId, reasonCode: "V99", reasonText: "" });
-  v = (await getPdaRcv(seoyeon, rcvA))!;
-  r = (await confirmRcv(seoyeon, { rcvId: rcvA, lastInputId: v.lastInputId })) as typeof r;
-  ok(!r.ok && r.code === "VALIDATION" && r.error.includes("상세"), "'기타' 사유는 상세 내용 필수", r);
-  await setRcvLineInfo(seoyeon, { rcvId: rcvA, itemId: v.lines[0].itemId, reasonCode: "V03" });
+  // 차이 사유는 수량으로 시스템이 정한다 (2026-11-13 Sol, A안) — 확정 뒤 저장된 사유를 아래에서 확인
 
   const before0730 = await db.inboundPlanLine.findFirstOrThrow({ where: { item: { clientCode: "GM-0730" }, plan: { client: { code: "GM01" }, status: "APPROVED", asnLines: { some: {} } } }, include: { plan: true }, orderBy: { id: "asc" } });
   r = (await confirmRcv(woojin, { rcvId: rcvA, lastInputId: v.lastInputId })) as typeof r;
   ok(r.ok, "검수 확정 (검수자 B가 확정해도 된다)", r);
+  const savedLines = await db.rcvLine.findMany({ where: { rcvId: rcvA }, orderBy: { id: "asc" } });
+  ok(savedLines.find((x) => !x.mismatch)?.reasonCode === "V03" && savedLines.find((x) => x.mismatch)?.reasonCode === "V04", "확정 시 사유 자동 기록: 훼손 반송 V03 · 품목 불일치 V04", savedLines.map((x) => x.reasonCode));
 
   /* 확정 결과 — 자동 배분 (C8 · 5-2) */
   const allocs = await db.rcvAlloc.findMany({ where: { rcvId: rcvA }, orderBy: { id: "asc" } });

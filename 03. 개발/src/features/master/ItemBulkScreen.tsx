@@ -399,8 +399,8 @@ export function ItemBulkScreen({
 
 type StepState = "done" | "current" | "todo";
 
-/** 단계 카드: 번호 + 제목·설명 (+ 오른쪽 버튼) / 본문 / 아래 버튼 */
-function Step({
+/** 단계 카드: 번호 + 제목·설명 (+ 오른쪽 버튼) / 본문 / 아래 버튼 — 입고예정 등록의 엑셀 업로드도 같은 카드를 쓴다 */
+export function Step({
   no,
   title,
   state,
