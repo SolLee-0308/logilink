@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
-import { RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, type RcvLineState } from "@/domain/rcv-rules";
+import { RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
 import { fmtDateTime } from "@/lib/format";
 import {
   addRcvImage, addRcvInput, cancelRcvInput, confirmRcv, correctRcvInput, deleteRcvImage, previewRcvScan, reloadRcv, setRcvLineInfo, setRcvZero,
@@ -42,13 +42,22 @@ async function compress(file: File): Promise<string> {
 /**
  * PDA 입고검수 (정의서 ⑥ · C7 · D15, 2026-11-05 Sol 결정 R2~R9)
  * 1) 품목 스캔 → 정상 / 훼손 반송 고르고 추가 수량 입력 (상차 실적에 없는 품목은 품목 불일치 반송으로만 기록)
- * 2) 품목마다 0(미도착) 확인·차이 사유·훼손 사진·소비기한·로트
+ * 2) 품목마다 0(미도착) 확인·훼손 사진·소비기한·로트. 차이 사유는 수량으로 시스템이 정한다 (2026-11-13 Sol, A안 — 드롭다운 없음)
  * 3) 여러 검수자가 함께 입력, 본인 입력만 취소·정정, 다른 검수자 입력은 몇 초마다 반영
  * 4) 검수 확정: 검수자·품목 합계를 보고 확정, 미입력 품목은 [돌아가서 스캔] / [남은 품목 전부 0 처리] → 자동 배분
  * 2026-11-12 Sol: 상차 작업과 같은 UI — 확정 확인·수량 경고·입력 취소는 아래에서 올라오는 창, 토스트 대신 그 품목 줄 강조,
  *   머리는 차량·상차 구분 + 짧은 상태 줄, 상차확인서·지시서·검수자는 접힌 '검수 정보', 완료 화면은 방금 확정/목록 조회 구분
  */
-export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reasons: ReasonOption[] }) {
+export function PdaInspectScreen({
+  initial,
+  reasons,
+  homeHref = "/pda/inspect",
+}: {
+  initial: RcvView;
+  reasons: ReasonOption[];
+  /** [처음으로] — 들어온 메뉴의 첫 화면(대시보드 또는 조회조건을 유지한 입고검수 목록) (2026-11-13 Sol) */
+  homeHref?: string;
+}) {
   const router = useRouter();
   const [view, setView] = useState(initial);
   const [pending, start] = useTransition();
@@ -194,13 +203,12 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
 
   const myInputs = view.inputs.filter((i) => i.mine && !i.canceled);
   const anyEntered = view.lines.some((l) => l.state !== "todo");
-  /** 세는 동안 바로 손볼 품목(훼손 사진) — 아래 띠·품목 줄에 표시. 차이 사유는 확정 확인 창에서 받는다 (2026-11-12 Sol) */
+  /** 세는 동안 바로 손볼 품목(훼손 사진) — 아래 띠·품목 줄에 표시 */
   const attention = view.lines.filter((l) => workProblem(l));
-  /** 확정 확인 창 — 차이 품목(사유 고르기)·사진 없는 훼손 품목, 하나라도 남으면 확정 버튼을 막는다 */
-  // 0(실물 없음) 확인 품목은 사유가 "미도착"으로 자동이라 고르지 않는다 (2026-11-12 Sol)
-  const diffLines = view.lines.filter((l) => l.state !== "todo" && !l.zeroConfirm && (l.needsReason || !!l.reasonCode));
+  /** 확정 확인 창 — 차이 품목은 시스템이 정한 사유와 함께 보여 주기만 하고(2026-11-13 Sol, A안), 사진 없는 훼손 품목이 있으면 확정 버튼을 막는다 */
+  const diffLines = view.lines.filter((l) => l.state !== "todo" && !l.zeroConfirm && l.needsReason);
   const photoMissing = view.lines.filter((l) => workProblem(l));
-  const confirmBlocked = view.lines.some((l) => lineProblem(l, reasons));
+  const confirmBlocked = photoMissing.length > 0;
 
   const planned = view.lines.filter((l) => !l.mismatch);
   const enteredCount = planned.filter((l) => l.state !== "todo").length;
@@ -236,7 +244,7 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
             </span>
           )}
           <h2 className={styles.successTitle}>{doneBy === "other" ? "다른 검수자가 검수를 확정했습니다." : doneBy === "me" ? "검수를 확정했습니다." : "검수 결과"}</h2>
-          <p className={styles.successSub}>입고예정에 자동 배분했습니다. 확정 뒤에는 고칠 수 없습니다(입고취소는 추후 제공).</p>
+          <p className={styles.successSub}>입고예정에 자동 배분했습니다. 확정 뒤에는 고칠 수 없습니다. 잘못 확정했으면 3PL 관리자가 일마감 전에 웹에서 입고취소한 뒤 다시 검수합니다.</p>
           <InfoRows
             rows={[
               ["검수 번호", <b key="n" className="mono">{view.rcvNo}</b>],
@@ -246,7 +254,7 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
               ["확정", `${fmtDateTime(view.confirmedAt)} · ${view.confirmedBy ?? ""}`],
             ]}
           />
-          <button type="button" className={styles.blackPill} onClick={() => router.push("/pda/inspect")}>
+          <button type="button" className={styles.blackPill} onClick={() => router.push(homeHref)}>
             처음으로
           </button>
         </section>
@@ -296,11 +304,11 @@ export function PdaInspectScreen({ initial, reasons }: { initial: RcvView; reaso
           <span className="mono">/{planned.length}</span>품목
           {diffLines.length > 0 && <span className={styles.warnInline}> · 차이 {diffLines.length}</span>}
         </p>
-        {/* 차이 품목 — 수량을 보고 여기서 사유를 고른다 (2026-11-12 Sol: 세는 동안에는 묻지 않고 확정 때 한 번) */}
+        {/* 차이 품목 — 사유는 수량으로 시스템이 정한다. 고르지 않고 확인만 (2026-11-13 Sol, A안) */}
         {diffLines.length > 0 && (
           <ul className={styles.reasonList} aria-label="차이 품목 사유">
             {diffLines.map((l) => (
-              <ReasonPick key={l.itemId} view={view} line={l} reasons={reasons} pending={pending} onDone={after} />
+              <ReasonRow key={l.itemId} line={l} reasons={reasons} />
             ))}
           </ul>
         )}
@@ -641,13 +649,11 @@ function workProblem(l: RcvLineView): string | null {
   return null;
 }
 
-/** 확정 전에 갖춰야 할 것 — 사유 없음(미리 고를 값도 없음)·상세 없음·훼손 사진 없음. 미입력 품목은 확정 때 따로 묻는다 */
-function lineProblem(l: RcvLineView, reasons: ReasonOption[]): string | null {
-  if (l.state === "todo") return null;
-  if (l.needsReason && !l.reasonCode) return "차이 사유를 고르세요";
-  if (l.reasonCode && reasons.find((r) => r.code === l.reasonCode)?.requiresText && !l.reasonText?.trim()) return "상세 내용을 입력하세요";
-  if (l.damaged > 0 && l.imageIds.length === 0) return "훼손 사진을 찍으세요";
-  return null;
+/** 시스템이 정한 사유 이름 — 작업 중에는 지금 수량으로, 확정 뒤에는 저장된 사유 (2026-11-13 Sol, A안) */
+function reasonLabel(l: RcvLineView, reasons: ReasonOption[]): string | null {
+  if (!l.needsReason || l.state === "todo") return null;
+  const code = autoReason(l);
+  return reasons.find((r) => r.code === code)?.name ?? l.reasonName;
 }
 
 /** 품목별 합계 — 누르면 0 확인·사유·소비기한·로트·사진 */
@@ -713,11 +719,10 @@ function RcvLineItem({
   lit?: boolean;
 }) {
   const [busy, startBusy] = useTransition();
-  const [text, setText] = useState(l.reasonText ?? "");
   const fileRef = useRef<HTMLInputElement>(null);
-  // 세는 동안에는 훼손 사진만 바로 손본다 — 차이 사유는 확정 확인 창에서 (2026-11-12 Sol)
+  // 세는 동안에는 훼손 사진만 바로 손본다 — 차이 사유는 시스템이 정한다 (2026-11-13 Sol, A안)
   const problem = workProblem(l);
-  const chosen = reasons.find((r) => r.code === l.reasonCode);
+  const reason = editable ? reasonLabel(l, reasons) : l.reasonName;
   // 손볼 것이 생기면 펼친다. 해결돼도 저절로 접지 않는다 (방금 올린 사진·고른 사유가 보이게)
   const [open, setOpen] = useState(editable && !!problem);
   useEffect(() => {
@@ -771,45 +776,13 @@ function RcvLineItem({
               {l.zeroConfirm ? "0 확인 풀기" : "실물 없음 · 0(미도착)으로 확인"}
             </button>
           )}
-          {/* 0(실물 없음) 확인 품목은 사유 드롭다운을 두지 않는다 — 사유는 서버가 "미도착"으로 자동 지정 (2026-11-12 Sol) */}
-          {l.state !== "todo" &&
-            !l.zeroConfirm &&
-            (l.needsReason || l.reasonCode) &&
-            (editable ? (
-              <>
-                <select
-                  className={styles.field}
-                  value={l.reasonCode ?? ""}
-                  onChange={(e) => run(() => setRcvLineInfo({ rcvId: view.id, itemId: l.itemId, reasonCode: e.target.value || null, reasonText: text }))}
-                  disabled={dis}
-                  aria-label={`${l.itemName} 차이 사유`}
-                >
-                  <option value="">차이 사유를 고르세요</option>
-                  {reasons.map((r) => (
-                    <option key={r.code} value={r.code}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-                {chosen?.requiresText && (
-                  <textarea
-                    className={`${styles.field} ${styles.textarea}`}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onBlur={() => text !== (l.reasonText ?? "") && run(() => setRcvLineInfo({ rcvId: view.id, itemId: l.itemId, reasonCode: l.reasonCode, reasonText: text }))}
-                    placeholder="상세 내용 (필수)"
-                    maxLength={500}
-                    rows={2}
-                    disabled={dis}
-                  />
-                )}
-              </>
-            ) : (
-              <p className={styles.dim}>
-                사유: {l.reasonName}
-                {l.reasonText ? ` — ${l.reasonText}` : ""}
-              </p>
-            ))}
+          {/* 차이 사유 — 드롭다운 없이 수량으로 시스템이 정한다 (2026-11-13 Sol, A안). 작업 중에는 지금 수량 기준, 확정 뒤에는 저장된 사유 */}
+          {reason && (
+            <p className={styles.dim}>
+              사유: {reason}
+              {editable ? " (자동)" : l.reasonText ? ` — ${l.reasonText}` : ""}
+            </p>
+          )}
           {/* 0(실물 없음) 확인 품목은 소비기한·로트를 받지 않는다 — 받을 실물이 없음 (2026-11-12 Sol) */}
           {(l.expiryManaged || l.lotManaged) && !l.mismatch && !l.zeroConfirm && (
             <div className={styles.btnRow}>
@@ -892,59 +865,17 @@ const BAR_TONE: Record<RcvLineState, string> = { todo: "st_none", short: "st_sho
  * 검수 확정 확인 창의 차이 품목 한 줄 — 수량(센 / 상차)과 상태를 보고 사유를 고른다 (2026-11-12 Sol).
  * 사유는 품목 줄에서 미리 골라 둘 수도 있고, 고른 값이 여기에 그대로 보인다.
  */
-function ReasonPick({
-  view,
-  line: l,
-  reasons,
-  pending,
-  onDone,
-}: {
-  view: RcvView;
-  line: RcvLineView;
-  reasons: ReasonOption[];
-  pending: boolean;
-  onDone: (r: { ok: boolean; message?: string; error?: string }) => Promise<void>;
-}) {
-  const [busy, startBusy] = useTransition();
-  const [text, setText] = useState(l.reasonText ?? "");
-  const chosen = reasons.find((r) => r.code === l.reasonCode);
-  const dis = pending || busy;
-  const run = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>) => startBusy(async () => onDone(await fn()));
+/** 확정 확인 창의 차이 품목 한 줄 — 수량·상태와 시스템이 정한 사유 (2026-11-13 Sol, A안: 고르지 않음) */
+function ReasonRow({ line: l, reasons }: { line: RcvLineView; reasons: ReasonOption[] }) {
   const qty = l.mismatch ? `반송 ${f(l, l.mismatchQty)}` : `${f(l, l.good + l.damaged)} / ${f(l, l.expect)}`;
-  const missing = !l.reasonCode || (!!chosen?.requiresText && !l.reasonText?.trim());
   return (
-    <li className={missing ? styles.reasonMissing : undefined}>
+    <li>
       <span className={styles.reasonHead}>
         <span className={styles.diffName}>{l.itemName}</span>
         <span className={`mono ${styles.diffQty}`}>{qty}</span>
         <span className={`${styles.stText} ${styles[`rst_${l.state}`]}`}>{RCV_LINE_STATE_LABEL[l.state]}</span>
       </span>
-      <select
-        className={styles.field}
-        value={l.reasonCode ?? ""}
-        onChange={(e) => run(() => setRcvLineInfo({ rcvId: view.id, itemId: l.itemId, reasonCode: e.target.value || null, reasonText: text }))}
-        disabled={dis}
-        aria-label={`${l.itemName} 차이 사유`}
-      >
-        <option value="">차이 사유를 고르세요</option>
-        {reasons.map((r) => (
-          <option key={r.code} value={r.code}>
-            {r.name}
-          </option>
-        ))}
-      </select>
-      {chosen?.requiresText && (
-        <textarea
-          className={`${styles.field} ${styles.textarea}`}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={() => text !== (l.reasonText ?? "") && run(() => setRcvLineInfo({ rcvId: view.id, itemId: l.itemId, reasonCode: l.reasonCode, reasonText: text }))}
-          placeholder="상세 내용 (필수)"
-          maxLength={500}
-          rows={2}
-          disabled={dis}
-        />
-      )}
+      <span className={styles.dim}>사유: {reasonLabel(l, reasons) ?? "-"} (자동)</span>
     </li>
   );
 }

@@ -19,10 +19,12 @@ export default async function PdaInspectWorkPage({ params, searchParams }: { par
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const sp = await searchParams;
-  // ← 는 들어온 입고검수 목록(날짜·보기)으로 (2026-11-12 Sol: 검수 내역을 입고검수에 합침)
+  // ←·[처음으로]는 들어온 메뉴의 첫 화면으로 (2026-11-13 Sol): 대시보드에서 열었으면 대시보드,
+  // 입고검수 목록에서 열었으면 그 목록(날짜·보기 유지) (2026-11-12 Sol: 검수 내역을 입고검수에 합침)
   const back = new URLSearchParams();
   if (typeof sp.from === "string" && DATE.test(sp.from)) back.set("date", sp.from);
   if (typeof sp.st === "string" && STS.has(sp.st)) back.set("st", sp.st);
+  const home = sp.ret === "dashboard" ? "/pda/dashboard" : back.size ? `/pda/inspect?${back}` : "/pda/inspect";
   const [rcv, reasons] = await Promise.all([getPdaRcv(me, id), listCodeOptions(RCV_DIFF_GROUP)]);
   if (!rcv) notFound();
   return (
@@ -30,10 +32,10 @@ export default async function PdaInspectWorkPage({ params, searchParams }: { par
       user={me.name}
       org={me.clientName ?? me.centerName}
       roles={me.roles}
-      back={back.size ? `/pda/inspect?${back}` : "/pda/inspect"}
+      back={home}
       title={rcv.status === "WORKING" ? "입고검수" : "검수 결과"}
     >
-      <PdaInspectScreen key={rcv.id} initial={rcv} reasons={reasons} />
+      <PdaInspectScreen key={rcv.id} initial={rcv} reasons={reasons} homeHref={home} />
     </PdaShell>
   );
 }

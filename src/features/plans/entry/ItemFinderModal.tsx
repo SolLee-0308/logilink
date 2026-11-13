@@ -15,14 +15,19 @@ type TempFilter = "all" | StorageTemp;
 /**
  * 품목 찾기 창 — 품목이 많아도 찾기 쉽게 서버 검색(품목코드·품목명·바코드·별칭) + 온도대 + 최근 입고 품목.
  * 여러 개를 체크해 한 번에 줄로 넣는다. 이미 입고예정에 있는 품목은 표시만 하고 다시 넣을 수도 있다.
+ * single: 줄 하나의 품목을 고르거나 바꿀 때 — 행을 누르면 바로 그 품목으로 정한다.
+ * 품목은 드롭다운 없이 이 창에서만 찾는다 (2026-11-13 Sol 결정)
  */
 export function ItemFinderModal({
   initialQuery,
   inPlan,
   onClose,
   onAdd,
+  single = false,
 }: {
   initialQuery: string;
+  /** 줄 하나의 품목 고르기 (한 개만, 행을 누르면 바로 정함) */
+  single?: boolean;
   /** 이미 줄에 있는 품목 id */
   inPlan: Set<number>;
   onClose: () => void;
@@ -55,6 +60,7 @@ export function ItemFinderModal({
   }, [q, temp, scope]);
 
   function toggle(it: CatalogItem) {
+    if (single) return onAdd([it]);
     setPicked((m) => {
       const n = new Map(m);
       if (n.has(it.id)) n.delete(it.id);
@@ -70,13 +76,21 @@ export function ItemFinderModal({
       open
       size="lg"
       onClose={onClose}
-      title="품목 찾기"
-      description="품목코드·품목명·바코드·별칭으로 찾고, 넣을 품목을 체크해 한 번에 줄로 추가합니다."
+      title={single ? "품목 고르기" : "품목 찾기"}
+      description={single ? "품목코드·품목명·바코드·별칭으로 찾고, 이 줄에 넣을 품목을 누르세요." : "품목코드·품목명·바코드·별칭으로 찾고, 넣을 품목을 체크해 한 번에 줄로 추가합니다."}
       onSubmit={(e) => {
         e.preventDefault();
+        if (single) {
+          // 바코드 스캐너처럼 검색어를 치고 Enter — 결과가 하나면 바로 고른다
+          if (items.length === 1 && !loading) onAdd([items[0]]);
+          return;
+        }
         if (picked.size) onAdd([...picked.values()]);
       }}
       footer={
+        single ? (
+          <Button onClick={onClose}>닫기</Button>
+        ) : (
         <>
           <span className={styles.picked}>
             {picked.size ? (
@@ -95,6 +109,7 @@ export function ItemFinderModal({
             {picked.size ? `${picked.size}개 줄 추가` : "줄 추가"}
           </Button>
         </>
+        )
       }
     >
       <div className={styles.controls}>
@@ -130,6 +145,7 @@ export function ItemFinderModal({
           <caption className="sr-only">품목 검색 결과</caption>
           <thead>
             <tr>
+              {!single && (
               <th className={styles.cCheck}>
                 <input
                   type="checkbox"
@@ -144,6 +160,7 @@ export function ItemFinderModal({
                   }
                 />
               </th>
+              )}
               <th>품목코드</th>
               <th>품목명</th>
               <th>단위</th>
@@ -154,10 +171,28 @@ export function ItemFinderModal({
           <tbody>
             {items.map((it) => (
               <tr key={it.id} className={picked.has(it.id) ? styles.on : undefined} onClick={() => toggle(it)}>
+                {!single && (
                 <td className={styles.cCheck}>
                   <input type="checkbox" aria-label={`${it.code} ${it.name} 선택`} checked={picked.has(it.id)} onChange={() => toggle(it)} onClick={(e) => e.stopPropagation()} />
                 </td>
-                <td className="mono">{it.code}</td>
+                )}
+                <td className="mono">
+                  {single ? (
+                    <button
+                      type="button"
+                      className={styles.pickBtn}
+                      aria-label={`${it.code} ${it.name} 고르기`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggle(it);
+                      }}
+                    >
+                      {it.code}
+                    </button>
+                  ) : (
+                    it.code
+                  )}
+                </td>
                 <td>
                   {it.name}
                   {inPlan.has(it.id) && <span className={styles.already}>이미 추가됨</span>}

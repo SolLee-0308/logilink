@@ -19,15 +19,17 @@ export default async function PdaLoadPage({ params, searchParams }: { params: Pr
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const sp = await searchParams;
-  // ← 는 들어온 상차등록 목록(날짜·거르기)으로 돌아간다 (2026-11-12 Sol: 상차내역을 상차등록에 합침)
+  // ←·[처음으로]는 들어온 메뉴의 첫 화면으로 (2026-11-13 Sol): 대시보드에서 열었으면 대시보드,
+  // 상차등록 목록에서 열었으면 그 목록(날짜·거르기 유지) (2026-11-12 Sol: 상차내역을 상차등록에 합침)
   const back = new URLSearchParams();
   if (typeof sp.from === "string" && DATE.test(sp.from)) back.set("date", sp.from);
   if (typeof sp.st === "string" && STS.has(sp.st)) back.set("st", sp.st);
+  const home = sp.ret === "dashboard" ? "/pda/dashboard" : back.size ? `/pda?${back}` : "/pda";
   const [load, reasons, reopenReasons] = await Promise.all([getPdaLoad(me, id), listCodeOptions(LOAD_DIFF_GROUP), listCodeOptions(LOAD_REOPEN_GROUP)]);
   if (!load) notFound();
   return (
-    <PdaShell user={me.name} org={me.clientName} roles={me.roles} back={back.size ? `/pda?${back}` : "/pda"} title={load.status === "WORKING" ? "상차 작업" : "상차확인서"}>
-      <PdaLoadScreen key={load.id} initial={load} reasons={reasons} reopenReasons={reopenReasons} />
+    <PdaShell user={me.name} org={me.clientName} roles={me.roles} back={home} title={load.status === "WORKING" ? "상차 작업" : "상차확인서"}>
+      <PdaLoadScreen key={load.id} initial={load} reasons={reasons} reopenReasons={reopenReasons} homeHref={home} />
     </PdaShell>
   );
 }

@@ -16,7 +16,7 @@ export const ASN_STATUS_META: Record<AsnStatus, { label: string; tone: StatusTon
   CANCELED: { label: "취소", tone: "cancel" },
 };
 
-export const ASN_ACTION_LABEL = { CREATE: "등록 · 상차지시서 발행", CANCEL: "취소", LOAD_START: "상차 시작", LOAD_COMPLETE: "상차완료 · 상차확인서 발행", RECEIVE: "입고검수 확정 · 입고완료", LOAD_REOPEN: "상차 재개", LOAD_DEPART: "출차" } as const;
+export const ASN_ACTION_LABEL = { CREATE: "등록 · 상차지시서 발행", CANCEL: "취소", LOAD_START: "상차 시작", LOAD_COMPLETE: "상차완료 · 상차확인서 발행", RECEIVE: "입고검수 확정 · 입고완료", LOAD_REOPEN: "상차 재개", LOAD_DEPART: "출차", RECEIVE_CANCEL: "입고취소 (역전표)" } as const;
 export type AsnAction = keyof typeof ASN_ACTION_LABEL;
 
 /** ASN에 담을 수 있는 입고예정 — 승인·미종결(승인·부분입고) (D8) */

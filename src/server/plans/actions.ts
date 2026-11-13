@@ -150,3 +150,13 @@ export async function readPlanImages(form: FormData): Promise<
 export async function cancelPlan(input: { id: number; version: number; reasonCode: string; reasonText?: string }) {
   return refresh(await svc.cancelPlanByShipper(await getActor(), input));
 }
+
+/** 잔량 종결 (정의서 ⑦, 2026-11-12) — 3PL, 건별·일괄 */
+export async function closeRemainPlans(input: { items: { id: number; version: number }[]; reasonCode: string; reasonText?: string }) {
+  return refresh(await svc.closeRemainPlans(await getActor(), input));
+}
+
+/** 일마감 (정의서 ⑦·D18, 2026-11-12) — 3PL, 센터의 지금 업무일 */
+export async function runDailyClose(input: { centerId: number; businessDate: string; rcvIds: number[]; expireIds: number[] }) {
+  return refresh(await svc.runDailyClose(await getActor(), input));
+}

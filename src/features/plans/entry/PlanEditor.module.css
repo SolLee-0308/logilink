@@ -317,3 +317,51 @@
     top: 16px;
   }
 }
+
+/* 줄의 품목 칸 — 드롭다운 대신 누르면 품목 찾기 창 (2026-11-13 Sol 결정) */
+.itemBtn {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-13);
+  text-align: left;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  padding: 7px 10px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.itemBtn:hover {
+  border-color: var(--line-hover);
+}
+
+.itemBtn:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 1px;
+}
+
+.itemBtnEmpty .itemBtnText {
+  color: var(--placeholder);
+}
+
+.itemBtnInvalid {
+  border-color: var(--st-rej-fg);
+}
+
+.itemBtnText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemBtnHint {
+  flex: none;
+  font-size: var(--fs-12);
+  color: var(--violet-600);
+}

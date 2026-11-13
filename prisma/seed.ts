@@ -149,7 +149,7 @@ const CODE_GROUPS: {
   {
     code: "RCV_DIFF",
     name: "검수 차이·반송",
-    description: "입고검수 이상 처리 시 선택 (정의서 ⑥ 이상 유형 기준 임시안)",
+    description: "입고검수 차이·반송 사유 — 확정 시 수량으로 시스템이 자동 지정 (정의서 v1.7 D24, 이상 유형 기준 임시안)",
     confirmed: false,
     codes: [
       ["V01", "수량 부족"],

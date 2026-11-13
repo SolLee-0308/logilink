@@ -88,6 +88,10 @@ export const LOAD_DIFF_GROUP = "LOAD_DIFF";
 export const LOAD_REOPEN_GROUP = "LOAD_REOPEN";
 /** 검수 차이·반송 사유 (정의서 ⑥, U1) */
 export const RCV_DIFF_GROUP = "RCV_DIFF";
+/** 잔량 종결 사유 (정의서 ⑦, 임시안 — 미도착·화주사 요청·기타) */
+export const REMAIN_CLOSE_GROUP = "REMAIN_CLOSE";
+/** 입고취소(역전표) 사유 (정의서 ⑥, 임시안 — 수량 오입력·품목 오입력·화주사·차량 오선택·기타) */
+export const RCV_CANCEL_GROUP = "RCV_CANCEL";
 
 /** 품목 메뉴·화면 이름 — 3PL은 조회 + 등록·수정(품목 관리), 화주사는 조회만(품목 조회) (2026-11-04 Sol 확정) */
 export const itemsTitle = (canEdit: boolean) => (canEdit ? "품목 관리" : "품목 조회");

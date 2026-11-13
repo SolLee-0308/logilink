@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allocate, lineDiff, needsReason, planStatusAfterReceive, rcvLineState } from "./rcv-rules";
+import { allocate, autoReason, lineDiff, needsReason, planStatusAfterReceive, rcvLineState } from "./rcv-rules";
 
 /**
  * 정의서 5-2 예시 — IP-0001: A100·C100·F100 / IP-0002: A100·C30·F80, 모두 ASN 분배수량 = 승인수량
@@ -65,6 +65,20 @@ test("검수 라인: 차이·상태·사유 필요 여부", () => {
   assert.equal(needsReason({ ...ok, good: 9, damaged: 1 }), true); // 차이는 0이어도 반송이 있으면 사유
   assert.equal(rcvLineState({ ...ok, good: 12 }), "over");
   assert.equal(rcvLineState({ ...base, expect: 0, mismatch: true, mismatchQty: 3, hasInputs: true }), "mismatch");
+});
+
+test("검수 사유: 수량으로 시스템이 정한다 (2026-11-13 A안)", () => {
+  const base = { expect: 10, good: 0, damaged: 0, mismatchQty: 0, mismatch: false, zeroConfirm: false, hasInputs: true };
+  assert.equal(autoReason({ ...base, good: 10 }), null); // 일치 — 사유 없음
+  assert.equal(autoReason({ ...base, good: 8 }), "V01"); // 부족
+  assert.equal(autoReason({ ...base, good: 12 }), "V02"); // 초과
+  assert.equal(autoReason({ ...base, good: 9, damaged: 1 }), "V03"); // 훼손 반송
+  assert.equal(autoReason({ ...base, good: 8, damaged: 1 }), "V03"); // 훼손 + 부족 → 훼손이 먼저
+  assert.equal(autoReason({ ...base, hasInputs: false, zeroConfirm: true }), "V05"); // 0 확인 = 미도착
+  assert.equal(autoReason({ ...base, expect: 0, mismatch: true, mismatchQty: 3 }), "V04"); // 품목 불일치
+  // 사유가 필요한 라인에는 항상 자동 사유가 있다
+  for (const l of [{ ...base, good: 8 }, { ...base, good: 12 }, { ...base, good: 9, damaged: 1 }, { ...base, hasInputs: false, zeroConfirm: true }])
+    assert.equal(needsReason(l), autoReason(l) !== null);
 });
 
 test("입고예정 상태: 모든 라인 잔량 0 이하 → 입고완료, 아니면 부분입고", () => {

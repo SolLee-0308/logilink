@@ -63,7 +63,7 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
           <ul className={styles.rows}>
             {data.recent.map((r) => (
               <li key={r.loadId}>
-                <Link href={`/pda/load/${r.loadId}?st=done`}>
+                <Link href={`/pda/load/${r.loadId}?ret=dashboard`}>
                   <b className="mono">{r.vehicleNo}</b>
                   <span className="mono">{r.loadNo}</span>
                   <span>{fmtDateTime(r.completedAt).slice(11)}</span>

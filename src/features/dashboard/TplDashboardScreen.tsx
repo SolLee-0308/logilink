@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge } from "@/components/ui/Badges";
-import { Button } from "@/components/ui/Button";
+import { LinkButton } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { fmtShortDateTime } from "@/lib/format";
@@ -112,7 +112,7 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
               body: (
                 <p className={styles.plain}>
                   잔량이 남은 채로 오래된 건이 <b className="mono">{watch.unclosedOverdue}</b>건 있습니다. 더 들어올 물량이 없으면 잔량 종결 대상입니다.{" "}
-                  <Link href="/plans/inquiry?from=-&to=-">입고예정 조회에서 보기 →</Link>
+                  <Link href="/closing">잔량 종결에서 보기 →</Link>
                 </p>
               ),
             },
@@ -124,9 +124,9 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
           title="일마감"
           description="일마감은 오늘 업무일의 검수 확정 실적을 확정하고, 기한경과 건을 취소합니다. 전표를 닫지 않으므로 마감 뒤에도 승인된 건은 계속 입고할 수 있습니다."
           aside={
-            <Button size="sm" disabled title="잔량 종결·일마감 화면은 다음 단계에서 연결합니다">
-              일마감 화면 (준비 중)
-            </Button>
+            <LinkButton size="sm" href="/closing?tab=daily">
+              일마감 화면
+            </LinkButton>
           }
         >
           <DataTable compact caption="센터별 일마감 상태" columns={closeColumns} rows={centers} rowKey={(r) => String(r.id)} empty="센터가 없습니다." />

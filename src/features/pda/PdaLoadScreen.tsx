@@ -39,7 +39,18 @@ const overAsk = (source: "add" | "edit", fe?: Record<string, string>): Ask | nul
  * 6) 출차(2026-11-12 Sol): 상차완료 화면 [출차] → 확인 창 → 이후 재개 불가. 안 누르면 상차완료한 업무일이 지나면 자동 출차
  * 화면 배치(2026-11-05 참고 UI): 차량 머리·진행 단계 → 스캔 카드 → 품목 → 상차 정보 → 내 입력 타임라인 → 아래 고정 [상차완료]
  */
-export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initial: LoadView; reasons: ReasonOption[]; reopenReasons?: ReasonOption[] }) {
+export function PdaLoadScreen({
+  initial,
+  reasons,
+  reopenReasons = [],
+  homeHref = "/pda",
+}: {
+  initial: LoadView;
+  reasons: ReasonOption[];
+  reopenReasons?: ReasonOption[];
+  /** [처음으로] — 들어온 메뉴의 첫 화면(대시보드 또는 조회조건을 유지한 상차등록 목록) (2026-11-13 Sol) */
+  homeHref?: string;
+}) {
   const router = useRouter();
   const [view, setView] = useState(initial);
   const [pending, start] = useTransition();
@@ -350,7 +361,7 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
               <Icon name="truck" size={18} /> 출차
             </button>
           ) : (
-            <button type="button" className={styles.blackPill} onClick={() => router.push("/pda")}>
+            <button type="button" className={styles.blackPill} onClick={() => router.push(homeHref)}>
               처음으로
             </button>
           )}
@@ -371,7 +382,7 @@ export function PdaLoadScreen({ initial, reasons, reopenReasons = [] }: { initia
             </p>
           )}
           {view.canDepart && (
-            <button type="button" className={styles.link} onClick={() => router.push("/pda")} disabled={pending}>
+            <button type="button" className={styles.link} onClick={() => router.push(homeHref)} disabled={pending}>
               처음으로 (출차는 나중에)
             </button>
           )}
