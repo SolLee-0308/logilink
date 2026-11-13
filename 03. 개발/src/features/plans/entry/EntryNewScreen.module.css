@@ -107,6 +107,32 @@
   background: var(--violet-50);
 }
 
+/* 파일을 고른 뒤 — 연보라 바탕 (품목 등록 요청 엑셀과 같게) */
+.dropHas {
+  border-style: solid;
+  border-color: var(--violet-300);
+  background: var(--violet-50);
+}
+
+.dropErr {
+  border-color: var(--st-rej-fg);
+}
+
+.dropName {
+  font-family: var(--font-mono, inherit);
+  overflow-wrap: anywhere;
+}
+
+.placeholder {
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--fs-13);
+  text-align: center;
+}
+
 .drop[aria-disabled] {
   opacity: 0.6;
 }

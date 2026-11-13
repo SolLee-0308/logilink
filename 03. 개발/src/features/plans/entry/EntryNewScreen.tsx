@@ -11,6 +11,7 @@ import { AI_MAX_IMAGES, PLAN_MAX_LINES, type CatalogItem } from "@/domain/plan-e
 import type { PlanInputMethod } from "@/domain/plan-status";
 import { previewPlanExcel, readPlanImages } from "@/server/plans/actions";
 import { SubHeader } from "@/features/master/shared";
+import { Step as BulkStep } from "@/features/master/ItemBulkScreen";
 import { ENTRY_RULES } from "../rules";
 import type { EntryOptions } from "../types";
 import { ENTRY_LIST_KEY, entryListUrl } from "./entry-list";
@@ -93,6 +94,8 @@ function DropZone({
   busy,
   title,
   help,
+  fileName,
+  invalid,
   onFiles,
 }: {
   id: string;
@@ -101,6 +104,9 @@ function DropZone({
   busy: boolean;
   title: string;
   help: string;
+  /** 고른 파일 이름 — 있으면 연보라 바탕에 이름을 보여 준다 (품목 등록 요청 엑셀과 같은 모양) */
+  fileName?: string;
+  invalid?: boolean;
   onFiles: (files: File[]) => void;
 }) {
   const [over, setOver] = useState(false);
@@ -119,7 +125,7 @@ function DropZone({
   }, []);
   return (
     <div
-      className={`${styles.drop} ${over ? styles.dropOver : ""}`}
+      className={`${styles.drop} ${over ? styles.dropOver : ""} ${fileName ? styles.dropHas : ""} ${invalid ? styles.dropErr : ""}`}
       aria-disabled={busy || undefined}
       onDragEnter={(e) => {
         e.preventDefault();
@@ -151,14 +157,28 @@ function DropZone({
           e.target.value = "";
         }}
       />
-      <strong>{busy ? "읽는 중…" : over ? "여기에 놓으세요" : title}</strong>
-      <span className="muted">
-        또는{" "}
-        <label htmlFor={id} className={styles.pick}>
-          파일 선택
-        </label>{" "}
-        · {help}
-      </span>
+      {fileName ? (
+        <>
+          <strong className={styles.dropName}>{fileName}</strong>
+          <span className="muted">
+            다른 파일을 끌어다 놓거나{" "}
+            <label htmlFor={id} className={styles.pick}>
+              파일 다시 고르기
+            </label>
+          </span>
+        </>
+      ) : (
+        <>
+          <strong>{busy ? "읽는 중…" : over ? "여기에 놓으세요" : title}</strong>
+          <span className="muted">
+            또는{" "}
+            <label htmlFor={id} className={styles.pick}>
+              파일 선택
+            </label>{" "}
+            · {help}
+          </span>
+        </>
+      )}
     </div>
   );
 }
@@ -168,17 +188,26 @@ function DropZone({
 function ExcelTab({ options, onSaved, onCancel }: { options: EntryOptions; onSaved: (id: number) => void; onCancel: () => void }) {
   const toast = useToast();
   const [draft, setDraft] = useState<{ lines: EditorLine[]; items: CatalogItem[]; fileName: string; nonce: number } | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, start] = useTransition();
 
+  /** 파일 선택·끌어다 놓기 — 고르기만 하고, 읽기는 [파일 확인]에서 (품목 등록 요청 엑셀과 같은 흐름) */
   function onFiles(files: File[]) {
     const f = files[0];
     if (!f) return;
-    if (files.length > 1) return setError("파일은 한 번에 하나만 올릴 수 있습니다.");
-    if (!/\.xlsx$/i.test(f.name)) return setError(".xlsx 엑셀 파일만 올릴 수 있습니다. (.xls·.csv는 엑셀에서 .xlsx로 저장해 주세요)");
+    if (files.length > 1 || !/\.xlsx$/i.test(f.name)) {
+      setFile(null);
+      return setError(files.length > 1 ? "파일은 한 번에 하나만 올릴 수 있습니다." : ".xlsx 엑셀 파일만 올릴 수 있습니다. (.xls·.csv는 엑셀에서 .xlsx로 저장해 주세요)");
+    }
     setError(null);
+    setFile(f);
+  }
+
+  function check() {
+    if (!file) return setError("엑셀 파일을 끌어다 놓거나 고르세요.");
     const form = new FormData();
-    form.set("file", f);
+    form.set("file", file);
     start(async () => {
       const r = await previewPlanExcel(form);
       if (!r.ok) {
@@ -197,7 +226,13 @@ function ExcelTab({ options, onSaved, onCancel }: { options: EntryOptions; onSav
           <span>
             엑셀 <strong>{draft.fileName}</strong>에서 <strong className="mono">{draft.lines.length}</strong>행을 불러왔습니다.
           </span>
-          <Button size="sm" onClick={() => setDraft(null)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setDraft(null);
+              setFile(null);
+            }}
+          >
             다른 파일 올리기
           </Button>
         </div>
@@ -216,23 +251,48 @@ function ExcelTab({ options, onSaved, onCancel }: { options: EntryOptions; onSav
 
   return (
     <div className={styles.body}>
-      <Step no={1} title="양식 내려받기" description="품목 1개를 1행에 씁니다. 품목코드·바코드·품목명 중 하나와 수량은 꼭 넣고, 소비기한·로트는 관리 품목만 씁니다.">
-        <a className={styles.download} href="/plans/entry/template" download>
-          입고예정 양식 내려받기 (.xlsx)
-        </a>
-      </Step>
-      <Step
+      {/* 품목 등록 요청 [엑셀로 여러 품목]과 같은 단계 카드: 양식 버튼은 제목 줄 오른쪽, [파일 확인]은 카드 아래 (2026-11-13 Sol 피드백) */}
+      <BulkStep
+        no={1}
+        title="양식 내려받기"
+        state={file ? "done" : "current"}
+        description="품목 1개를 1행에 씁니다. 품목코드·바코드·품목명 중 하나와 수량은 꼭 넣고, 소비기한·로트는 관리 품목만 씁니다."
+        aside={
+          <a className={styles.download} href="/plans/entry/template" download>
+            입고예정 양식 내려받기 (.xlsx)
+          </a>
+        }
+      />
+      <BulkStep
         no={2}
         title="작성한 파일 올리기"
-        description={`.xlsx 파일 1개, 최대 ${PLAN_MAX_LINES}행. 올리면 품목을 마스터와 맞춰 아래 편집 화면에 채웁니다. 센터·입고예정일은 다음 화면에서 고르고, 아직 저장하지 않습니다.`}
+        state={file ? "current" : "todo"}
+        description={`.xlsx 1개, 최대 ${PLAN_MAX_LINES}행 · 파일 확인만으로는 저장되지 않습니다`}
+        footer={
+          <Button variant="primary" onClick={check} disabled={busy || !file}>
+            {busy ? "확인 중…" : "파일 확인"}
+          </Button>
+        }
       >
-        <DropZone id="pe-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" busy={busy} title="작성한 엑셀 파일을 이 영역에 끌어다 놓으세요" help=".xlsx 파일 1개" onFiles={onFiles} />
+        <DropZone
+          id="pe-file"
+          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          busy={busy}
+          title="작성한 엑셀 파일을 이 영역에 끌어다 놓으세요"
+          help=".xlsx 파일 1개"
+          fileName={file?.name}
+          invalid={!!error}
+          onFiles={onFiles}
+        />
         {error && (
           <p className={styles.err} role="alert">
             {error}
           </p>
         )}
-      </Step>
+      </BulkStep>
+      <BulkStep no={3} title="편집 화면에서 확인 후 저장" state="todo" description="센터·입고예정일을 고르고 확인 필요 줄을 고친 뒤 저장합니다">
+        <p className={styles.placeholder}>파일을 올리고 [파일 확인]을 누르면 품목을 마스터와 맞춰 편집 화면에 채웁니다.</p>
+      </BulkStep>
     </div>
   );
 }

@@ -26,7 +26,6 @@ import type { PlanInputMethod } from "@/domain/plan-status";
 import { savePlan } from "@/server/plans/actions";
 import { Card } from "@/components/ui/Card";
 import { ItemFinderModal } from "./ItemFinderModal";
-import { ItemPicker } from "./ItemPicker";
 import { ItemRequestModal } from "./ItemRequestModal";
 import type { EntryOptions } from "../types";
 import styles from "./PlanEditor.module.css";
@@ -362,7 +361,7 @@ export function PlanEditor({
         stepState={lines.some((l) => l.itemId) && issueCount === 0 ? "done" : "current"}
         title="품목"
         count={lines.length}
-        description="품목코드·바코드를 치고 Enter, 여러 품목은 [품목 찾기]에서 한 번에 넣습니다."
+        description="품목은 [품목 찾기] 창에서만 고릅니다. 여러 품목은 체크해 한 번에 넣고, 줄의 품목 칸을 누르면 그 줄 품목을 고르거나 바꿉니다."
         aside={
           <>
             {imported && (
@@ -436,7 +435,7 @@ export function PlanEditor({
                   flagged={hasErr(i) && visible(i)}
                   autoFocus={focusKey === l.key}
                   onPick={(it, unit) => setItem(l, it, unit)}
-                  onMore={(q) => setFinder({ q, lineKey: l.key })}
+                  onFind={() => setFinder({ q: "", lineKey: l.key })}
                   onChange={(p) => update(l.key, p)}
                   onRemove={() => removeLine(l.key)}
                   onRequest={() => setRequestFor(l)}
@@ -480,7 +479,16 @@ export function PlanEditor({
           initialQuery={finder.q}
           inPlan={new Set(lines.map((l) => l.itemId).filter((x): x is number => !!x))}
           onClose={() => setFinder(null)}
-          onAdd={addFromFinder}
+          single={!!finder.lineKey}
+          onAdd={(items) => {
+            // 줄의 품목 칸에서 연 창 — 그 줄의 품목을 고르거나 바꾼다
+            const line = finder.lineKey ? lines.find((l) => l.key === finder.lineKey) : undefined;
+            if (line && items[0]) {
+              setItem(line, items[0]);
+              setFinder(null);
+              setFocusKey(null);
+            } else addFromFinder(items);
+          }}
         />
       )}
 
@@ -512,7 +520,7 @@ function LineRow({
   flagged,
   autoFocus,
   onPick,
-  onMore,
+  onFind,
   onChange,
   onRemove,
   onRequest,
@@ -528,7 +536,8 @@ function LineRow({
   flagged: boolean;
   autoFocus: boolean;
   onPick: (it: CatalogItem, unit?: ItemUnit | null) => void;
-  onMore: (q: string) => void;
+  /** 품목 찾기 창으로 이 줄의 품목 고르기 */
+  onFind: () => void;
   onChange: (p: Partial<EditorLine>) => void;
   onRemove: () => void;
   onRequest: () => void;
@@ -553,15 +562,31 @@ function LineRow({
               {flagged && <Tag tone="warn">확인 필요</Tag>}
             </div>
           )}
-          <ItemPicker
+          {/* 드롭다운 자동완성 없이, 누르면 품목 찾기 창이 열린다 (2026-11-13 Sol 결정) */}
+          <button
+            type="button"
             id={`${id}-item`}
-            item={item}
-            onPick={onPick}
-            onMore={onMore}
-            invalid={!!errors.itemId}
-            describedBy={msgs.length ? `${id}-err` : undefined}
+            className={`${styles.itemBtn} ${item ? "" : styles.itemBtnEmpty} ${errors.itemId ? styles.itemBtnInvalid : ""}`}
+            aria-invalid={!!errors.itemId || undefined}
+            aria-describedby={msgs.length ? `${id}-err` : undefined}
+            aria-haspopup="dialog"
+            aria-label={item ? `${no}번째 줄 품목 ${item.code} ${item.name}, 바꾸기` : `${no}번째 줄 품목 찾기`}
             autoFocus={autoFocus}
-          />
+            onClick={onFind}
+          >
+            <span className={styles.itemBtnText}>
+              {item ? (
+                <>
+                  <span className="mono">{item.code}</span> {item.name}
+                </>
+              ) : (
+                "품목 찾기"
+              )}
+            </span>
+            <span className={styles.itemBtnHint} aria-hidden>
+              {item ? "바꾸기" : "찾기"}
+            </span>
+          </button>
           {!line.itemId && line.candidates.length > 0 && (
             <div className={styles.cands}>
               <span className="muted">후보</span>

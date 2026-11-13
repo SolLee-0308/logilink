@@ -75,7 +75,8 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
         return;
       }
       passNotice(r.data?.notice);
-      router.push(`/pda/inspect/${r.data!.rcvId}`);
+      // 스캔으로 열어도 지금 날짜·보기를 가지고 간다 — [처음으로]·← 가 같은 목록으로 (2026-11-13 Sol)
+      router.push(rcvHref(r.data!.rcvId!));
     });
 
   /** 검수 대기 카드 — 회색, 상차 구분 알약. 오늘 전에 상차완료한 차량은 날짜 안내 */

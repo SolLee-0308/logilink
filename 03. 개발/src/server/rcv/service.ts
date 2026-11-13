@@ -14,7 +14,9 @@ import { fail, type ActionResult } from "@/server/action-result";
 import type { PlanActor } from "@/server/plans/service";
 import { resolveScan, type Resolved } from "@/server/loads/service";
 import { asDate, canInspect, rcvCenterScope, ACTIVE_RCV } from "@/server/rcv/queries";
-import { RCV_DIFF_GROUP } from "@/domain/master";
+import { RCV_CANCEL_GROUP, RCV_DIFF_GROUP } from "@/domain/master";
+import { can } from "@/domain/permissions";
+import { RCV_REVERSE_PREFIX, REVERSE_LOCKED_PLAN, planStatusAfterReverse, rcvCancelBlock } from "@/domain/rcv-cancel-rules";
 import { ASN_COUNTED, DISTRIBUTABLE_PLAN, docNoPrefix, nextDocNo, normalizeVehicleNo } from "@/domain/asn-rules";
 import { addQtyError, normalizeDocNo, normalizeScan, qtyInUnit } from "@/domain/load-rules";
 import {
@@ -26,7 +28,7 @@ import {
   RCV_PREFIX,
   RCV_REASON,
   allocate,
-  defaultReason,
+  autoReason,
   needsReason,
   planStatusAfterReceive,
   type RcvLineQty,
@@ -202,7 +204,7 @@ export async function addRcvInput(me: PlanActor, input: RcvAddInput): Promise<Ac
       if (line && !mismatch && !input.confirm && line.goodBaseQty + line.damagedBaseQty + addBase > line.expectBaseQty) {
         const { showUnit, showFactor } = await showUnitOf(tx, rcv.loadId, r);
         const f = (n: number) => qtyInUnit(n, showUnit, showFactor, r.baseUnit);
-        return fail("CONFIRM", `${r.itemName}: 상차 수량 ${f(line.expectBaseQty)}보다 많아집니다(입력 후 ${f(line.goodBaseQty + line.damagedBaseQty + addBase)}). 실제로 센 수량이 맞으면 그대로 입력하세요. 확정 때 차이 사유를 고릅니다.`);
+        return fail("CONFIRM", `${r.itemName}: 상차 수량 ${f(line.expectBaseQty)}보다 많아집니다(입력 후 ${f(line.goodBaseQty + line.damagedBaseQty + addBase)}). 실제로 센 수량이 맞으면 그대로 입력하세요. 차이 사유는 시스템이 수량으로 기록합니다.`);
       }
 
       if (!line) {
@@ -317,11 +319,10 @@ export async function setRcvZero(me: PlanActor, input: { rcvId: number; itemId: 
 
 export async function setRcvLineInfo(
   me: PlanActor,
-  input: { rcvId: number; itemId: number; reasonCode?: string | null; reasonText?: string | null; expiryDate?: string | null; lotNo?: string | null },
+  // 차이 사유는 시스템이 정하므로 받지 않는다 (2026-11-13 Sol, A안) — 소비기한·로트만
+  input: { rcvId: number; itemId: number; expiryDate?: string | null; lotNo?: string | null },
 ): Promise<ActionResult> {
   if (!canInspect(me)) return forbidden();
-  const text = input.reasonText?.trim() ?? "";
-  if (text.length > 500) return fail("VALIDATION", "상세 내용은 500자 이내로 입력하세요.", { reasonText: "500자 이내" });
   if (input.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.expiryDate)) return fail("VALIDATION", "소비기한을 날짜로 입력하세요.", { expiryDate: "날짜" });
   const lot = input.lotNo?.trim() ?? "";
   if (lot.length > 40) return fail("VALIDATION", "로트는 40자 이내로 입력하세요.", { lotNo: "40자 이내" });
@@ -333,13 +334,6 @@ export async function setRcvLineInfo(
       const line = await tx.rcvLine.findUnique({ where: { rcvId_itemId: { rcvId: rcv.id, itemId: input.itemId } } });
       if (!line) return fail("NOT_FOUND", "검수 품목을 찾을 수 없습니다.");
       const data: Prisma.RcvLineUpdateInput = {};
-      if (input.reasonCode !== undefined) {
-        if (input.reasonCode) {
-          const c = await reasonOf(tx, input.reasonCode);
-          if (!c) return fail("VALIDATION", "사유를 다시 고르세요.", { reasonCode: "사유를 다시 고르세요." });
-          Object.assign(data, { reasonCode: c.code, reasonName: c.name, reasonText: text || null });
-        } else Object.assign(data, { reasonCode: null, reasonName: null, reasonText: null });
-      }
       if (input.expiryDate !== undefined) data.expiryDate = input.expiryDate ? asDate(input.expiryDate) : null;
       if (input.lotNo !== undefined) data.lotNo = lot || null;
       await tx.rcvLine.update({ where: { id: line.id }, data });
@@ -432,20 +426,20 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
         if (!lines.some((l) => l.goodBaseQty + l.damagedBaseQty + l.mismatchBaseQty > 0 || l.zeroConfirm))
           return fail("STATE", "입력한 수량이 없습니다. 품목을 스캔해 수량을 입력하세요.");
 
-        // 사유(D19)·훼손 사진(C7) 검사
+        // 사유(D19)는 확정 시점의 수량으로 시스템이 정한다 (2026-11-13 Sol, A안) — 수량과 어긋난 사유가 남지 않게 항상 다시 쓴다.
+        // 차이가 없어진 라인에 남은 사유도 지운다. 훼손 사진(C7) 검사는 그대로
         for (const l of lines) {
           const lq = q(l);
-          if (!needsReason(lq)) continue;
-          if (!l.reasonCode) {
-            const preset = defaultReason(lq);
-            const c = preset ? await reasonOf(tx, preset) : null;
-            if (!c) return fail("VALIDATION", `${l.item.name}: 상차 수량과 차이가 있습니다. 차이 사유를 고르세요.`, { [`line-${l.itemId}`]: "차이 사유를 고르세요." });
-            await tx.rcvLine.update({ where: { id: l.id }, data: { reasonCode: c.code, reasonName: c.name } });
-            l.reasonCode = c.code;
+          if (!needsReason(lq)) {
+            if (l.reasonCode || l.reasonText) await tx.rcvLine.update({ where: { id: l.id }, data: { reasonCode: null, reasonName: null, reasonText: null } });
+            continue;
           }
-          const c = await reasonOf(tx, l.reasonCode);
-          if (!c) return fail("VALIDATION", `${l.item.name}: 사용하지 않는 사유입니다. 다시 고르세요.`, { [`line-${l.itemId}`]: "사유를 다시 고르세요." });
-          if (c.requiresText && !l.reasonText?.trim()) return fail("VALIDATION", `${l.item.name}: "${c.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`, { [`line-${l.itemId}`]: "상세 내용을 입력하세요." });
+          const code = autoReason(lq);
+          const c = code ? await reasonOf(tx, code) : null;
+          if (!c) return fail("STATE", `차이 사유 공통코드(${RCV_DIFF_GROUP} ${code ?? "-"})가 사용 중이 아닙니다. 3PL 관리자에게 공통코드 확인을 요청하세요.`);
+          if (l.reasonCode !== c.code || l.reasonName !== c.name || l.reasonText)
+            await tx.rcvLine.update({ where: { id: l.id }, data: { reasonCode: c.code, reasonName: c.name, reasonText: null } });
+          l.reasonCode = c.code;
           if (l.damagedBaseQty > 0) {
             const n = await tx.rcvImage.count({ where: { rcvId: rcv.id, itemId: l.itemId } });
             if (n < RCV_IMAGE_MIN) return fail("VALIDATION", `${l.item.name}: 훼손 반송은 사진을 ${RCV_IMAGE_MIN}장 이상 찍어야 합니다.`, { [`line-${l.itemId}`]: "사진을 찍으세요." });
@@ -543,6 +537,105 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
         });
         if (!r.count) return fail("STATE", "이미 검수 확정된 차량입니다.");
         return ok(`검수 확정 · ${rcv.rcvNo} — 입고예정 ${touchedPlans.size}건에 자동 배분했습니다.`, { rcvNo: rcv.rcvNo });
+      },
+      { timeout: 30_000 },
+    ),
+  );
+}
+
+/* ═════════ 입고취소 역전표 (정의서 ⑥ "입고취소 역전표 후 재검수", 2026-11-12) ═════════ */
+
+/**
+ * 입고취소 — 확정된 검수 실적을 역전표로 되돌린다. 확정 기록은 고치지 않고(핵심 원칙 2), 역전표를 만들어
+ * 원래 배분을 "되돌림"으로 표시한다(합계에서 빠짐). 입고예정 입고·반송 누계와 상태, ASN(입고완료 → 상차완료)·상차지시서를 되돌리고,
+ * 같은 차량을 다시 검수할 수 있게 검수 상태를 '입고취소'로 바꾼다.
+ * 임시안: 3PL 관리자만, 사유 필수(RCV_CANCEL), 일마감 전 실적만, 배분된 입고예정이 종결·취소되었으면 불가 (rcv-cancel-rules.ts).
+ */
+export async function reverseRcv(
+  me: PlanActor,
+  input: { rcvId: number; version: number; reasonCode: string; reasonText?: string },
+): Promise<ActionResult<{ reverseNo: string }>> {
+  if (!can(me.roles, "rcvResults", "edit")) return forbidden();
+  const text = input.reasonText?.trim() ?? "";
+  if (text.length > 500) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
+  return guarded(() =>
+    db.$transaction(
+      async (tx) => {
+        const rcv = await lockRcv(tx, input.rcvId);
+        if (!rcv || !inScope(me, rcv)) return notFound();
+        if (rcv.version !== input.version) return fail("CONFLICT", "그사이 바뀐 검수 실적입니다. 화면을 새로 고쳐 다시 확인하세요.");
+        const reason = input.reasonCode
+          ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: RCV_CANCEL_GROUP, code: input.reasonCode } } })
+          : null;
+        if (!reason || !reason.isActive) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonCode: "입고취소 사유를 고르세요." });
+        if (reason.requiresText && !text) return fail("VALIDATION", "입력 내용을 확인하세요.", { reasonText: `"${reason.name}"을(를) 고르면 상세 내용을 입력해야 합니다.` });
+
+        // 확정·배분과 같은 줄에 세운다 (같은 화주사 배분이 동시에 바뀌지 않게)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${7_700_000 + rcv.clientId})`;
+        const allocs = await tx.rcvAlloc.findMany({
+          where: { rcvId: rcv.id, reverse: false },
+          include: { planLine: { select: { id: true, planId: true, plan: { select: { planNo: true, status: true } } } } },
+        });
+        const lockedPlanNos = [...new Set(allocs.filter((a) => a.planLine && REVERSE_LOCKED_PLAN.includes(a.planLine.plan.status)).map((a) => a.planLine!.plan.planNo))];
+        const block = rcvCancelBlock({ status: rcv.status, dailyClosed: !!rcv.dailyCloseId, lockedPlanNos });
+        if (block) return fail("STATE", block);
+
+        const today = todayKst();
+        const used = await tx.rcvReverse.findMany({ where: { reverseNo: { startsWith: docNoPrefix(RCV_REVERSE_PREFIX, today) } }, select: { reverseNo: true } });
+        const lines = await tx.rcvLine.findMany({ where: { rcvId: rcv.id }, select: { goodBaseQty: true, damagedBaseQty: true, mismatchBaseQty: true } });
+        const doc = await tx.rcvReverse.create({
+          data: {
+            reverseNo: nextDocNo(RCV_REVERSE_PREFIX, today, used.map((u) => u.reverseNo)),
+            rcvId: rcv.id,
+            clientId: rcv.clientId,
+            centerId: rcv.centerId,
+            reasonCode: reason.code,
+            reasonName: reason.name,
+            reasonText: text || null,
+            goodBaseQty: lines.reduce((s, l) => s + l.goodBaseQty, 0),
+            returnBaseQty: lines.reduce((s, l) => s + l.damagedBaseQty + l.mismatchBaseQty, 0),
+            createdBy: me.name,
+            createUserId: me.id,
+          },
+        });
+
+        // 원래 배분을 되돌림으로 표시하고 입고예정 누계를 뺀다
+        const touched = new Set<number>();
+        if (allocs.length) await tx.rcvAlloc.updateMany({ where: { id: { in: allocs.map((a) => a.id) }, reverse: false }, data: { reverse: true, reverseId: doc.id } });
+        for (const a of allocs) {
+          if (!a.planLine) continue;
+          await tx.inboundPlanLine.update({
+            where: { id: a.planLine.id },
+            data: a.kind === "GOOD" ? { rcvQty: { decrement: a.allocQty } } : { returnQty: { decrement: a.allocQty } },
+          });
+          touched.add(a.planLine.planId);
+        }
+        for (const planId of touched) {
+          const plan = await tx.inboundPlan.findUniqueOrThrow({ where: { id: planId }, include: { lines: true } });
+          const next = planStatusAfterReverse(plan.lines);
+          await tx.inboundPlan.update({ where: { id: plan.id }, data: { status: next, version: { increment: 1 }, updatedBy: me.name } });
+          await tx.inboundPlanHistory.create({
+            data: {
+              planId: plan.id, action: "RECEIVE_CANCEL", version: plan.version + 1, revisionNo: plan.revisionNo, actor: me.name, actorId: me.id,
+              reasonCode: reason.code, reasonName: reason.name, reasonText: `입고취소 ${doc.reverseNo} (검수 ${rcv.rcvNo})${text ? ` — ${text}` : ""}`,
+            },
+          });
+        }
+
+        // ASN 입고완료 → 상차완료, 상차지시서 검수완료 → 상차완료 (다시 검수할 수 있게)
+        const load = await tx.load.findUniqueOrThrow({ where: { id: rcv.loadId }, select: { asnId: true } });
+        if (load.asnId) {
+          const asn = await tx.asn.findUniqueOrThrow({ where: { id: load.asnId } });
+          if (asn.status === "RECEIVED") await tx.asn.update({ where: { id: asn.id }, data: { status: "LOADED", version: { increment: 1 }, updatedBy: me.name } });
+          await tx.loadOrder.updateMany({ where: { asnId: asn.id, status: "INSPECTED" }, data: { status: "LOADED" } });
+          await tx.asnHistory.create({
+            data: { asnId: asn.id, action: "RECEIVE_CANCEL", version: asn.version + 1, actor: me.name, actorId: me.id, reasonCode: reason.code, reasonName: reason.name, reasonText: `입고취소 ${doc.reverseNo} (검수 ${rcv.rcvNo})${text ? ` — ${text}` : ""}` },
+          });
+        }
+
+        const r = await tx.rcv.updateMany({ where: { id: rcv.id, status: "CONFIRMED", dailyCloseId: null }, data: { status: "CANCELED", version: { increment: 1 } } });
+        if (!r.count) return fail("STATE", "이미 입고취소했거나 일마감된 실적입니다.");
+        return ok(`입고취소 ${doc.reverseNo} · 검수 ${rcv.rcvNo} — 입고예정 ${touched.size}건을 되돌렸습니다. 같은 차량을 다시 검수할 수 있습니다.`, { reverseNo: doc.reverseNo });
       },
       { timeout: 30_000 },
     ),

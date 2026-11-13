@@ -58,7 +58,7 @@ export function PdaInspectDashboardScreen({ data }: { data: PdaRcvDashboard }) {
           <ul className={styles.rows}>
             {data.recent.map((r) => (
               <li key={r.rcvId}>
-                <Link href={`/pda/inspect/${r.rcvId}?st=done`}>
+                <Link href={`/pda/inspect/${r.rcvId}?ret=dashboard`}>
                   <b className="mono">{r.vehicleNo}</b>
                   <span className="mono">{r.rcvNo}</span>
                   <span>{fmtDateTime(r.confirmedAt).slice(11)}</span>

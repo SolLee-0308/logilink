@@ -10,7 +10,7 @@
  */
 import type { StatusTone } from "./plan-status";
 
-export const RCV_STATUSES = ["WORKING", "CONFIRMED"] as const;
+export const RCV_STATUSES = ["WORKING", "CONFIRMED", "CANCELED"] as const;
 export type RcvStatus = (typeof RCV_STATUSES)[number];
 export type RcvKind = "GOOD" | "DAMAGED" | "MISMATCH";
 export type RcvAllocKind = "GOOD" | "RETURN";
@@ -18,6 +18,7 @@ export type RcvAllocKind = "GOOD" | "RETURN";
 export const RCV_STATUS_META: Record<RcvStatus, { label: string; tone: StatusTone }> = {
   WORKING: { label: "검수중", tone: "part" },
   CONFIRMED: { label: "검수확정", tone: "done" },
+  CANCELED: { label: "입고취소", tone: "cancel" },
 };
 export const RCV_KIND_LABEL: Record<RcvKind, string> = { GOOD: "정상", DAMAGED: "훼손·오염 반송", MISMATCH: "품목 불일치 반송" };
 
@@ -65,11 +66,19 @@ export function rcvLineState(l: RcvLineQty): RcvLineState {
   return d < 0 ? "short" : d > 0 ? "over" : "match";
 }
 
-/** 사유를 고르지 않았을 때 미리 골라 둘 값 */
-export function defaultReason(l: RcvLineQty): string | null {
+/**
+ * 검수 차이 사유 — 사용자가 고르지 않고 수량으로 시스템이 정한다 (2026-11-13 Sol 결정, A안).
+ * 부족·초과는 수량 비교로 이미 알 수 있어 드롭다운으로 다시 고르면 수량과 어긋난 사유가 저장될 수 있었다.
+ * 한 라인에 사유는 하나 — 품목 불일치 > 미도착(0 확인) > 훼손 반송 > 수량 부족 > 수량 초과 순으로 정한다.
+ * 사유가 필요 없는 라인(차이·반송 없음)은 null.
+ */
+export function autoReason(l: RcvLineQty): string | null {
   if (l.mismatch) return RCV_REASON.MISMATCH;
   if (!l.hasInputs && l.zeroConfirm) return RCV_REASON.MISSING;
   if (l.damaged > 0) return RCV_REASON.DAMAGED;
+  const d = lineDiff(l);
+  if (d < 0) return RCV_REASON.SHORT;
+  if (d > 0) return RCV_REASON.OVER;
   return null;
 }
 
@@ -137,4 +146,4 @@ export const planStatusAfterReceive = (lines: { baseQty: number; rcvQty: number;
   lines.every((l) => planLineRemain(l) <= 0) ? ("COMPLETED" as const) : ("PARTIAL" as const);
 
 export const RCV_CONFLICT_MSG = "그사이 다른 검수자가 입력했습니다. 최신 합계를 다시 확인한 뒤 확정하세요.";
-export const RCV_DONE_MSG = "이미 검수 확정된 차량입니다. 확정 뒤에는 고칠 수 없습니다(입고취소는 추후 제공).";
+export const RCV_DONE_MSG = "이미 검수 확정된 차량입니다. 확정 뒤에는 고칠 수 없습니다. 잘못 확정했으면 3PL 관리자가 일마감 전에 입고취소한 뒤 다시 검수합니다.";
