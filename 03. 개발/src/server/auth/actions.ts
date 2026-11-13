@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { clientIp, createSession, destroySession, getAnySessionUser } from "@/server/session";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
+import { dashboardReady, pdaWorkHome } from "@/lib/demo";
 import { isPdaRole, isWebRole } from "@/domain/permissions";
 import { isValidPassword, PASSWORD_RULE_TEXT } from "@/domain/validators";
 import type { LoginResult } from "@/generated/prisma/client";
@@ -109,7 +110,9 @@ async function loginAs(channel: "Web" | "PDA", form: FormData): Promise<FormStat
   await db.user.update({ where: { id: user.id }, data: { failCount: 0, lastLoginAt: new Date() } });
   await createSession(user.id);
   await logAttempt(input, "SUCCESS", null, user.id);
-  redirect(user.mustChangePw ? `/change-password?next=${encodeURIComponent(next)}` : next);
+  // 시연 링크는 PDA 대시보드를 막아 두므로 업무 첫 화면으로 (2026-11-13 Sol)
+  const dest = channel === "PDA" && next === "/pda/dashboard" && !dashboardReady() ? pdaWorkHome(user.roles) : next;
+  redirect(user.mustChangePw ? `/change-password?next=${encodeURIComponent(dest)}` : dest);
 }
 
 export async function logout() {

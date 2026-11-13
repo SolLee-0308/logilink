@@ -19,6 +19,8 @@ export interface Viewer {
   roleLabel: string;
   /** 3PL · 용인1센터 / 화주사 · 한빛식품 */
   orgLabel: string;
+  /** false면 대시보드 메뉴를 누를 수 없게 '준비 중'으로 (시연 링크, 2026-11-13 Sol) */
+  dashboardReady?: boolean;
 }
 
 const isOn = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
@@ -31,6 +33,7 @@ export function Sidebar({ serverCounts = {}, viewer, onCollapse }: { serverCount
     ...g,
     items: g.items
       .filter((it) => !it.href || can(viewer.roles, resourceOfPath(it.href), "view"))
+      .map((it) => (viewer.dashboardReady === false && it.href === "/dashboard" ? { ...it, href: undefined, soon: true } : it))
       .map((it) =>
         it.children
           ? {
@@ -122,12 +125,13 @@ function Count({ value, danger = false }: { value?: number; danger?: boolean }) 
   );
 }
 
-function NavLink({ item, active, count }: { item: NavItem; active: boolean; count?: number }) {
+function NavLink({ item, active, count }: { item: NavItem & { soon?: boolean }; active: boolean; count?: number }) {
   const inner = (
     <>
       {item.icon}
       <span className={styles.navLabel}>{item.label}</span>
       {count !== undefined && <Count value={count} />}
+      {"soon" in item && item.soon && <span className={styles.soon}>준비 중</span>}
     </>
   );
 

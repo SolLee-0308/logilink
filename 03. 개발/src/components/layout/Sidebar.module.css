@@ -98,6 +98,20 @@ a.on:hover {
   cursor: default;
 }
 
+/* 준비 중 메뉴 (시연 링크의 대시보드) — 흐리게 + 작은 꼬리표 */
+.pending:has(.soon) {
+  opacity: 0.55;
+}
+
+.soon {
+  margin-left: auto;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  border-radius: var(--r-tag, 4px);
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .navLabel {
   min-width: 0;
 }
