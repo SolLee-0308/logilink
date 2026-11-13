@@ -3,6 +3,7 @@ import type { UserRole } from "@/domain/master";
 import { pdaLogout } from "@/server/auth/actions";
 import { pdaTabs, type PdaTabKey } from "./menu";
 import { Icon } from "./PdaParts";
+import { dashboardReady } from "@/lib/demo";
 import styles from "./Pda.module.css";
 
 /**
@@ -61,12 +62,20 @@ export function PdaShell({
       <main className={styles.main}>{children}</main>
       {tabs.length > 0 && (
         <nav className={styles.tabbar} aria-label="PDA 메뉴">
-          {tabs.map((t) => (
-            <Link key={t.key} href={t.href} className={t.key === tab ? styles.tabOn : styles.tab} aria-current={t.key === tab ? "page" : undefined}>
-              <Icon name={t.icon} size={18} />
-              <span>{t.label}</span>
-            </Link>
-          ))}
+          {tabs.map((t) =>
+            // 시연 링크에서는 대시보드 탭을 누를 수 없게 (2026-11-13 Sol)
+            t.key === "dashboard" && !dashboardReady() ? (
+              <span key={t.key} className={`${styles.tab} ${styles.tabSoon}`} aria-disabled="true" title="준비 중">
+                <Icon name={t.icon} size={18} />
+                <span>준비 중</span>
+              </span>
+            ) : (
+              <Link key={t.key} href={t.href} className={t.key === tab ? styles.tabOn : styles.tab} aria-current={t.key === tab ? "page" : undefined}>
+                <Icon name={t.icon} size={18} />
+                <span>{t.label}</span>
+              </Link>
+            ),
+          )}
           <form action={pdaLogout} className={styles.tabForm}>
             <button type="submit" className={styles.tab}>
               <Icon name="logout" size={18} />

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { AppShell } from "@/components/layout/AppShell";
+import { dashboardReady } from "@/lib/demo";
 import { NAV_COOKIE } from "@/components/layout/nav-cookie";
 import { ORG_LABEL, ROLE_META, rolesLabel } from "@/domain/master";
 import { isShipperRole } from "@/domain/permissions";
@@ -26,6 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     roles: me.roles,
     roleLabel: rolesLabel(me.roles),
     orgLabel: `${ORG_LABEL[meta.org]} · ${me.clientName ?? me.centerName ?? ""}`,
+    dashboardReady: dashboardReady(),
   };
   return (
     <AppShell serverCounts={{ itemRequestWaiting, itemRequestRejected, approvalWaiting, planRejected }} viewer={viewer} navCollapsed={navCollapsed}>

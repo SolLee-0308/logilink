@@ -2230,3 +2230,9 @@ p.askBody {
 .rcvZero .lineQty b {
   color: var(--muted);
 }
+
+/* 준비 중 탭 (시연 링크의 PDA 대시보드, 2026-11-13 Sol) */
+.tabSoon {
+  opacity: 0.45;
+  cursor: default;
+}

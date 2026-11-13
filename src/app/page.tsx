@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { homePathOf } from "@/domain/permissions";
+import { dashboardReady, webWorkHome } from "@/lib/demo";
 import { getSessionUser } from "@/server/session";
 
 export const dynamic = "force-dynamic";
@@ -8,5 +9,6 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  redirect(homePathOf(me.roles));
+  // 시연 링크는 대시보드를 막아 두므로 업무 첫 화면으로 (2026-11-13 Sol)
+  redirect(dashboardReady() ? homePathOf(me.roles) : webWorkHome(me.roles));
 }
