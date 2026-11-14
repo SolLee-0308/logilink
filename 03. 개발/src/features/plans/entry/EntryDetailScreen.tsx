@@ -54,10 +54,10 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
   const received = d.lines.some((l) => l.rcvQty > 0 || l.returnQty > 0);
   const qf = (l: PlanLineView, base: number) => qtyInUnit(base, l.unit, Math.max(Math.round(l.baseQty / Math.max(l.qty, 1)), 1), l.baseUnit);
   const columns: Column<PlanLineView>[] = [
-    { key: "no", header: "#", align: "right", render: (l) => <span className="mono">{l.lineNo}</span> },
-    { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
+    { key: "no", header: "#", align: "center", width: 36, render: (l) => <span className="mono">{l.lineNo}</span> },
+    { key: "code", header: "품목코드", align: "center", render: (l) => <span className="mono">{l.itemCode}</span> },
     { key: "name", header: "품목명", wrap: true, render: (l) => l.itemName },
-    { key: "unit", header: "단위", render: (l) => <span className="mono">{l.unit}</span> },
+    { key: "unit", header: "단위", align: "center", width: 56, render: (l) => <span className="mono">{l.unit}</span> },
     { key: "qty", header: "수량", align: "right", render: (l) => <span className="mono">{l.qty.toLocaleString()}</span> },
     {
       key: "base",
@@ -65,7 +65,7 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
       align: "right",
       render: (l) => (l.unit === l.baseUnit ? <span className="muted">–</span> : <span className="mono">{`${l.baseQty.toLocaleString()} ${l.baseUnit}`}</span>),
     },
-    { key: "exp", header: "소비기한", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">{l.expiryManaged ? "없음" : "–"}</span>) },
+    { key: "exp", header: "소비기한", align: "center", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">{l.expiryManaged ? "없음" : "–"}</span>) },
     { key: "lot", header: "로트", render: (l) => (l.lotNo ? <span className="mono">{l.lotNo}</span> : <span className="muted">–</span>) },
     // 입고검수 확정 뒤 — 입고·반송·잔량 (입고예정 라인 단위로 묶어 표시, 기준 단위 누계)
     ...(received
@@ -118,7 +118,6 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
       )}
       {editable && n < 0 && <NoteBox tone="warn">입고예정일이 지났습니다. 승인 전 상태로 남아 있으면 일마감 때 기한경과 취소됩니다. 날짜를 고쳐 다시 저장하거나 취소하세요.</NoteBox>}
       {d.status === "WAITING" && <NoteBox tone="info">3PL 승인을 기다리고 있습니다. 승인 전까지는 수정하거나 취소할 수 있습니다.</NoteBox>}
-      {act.error && <NoteBox tone="error">{act.error}</NoteBox>}
 
       {/* 입고예정 정보 2단 — 왼쪽 번호·센터·입고예정일·등록 방식 / 오른쪽 차수·승인·메모·처리 이력 (승인 상세와 같은 구성) */}
       <Card title="입고예정 정보">
@@ -139,7 +138,7 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
               [
                 "처리 이력",
                 <span key="h">
-                  {d.histories.length}건 ·{" "}
+                  {d.histories.length.toLocaleString()}건 ·{" "}
                   <button type="button" className={styles.link} onClick={() => setHistoryOpen(true)}>
                     이력 보기
                   </button>
@@ -169,7 +168,7 @@ export function EntryDetailScreen({ detail: d, cancelReasons, today }: { detail:
         placeholder="취소하는 이유를 적어 주세요."
         target={
           <span>
-            <span className="mono">{d.planNo}</span> · {d.centerName} · {d.planDate} · {d.lineCount}품목
+            <span className="mono">{d.planNo}</span> · {d.centerName} · {d.planDate} · {d.lineCount.toLocaleString()}품목
           </span>
         }
         reasons={cancelReasons}

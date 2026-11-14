@@ -107,7 +107,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
           </span>
           <span className={styles.meta}>
             <span>
-              {LOAD_TYPE_LABEL[w.loadType]} · 품목 {w.lineCount}개 · 상차완료 {hm(w.loadCompletedAt)}
+              {LOAD_TYPE_LABEL[w.loadType]} · 품목 {w.lineCount.toLocaleString()}개 · 상차완료 {hm(w.loadCompletedAt)}
             </span>
             <span className={styles.cardGo}>
               입차 <Icon name="arrow" size={13} stroke={2.4} />
@@ -146,7 +146,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
         </span>
         <span className={styles.meta}>
           <span>
-            {LOAD_TYPE_LABEL[w.loadType]} · 품목 {w.lineCount}개 · 입차 {w.arrivedAt && md(w.arrivedAt) !== today.slice(5) ? `${md(w.arrivedAt)} ` : ""}
+            {LOAD_TYPE_LABEL[w.loadType]} · 품목 {w.lineCount.toLocaleString()}개 · 입차 {w.arrivedAt && md(w.arrivedAt) !== today.slice(5) ? `${md(w.arrivedAt)} ` : ""}
             {hm(w.arrivedAt)}
           </span>
           <span className={styles.cardGo}>
@@ -174,7 +174,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
           compact
           steps={[
             { label: "입차", done: true, time: hm(w.arrivedAt) },
-            { label: "검수 중", done: true, time: `입력 ${w.inputCount}건${w.workerCount > 1 ? ` · ${w.workerCount}명` : ""}` },
+            { label: "검수 중", done: true, time: `입력 ${w.inputCount.toLocaleString()}건${w.workerCount > 1 ? ` · ${w.workerCount.toLocaleString()}명` : ""}` },
             { label: "검수확정", done: false },
           ]}
         />
@@ -188,7 +188,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
       <Link href={rcvHref(w.rcvId!)} className={`${styles.card} ${styles.cardDone}`}>
         <span className={styles.cardTop}>
           <b className={`mono ${styles.cardId}`}>{w.vehicleNo}</b>
-          {w.issueCount > 0 && <Pill tone="amber">이상 {w.issueCount}건</Pill>}
+          {w.issueCount > 0 && <Pill tone="amber">이상 {w.issueCount.toLocaleString()}건</Pill>}
         </span>
         <span className={styles.meta}>
           <span className="mono">{w.rcvNo}</span>
@@ -199,7 +199,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
             {w.clientName} · {LOAD_TYPE_LABEL[w.loadType]}
           </span>
           <span>
-            {w.confirmedBy} · 입력 {w.inputCount}건{w.workerCount > 1 ? ` · ${w.workerCount}명` : ""}
+            {w.confirmedBy} · 입력 {w.inputCount.toLocaleString()}건{w.workerCount > 1 ? ` · ${w.workerCount.toLocaleString()}명` : ""}
           </span>
         </span>
       </Link>
@@ -323,7 +323,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
       {show("working") && (filter === "working" || home.working.length > 0) && (
         <section className={styles.section}>
           <h2 className={styles.h2}>
-            검수 중인 차량 <span className={styles.count}>{home.working.length}</span>
+            검수 중인 차량 <span className={styles.count}>{home.working.length.toLocaleString()}</span>
           </h2>
           {home.working.length === 0 ? <p className={styles.empty}>검수 중인 차량이 없습니다.</p> : <ul className={styles.list}>{home.working.map(workingCard)}</ul>}
         </section>
@@ -332,7 +332,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
       {show("todo") && (
         <section className={styles.section}>
           <h2 className={styles.h2}>
-            도착·검수 대기 <span className={styles.count}>{home.arrived.length}</span>
+            도착·검수 대기 <span className={styles.count}>{home.arrived.length.toLocaleString()}</span>
           </h2>
           {home.arrived.length === 0 ? <p className={styles.empty}>입차하고 검수를 기다리는 차량이 없습니다.</p> : <ul className={styles.list}>{home.arrived.map(arrivedCard)}</ul>}
         </section>
@@ -341,7 +341,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
       {show("todo") && (
         <section className={styles.section}>
           <h2 className={styles.h2}>
-            입차 전 <span className={styles.count}>{home.waiting.length}</span>
+            입차 전 <span className={styles.count}>{home.waiting.length.toLocaleString()}</span>
           </h2>
           {home.waiting.length === 0 ? <p className={styles.empty}>이 센터로 오는 상차완료 차량이 없습니다.</p> : <ul className={styles.list}>{home.waiting.map(waitingCard)}</ul>}
         </section>
@@ -350,7 +350,7 @@ export function PdaInspectHomeScreen({ home, filter = "all" }: { home: PdaRcvHom
       {show("done") && (
         <section className={styles.section}>
           <h2 className={styles.h2}>
-            검수확정 <span className={styles.count}>{home.done.length}</span>
+            검수확정 <span className={styles.count}>{home.done.length.toLocaleString()}</span>
           </h2>
           {home.done.length === 0 ? (
             <p className={styles.empty}>{isToday ? "오늘" : date} 검수 확정한 차량이 없습니다.</p>

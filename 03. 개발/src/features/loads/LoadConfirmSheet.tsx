@@ -132,7 +132,7 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
           <caption className="sr-only">상차 품목</caption>
           <thead>
             <tr>
-              <th scope="col">#</th>
+              <th scope="col" className={styles.cNo}>#</th>
               <th scope="col">품목코드 · 품목명</th>
               {ordered && (
                 <th scope="col" className={styles.num}>
@@ -151,7 +151,7 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
           <tbody>
             {loaded.map((l, i) => (
               <tr key={l.itemId}>
-                <td className="mono">{i + 1}</td>
+                <td className="mono cell-center">{i + 1}</td>
                 <td>
                   <span className="mono">{l.itemCode}</span>
                   <br />

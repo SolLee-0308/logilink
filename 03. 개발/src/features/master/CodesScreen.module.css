@@ -1,0 +1,50 @@
+/* 사유 코드 — 상세 패널 맨 위 그룹 안내 (2026-11-14 Sol) */
+.box {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-group);
+  background: var(--surface);
+  font-size: var(--fs-13);
+}
+
+.sum {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.sum::-webkit-details-marker {
+  display: none;
+}
+
+.chev {
+  display: inline-block;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.box[open] .chev {
+  transform: rotate(90deg);
+}
+
+.label {
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.hint {
+  margin-left: auto;
+  color: var(--soft);
+  font-size: var(--fs-12);
+}
+
+.body {
+  margin: 0;
+  padding: 0 10px 10px 26px;
+  color: var(--fg);
+  line-height: 1.5;
+}

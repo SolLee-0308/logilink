@@ -238,8 +238,8 @@ export function CenterRules({ centers }: { centers: DashCenter[] }) {
 
 const ruleColumns: Column<DashCenter>[] = [
   { key: "name", header: "센터", render: (r) => r.name },
-  { key: "start", header: "업무일 시작", render: (r) => <span className="mono">{r.businessDayStart}</span> },
-  { key: "close", header: "일마감", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
+  { key: "start", header: "업무일 시작", align: "center", render: (r) => <span className="mono">{r.businessDayStart}</span> },
+  { key: "close", header: "일마감", align: "center", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
   { key: "rule", header: "기한경과 유예", render: (r) => `입고예정일 + ${r.expireGraceDays}영업일` },
   { key: "off", header: "정기 휴무", render: (r) => weeklyOffLabel(r.weeklyOffDays) },
 ];

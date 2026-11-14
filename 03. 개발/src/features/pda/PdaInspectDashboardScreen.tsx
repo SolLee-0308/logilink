@@ -25,8 +25,8 @@ export function PdaInspectDashboardScreen({ data }: { data: PdaRcvDashboard }) {
         <span className={styles.heroK}>오늘 입고검수 · {data.today}</span>
         <span className={styles.heroRow}>
           <b className={styles.heroNum}>
-            {data.done}
-            <small> / {total}대</small>
+            {data.done.toLocaleString()}
+            <small> / {total.toLocaleString()}대</small>
           </b>
           <b className={styles.heroPct}>{pct}%</b>
         </span>
@@ -34,7 +34,7 @@ export function PdaInspectDashboardScreen({ data }: { data: PdaRcvDashboard }) {
           <span style={{ width: `${pct}%` }} />
         </span>
         <span className={styles.heroK}>
-          내 입력 {data.myInputs}건 · 입차 전 {data.waiting}대
+          내 입력 {data.myInputs.toLocaleString()}건 · 입차 전 {data.waiting.toLocaleString()}대
         </span>
       </section>
       <section className={styles.tiles}>

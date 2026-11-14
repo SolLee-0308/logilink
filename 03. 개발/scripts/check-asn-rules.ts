@@ -151,12 +151,12 @@ async function main() {
   /* 3PL ASN·상차 현황 — 소속 센터 ASN만, 조회 전용 */
   const jung = await actor("jung.minseo");
   const han = await actor("han.soyul");
-  const kimRows = await listAsnStatus(kim);
+  const kimRows = (await listAsnStatus(kim)).rows;
   ok(kimRows.length > 0 && kimRows.every((x) => x.centerId === yi1) && new Set(kimRows.map((x) => x.clientId)).size >= 2, "용인1센터 3PL: 소속 센터의 여러 화주사 ASN", kimRows.length);
-  ok((await listAsnStatus(jung)).every((x) => x.centerId === ic2) && (await getAsnStatusDetail(jung, a.id)) === null, "이천2센터 3PL은 용인1센터 ASN을 못 본다");
+  ok((await listAsnStatus(jung)).rows.every((x) => x.centerId === ic2) && (await getAsnStatusDetail(jung, a.id)) === null, "이천2센터 3PL은 용인1센터 ASN을 못 본다");
   ok((await getAsnStatusDetail(kim, a.id))?.clientName === "한빛식품", "3PL 상세: 화주사 표시");
-  ok((await listAsnStatus(hb)).length === 0 && (await getAsnStatusDetail(hb, a.id)) === null, "화주사 계정은 3PL 현황을 못 본다");
-  const hanRows = await listAsnStatus(han);
+  ok((await listAsnStatus(hb)).rows.length === 0 && (await getAsnStatusDetail(hb, a.id)) === null, "화주사 계정은 3PL 현황을 못 본다");
+  const hanRows = (await listAsnStatus(han)).rows;
   ok(hanRows.length === kimRows.length && hanRows.every((x) => x.centerId === yi1), "3PL 관리자도 소속 센터(용인1센터) 기준");
   ok(kimRows.some((x) => x.status === "REGISTERED" && x.shipDate < today), "출고일 지난 상차 대기 ASN이 현황에 남아 있다");
 

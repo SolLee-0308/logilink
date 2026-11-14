@@ -362,7 +362,7 @@ export function ItemBulkScreen({
             </span>
           </div>
           {errRows.length > 0 && okRows.length > 0 && (
-            <NoteBox tone="warn">오류 {errRows.length}행은 빼고 {okRows.length}행만 {verb}합니다. 오류 행은 [오류 행 내려받기]로 받아 고친 뒤 다시 올리세요.</NoteBox>
+            <NoteBox tone="warn">오류 {errRows.length.toLocaleString()}행은 빼고 {okRows.length.toLocaleString()}행만 {verb}합니다. 오류 행은 [오류 행 내려받기]로 받아 고친 뒤 다시 올리세요.</NoteBox>
           )}
           {okRows.length === 0 && <NoteBox tone="error">{verb}할 수 있는 행이 없습니다. 오류를 고친 뒤 다시 올리세요.</NoteBox>}
 
@@ -371,9 +371,9 @@ export function ItemBulkScreen({
               value={filter}
               onChange={setFilter}
               options={[
-                { value: "all", label: `전체 ${preview.rows.length}` },
-                { value: "ok", label: `${verb} 가능 ${okRows.length}` },
-                { value: "err", label: `오류 ${errRows.length}` },
+                { value: "all", label: `전체 ${preview.rows.length.toLocaleString()}` },
+                { value: "ok", label: `${verb} 가능 ${okRows.length.toLocaleString()}` },
+                { value: "err", label: `오류 ${errRows.length.toLocaleString()}` },
               ]}
             />
             {errRows.length > 0 && (

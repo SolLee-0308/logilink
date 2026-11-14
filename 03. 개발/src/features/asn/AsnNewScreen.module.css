@@ -192,8 +192,13 @@
   width: 110px;
 }
 
+/* 소비기한·로트 열 나눔 (2026-11-14 Sol) */
 .cExp {
-  width: 210px;
+  width: 104px;
+}
+
+.cLot {
+  width: 120px;
 }
 
 .nowrap {

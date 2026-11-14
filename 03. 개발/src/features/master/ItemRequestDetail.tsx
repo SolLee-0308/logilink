@@ -129,7 +129,7 @@ export function ItemRequestDetailScreen({
 
       <div className={styles.status}>
         <Badge tone={meta.tone}>{meta.label}</Badge>
-        {row.resubmitCount > 0 && <Tag tone="accent">재요청 {row.resubmitCount}회</Tag>}
+        {row.resubmitCount > 0 && <Tag tone="accent">재요청 {row.resubmitCount.toLocaleString()}회</Tag>}
         <span className="muted">
           {row.clientName} · {SOURCE_LABEL[row.source]} · {fmtDateTime(row.requestedAt)} {row.requestedBy}
         </span>

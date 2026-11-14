@@ -19,13 +19,17 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
   if (!can(me.roles, "items", "view")) return <Forbidden title="품목 조회" />;
   const sp = await searchParams;
   const canRequest = can(me.roles, "itemRequests", "edit");
-  const [rows, clients, openRequests] = await Promise.all([listItems(), listClientOptions(), canRequest ? countOpenItemRequests() : 0]);
+  const [clients, openRequests] = await Promise.all([listClientOptions(), canRequest ? countOpenItemRequests() : 0]);
+  // 화주사가 여럿이면(3PL) 화주사를 먼저 고른다 — 고르기 전에는 품목을 읽지 않는다 (2026-11-14 Sol, 목록이 커지는 것 방지)
+  const picked = clients.find((c) => String(c.id) === one(sp.client));
+  const rows = clients.length <= 1 ? await listItems() : picked ? await listItems(undefined, picked.id) : [];
   const temp = one(sp.temp);
   const active = one(sp.active);
   const initial: ItemListQuery = {
     client: one(sp.client),
     temp: temp === "ROOM" || temp === "CHILLED" || temp === "FROZEN" ? temp : "all",
-    active: active === "on" || active === "off" ? active : "all",
+    // 사용 여부 기본 = 사용 (2026-11-14 Sol). 전체는 주소에 active=all
+    active: active === "all" || active === "off" ? active : "on",
     q: one(sp.q),
     item: Number(one(sp.item)) > 0 ? Number(one(sp.item)) : null,
   };

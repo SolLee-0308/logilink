@@ -120,12 +120,13 @@ export function LoadOrderSheet({ data: d, auto }: { data: LoadOrderPrint; auto: 
           <caption className="sr-only">상차 품목</caption>
           <thead>
             <tr>
-              <th scope="col">#</th>
+              <th scope="col" className={styles.cNo}>#</th>
               <th scope="col">입고예정번호</th>
               <th scope="col">품목코드 · 품목명</th>
               <th scope="col">품목 바코드</th>
-              <th scope="col">소비기한 · 로트</th>
-              <th scope="col">단위</th>
+              <th scope="col">소비기한</th>
+              <th scope="col">로트</th>
+              <th scope="col" className={styles.cUnit}>단위</th>
               <th scope="col" className={styles.num}>
                 지시수량
               </th>
@@ -137,16 +138,17 @@ export function LoadOrderSheet({ data: d, auto }: { data: LoadOrderPrint; auto: 
           <tbody>
             {d.lines.map((l) => (
               <tr key={l.lineNo}>
-                <td className="mono">{l.lineNo}</td>
-                <td className="mono">{l.planNo}</td>
+                <td className="mono cell-center">{l.lineNo}</td>
+                <td className="mono cell-center">{l.planNo}</td>
                 <td>
                   <span className="mono">{l.itemCode}</span>
                   <br />
                   {l.itemName}
                 </td>
-                <td className="mono">{l.barcode ?? "–"}</td>
-                <td className="mono">{[l.expiryDate, l.lotNo].filter(Boolean).join(" · ") || "–"}</td>
-                <td className="mono">{l.unit}</td>
+                <td className="mono cell-center">{l.barcode ?? "–"}</td>
+                <td className="mono cell-center">{l.expiryDate || "–"}</td>
+                <td className="mono">{l.lotNo || "–"}</td>
+                <td className="mono cell-center">{l.unit}</td>
                 <td className={`${styles.num} mono`}>{l.qty.toLocaleString()}</td>
                 <td className={styles.write} />
               </tr>
@@ -154,7 +156,7 @@ export function LoadOrderSheet({ data: d, auto }: { data: LoadOrderPrint; auto: 
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={6}>합계 · {d.lineCount}줄</td>
+              <td colSpan={7}>합계 · {d.lineCount.toLocaleString()}줄</td>
               <td className={`${styles.num} mono`}>{total}</td>
               <td className={styles.write} />
             </tr>

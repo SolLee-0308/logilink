@@ -21,7 +21,7 @@ export function RcvSection({ rcv }: { rcv: RcvView }) {
   const meta = RCV_STATUS_META[rcv.status];
   const f = (l: RcvLineView, n: number) => qtyInUnit(n, l.showUnit, l.showFactor, l.baseUnit);
   const columns: Column<RcvLineView>[] = [
-    { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
+    { key: "code", header: "품목코드", align: "center", render: (l) => <span className="mono">{l.itemCode}</span> },
     { key: "name", header: "품목명", wrap: true, render: (l) => l.itemName },
     { key: "expect", header: "상차", align: "right", render: (l) => <span className="mono">{l.mismatch ? "–" : f(l, l.expect)}</span> },
     { key: "good", header: "정상", align: "right", render: (l) => <b className="mono">{l.mismatch ? "–" : f(l, l.good)}</b> },
@@ -40,7 +40,7 @@ export function RcvSection({ rcv }: { rcv: RcvView }) {
           </span>
         ),
     },
-    { key: "state", header: "결과", render: (l) => <Badge tone={STATE_TONE[l.state]}>{RCV_LINE_STATE_LABEL[l.state]}</Badge> },
+    { key: "state", header: "결과", align: "center", render: (l) => <Badge tone={STATE_TONE[l.state]}>{RCV_LINE_STATE_LABEL[l.state]}</Badge> },
     {
       key: "reason",
       header: "사유 · 사진",
@@ -61,23 +61,29 @@ export function RcvSection({ rcv }: { rcv: RcvView }) {
   ];
   const allocColumns: Column<RcvAllocView & { i: number }>[] = [
     { key: "item", header: "품목", wrap: true, render: (a) => a.itemName },
-    { key: "plan", header: "입고예정", render: (a) => (a.planNo ? <span className="mono">{a.planNo}</span> : <span className="muted">입고예정 없음</span>) },
+    { key: "plan", header: "입고예정", align: "center", render: (a) => (a.planNo ? <span className="mono">{a.planNo}</span> : <span className="muted">입고예정 없음</span>) },
     { key: "kind", header: "구분", render: (a) => (a.kind === "GOOD" ? "입고" : "반송") },
     { key: "step", header: "배분 단계", render: (a) => (a.step === 3 ? <Badge tone="wait">{STEP_LABEL[3]}</Badge> : STEP_LABEL[a.step]) },
     { key: "qty", header: "수량", align: "right", render: (a) => <b className="mono">{a.qty}</b> },
   ];
   return (
-    <Card title="입고검수" description={`PDA 입력 ${rcv.inputs.filter((i) => !i.canceled).length}건 · 검수자 ${rcv.workers.length}명`}>
+    <Card title="입고검수" description={`PDA 입력 ${rcv.inputs.filter((i) => !i.canceled).length}건 · 검수자 ${rcv.workers.length.toLocaleString()}명`}>
       <div className={styles.info}>
+        {/* 왼쪽: 상태·번호·검수자 / 오른쪽: 시각 (2026-11-14 Sol) */}
         <ViewSection
           items={[
             ["검수 상태", <Badge key="s" tone={meta.tone}>{meta.label}</Badge>],
             ["검수 번호", <span key="n" className="mono">{rcv.rcvNo}</span>],
-            ["검수 시작", `${fmtDateTime(rcv.createdAt)} · ${rcv.createdBy}`],
+            ["검수자", rcv.workers.length ? rcv.workers.map((w) => `${w.name} ${w.count.toLocaleString()}건`).join(", ") : null],
+          ]}
+        />
+        <ViewSection
+          items={[
+            // 검수 시작 = 첫 입력 시각 (v1.9 D26) — 입차 시각(전표 생성)과 다르다
+            ["검수 시작", rcv.startedAt ? fmtDateTime(rcv.startedAt) : "검수 전"],
             ["검수 확정", done ? `${fmtDateTime(rcv.confirmedAt)} · ${rcv.confirmedBy}` : null],
           ]}
         />
-        <ViewSection items={[["검수자", rcv.workers.length ? rcv.workers.map((w) => `${w.name} ${w.count}건`).join(", ") : null]]} />
       </div>
       <DataTable caption="검수 품목" columns={columns} rows={rcv.lines} rowKey={(l) => String(l.itemId)} compact empty="검수 품목이 없습니다." />
       {done && (

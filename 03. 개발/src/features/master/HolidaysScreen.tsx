@@ -76,6 +76,7 @@ export function HolidaysScreen({
     {
       key: "date",
       header: "날짜",
+      align: "center",
       render: (r) => (
         <span className={r.date < today ? "muted" : undefined}>
           <span className="mono">{r.date}</span> ({weekday(r.date)})
@@ -86,6 +87,7 @@ export function HolidaysScreen({
     {
       key: "kind",
       header: "구분",
+      align: "center",
       render: (r) => <Tag tone={r.kind === "PUBLIC" ? "danger" : "accent"}>{HOLIDAY_KIND_LABEL[r.kind]}</Tag>,
     },
     ...(multiCenter ? [{ key: "center", header: "센터", render: (r: HolidayRow) => r.centerName }] : []),

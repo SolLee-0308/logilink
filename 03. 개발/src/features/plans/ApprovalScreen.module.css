@@ -69,3 +69,18 @@
   font-size: var(--fs-12);
   color: var(--diff-down);
 }
+
+/* 품목표 — # 열은 두 자리가 들어갈 만큼 좁게·가운데, 단위는 좁게·가운데 (2026-11-14 Sol) */
+.lines .cNo {
+  width: 36px;
+  text-align: center;
+}
+
+.lines .cUnit {
+  width: 56px;
+  text-align: center;
+}
+
+.lines .nowrap {
+  white-space: nowrap;
+}

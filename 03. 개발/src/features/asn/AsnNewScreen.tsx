@@ -264,18 +264,18 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
               {/* 건수 요약 — 담을 수 있는 입고예정·품목 / 이번 차량에 담은 것 */}
               <div className={styles.summary} aria-live="polite">
                 <span className={styles.chip}>
-                  입고예정 <b className="mono">{centerPlans.length}</b>건
+                  입고예정 <b className="mono">{centerPlans.length.toLocaleString()}</b>건
                 </span>
                 <span className={styles.chip}>
                   품목 <b className="mono">{centerLineCount}</b>줄
                 </span>
                 {search && (
                   <span className={styles.chip}>
-                    찾은 입고예정 <b className="mono">{visiblePlans.length}</b>건
+                    찾은 입고예정 <b className="mono">{visiblePlans.length.toLocaleString()}</b>건
                   </span>
                 )}
                 <span className={`${styles.chip} ${picked.length ? styles.chipOn : ""}`}>
-                  이번 차량 · 입고예정 <b className="mono">{pickedPlans}</b>건 · 품목 <b className="mono">{picked.length}</b>줄
+                  이번 차량 · 입고예정 <b className="mono">{pickedPlans}</b>건 · 품목 <b className="mono">{picked.length.toLocaleString()}</b>줄
                 </span>
               </div>
               {visiblePlans.length === 0 ? (
@@ -303,7 +303,7 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
 
         <div className={styles.foot}>
           <span className={styles.total}>
-            입고예정 <strong className="mono">{pickedPlans}</strong>건 · 품목 <strong className="mono">{picked.length}</strong>줄
+            입고예정 <strong className="mono">{pickedPlans}</strong>건 · 품목 <strong className="mono">{picked.length.toLocaleString()}</strong>줄
             {totals.map(([u, n]) => (
               <span key={u} className="mono">
                 {" "}
@@ -363,7 +363,7 @@ function PlanBlock({
         </span>
         {n < 0 && <Tag tone="warn">지난 입고예정 잔량</Tag>}
         {p.status !== "APPROVED" && <Tag tone="neutral">{PLAN_STATUS_META[p.status].label}</Tag>}
-        <Tag tone="neutral">{`${p.lines.length}품목 · 남음 ${open}`}</Tag>
+        <Tag tone="neutral">{`${p.lines.length.toLocaleString()}품목 · 남음 ${open}`}</Tag>
         {pickedLines > 0 && <Tag tone="accent">{`담음 ${pickedLines}줄`}</Tag>}
         <span className={styles.planActs}>
           {open > 0 && (
@@ -386,6 +386,7 @@ function PlanBlock({
             <col className={styles.cCode} />
             <col />
             <col className={styles.cExp} />
+            <col className={styles.cLot} />
             <col className={styles.cUnit} />
             <col className={styles.cNum} />
             <col className={styles.cNum} />
@@ -396,7 +397,8 @@ function PlanBlock({
             <tr>
               <th scope="col">품목코드</th>
               <th scope="col">품목명</th>
-              <th scope="col">소비기한 · 로트</th>
+              <th scope="col">소비기한</th>
+              <th scope="col">로트</th>
               <th scope="col">단위</th>
               <th scope="col" className={styles.num}>
                 승인
@@ -419,10 +421,11 @@ function PlanBlock({
               const id = `asn-q-${l.planLineId}`;
               return (
                 <tr key={l.planLineId} className={`${styles.row} ${done ? styles.doneRow : ""}`} data-invalid={err ? "" : undefined}>
-                  <td className="mono">{l.itemCode}</td>
+                  <td className="mono cell-center">{l.itemCode}</td>
                   <td>{l.itemName}</td>
-                  <td className={`mono ${styles.nowrap}`}>{l.expiryDate || l.lotNo ? [l.expiryDate, l.lotNo].filter(Boolean).join(" · ") : <span className="muted">–</span>}</td>
-                  <td className="mono">{l.unit}</td>
+                  <td className={`mono cell-center ${styles.nowrap}`}>{l.expiryDate || <span className="muted">–</span>}</td>
+                  <td className={`mono ${styles.nowrap}`}>{l.lotNo || <span className="muted">–</span>}</td>
+                  <td className="mono cell-center">{l.unit}</td>
                   <td className={`${styles.num} mono`}>{l.qty.toLocaleString()}</td>
                   <td className={`${styles.num} mono`}>{l.distributedQty ? l.distributedQty.toLocaleString() : <span className="muted">–</span>}</td>
                   <td className={`${styles.num} mono ${styles.remain}`}>{done ? <span className="muted">다 담음</span> : l.remainingQty.toLocaleString()}</td>

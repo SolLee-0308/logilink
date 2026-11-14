@@ -27,6 +27,12 @@
   color: var(--muted);
 }
 
+/* 조건 라벨 — 줄 첫 입력칸 맞추기(useRowAlign)가 너비를 잰다 */
+.label {
+  flex: none;
+  white-space: nowrap;
+}
+
 .chips {
   display: inline-flex;
   flex-wrap: wrap;

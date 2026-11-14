@@ -131,8 +131,8 @@ export async function listCenterPicks(): Promise<CenterPick[]> {
 
 const UNIT_ORDER = { EA: 0, BOX: 1, PLT: 2 } as const;
 
-export async function listItems(id?: number): Promise<ItemRow[]> {
-  const cid = await clientScope();
+export async function listItems(id?: number, clientId?: number): Promise<ItemRow[]> {
+  const cid = (await clientScope()) ?? clientId;
   const [rows, hist] = await Promise.all([
     db.item.findMany({
       where: { clientId: cid, id },

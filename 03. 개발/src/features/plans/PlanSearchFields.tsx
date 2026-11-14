@@ -44,21 +44,28 @@ export function DateRangeField({
   onFrom,
   onTo,
   label = "입고예정일",
+  disabled = false,
+  children,
 }: {
   from: string;
   to: string;
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
   label?: string;
+  /** 이 조회에서 기간을 쓰지 않을 때 (자리는 그대로, 흐리게) */
+  disabled?: boolean;
+  /** 기간 칸 바로 옆 — 빠른 선택 버튼 등 (2026-11-14 Sol) */
+  children?: React.ReactNode;
 }) {
   return (
     <FilterField label={label} htmlFor="f-from">
       <span className={styles.range}>
-        <Input id="f-from" type="date" aria-label={`${label} 시작`} value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} />
+        <Input id="f-from" type="date" aria-label={`${label} 시작`} value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} disabled={disabled} />
         <span aria-hidden>~</span>
-        <Input type="date" aria-label={`${label} 끝`} value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} />
+        <Input type="date" aria-label={`${label} 끝`} value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} disabled={disabled} />
         {/* [기간 지우기] 버튼은 뺐다 — 달력 팝업의 [삭제]로 지운다 (2026-11-07 Sol 피드백: 자리를 많이 차지) */}
       </span>
+      {children}
     </FilterField>
   );
 }

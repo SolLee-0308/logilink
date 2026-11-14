@@ -267,3 +267,34 @@
     padding-left: 10px;
   }
 }
+
+/* 자릿수가 같은 값(번호·날짜·차량·코드)은 가운데 (2026-11-14 Sol) */
+.table td.center,
+.innerTable td.center {
+  text-align: center;
+}
+
+/* 열 제목 고정 — useStickyHead가 내린 만큼 옮긴다 (2026-11-14 Sol) */
+.table > thead {
+  position: relative;
+  z-index: 2;
+}
+
+/* 펼친 품목표 # 열 — 두 자리 너비·가운데 (2026-11-14 Sol) */
+.innerTable .cNo {
+  width: 36px;
+  text-align: center;
+}
+
+/* 승인 — 1줄 날짜, 2줄 승인자(왼쪽)·시각(오른쪽). 칸 가운데, 안쪽은 날짜 너비에 맞춤 (2026-11-14 Sol) */
+.stamp {
+  display: inline-flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.stampSub {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}

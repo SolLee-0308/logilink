@@ -114,3 +114,8 @@ input[type="date"][data-empty]::-webkit-datetime-edit {
 thead th {
   text-align: center !important;
 }
+
+/* 자릿수가 같은 값(번호·날짜·코드)은 가운데 — 직접 만든 표용 (2026-11-14 Sol) */
+table td.cell-center {
+  text-align: center;
+}

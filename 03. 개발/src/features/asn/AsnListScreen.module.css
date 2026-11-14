@@ -21,3 +21,21 @@
   font-size: var(--fs-12);
   font-weight: 600;
 }
+
+/* 목록 위 안내 — 고정 영역 아래, 목록과 간격 (2026-11-14 Sol) */
+.note {
+  margin-bottom: 12px;
+}
+
+/* 등록·입고완료·취소 — 1줄 날짜, 2줄 이름(왼쪽)·시각(오른쪽). 칸 가운데, 안쪽은 날짜 너비에 맞춤 (2026-11-14 Sol) */
+.stamp {
+  display: inline-flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.stampSub {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}

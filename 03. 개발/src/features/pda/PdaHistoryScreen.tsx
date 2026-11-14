@@ -40,7 +40,7 @@ export function PdaHistoryScreen({ history }: { history: PdaHistory }) {
 
       <section className={styles.section}>
         <h2 className={styles.h2}>
-          상차완료 <span className={styles.count}>{rows.length}</span>
+          상차완료 <span className={styles.count}>{rows.length.toLocaleString()}</span>
         </h2>
         {rows.length === 0 ? (
           <p className={styles.empty}>이 날 상차완료한 차량이 없습니다.</p>
@@ -62,7 +62,7 @@ export function PdaHistoryScreen({ history }: { history: PdaHistory }) {
                       {w.centerName} · {LOAD_TYPE_LABEL[w.type]}
                     </span>
                     <span>
-                      {w.completedBy} · 입력 {w.inputCount}건
+                      {w.completedBy} · 입력 {w.inputCount.toLocaleString()}건
                     </span>
                   </span>
                   {w.diffReasonName && <span className={styles.metaWarn}>차이 사유: {w.diffReasonName}</span>}

@@ -58,7 +58,7 @@ export function UsersScreen({
   const [role, setRole] = useState("");
   const [clientId, setClientId] = useState(initialClient ? String(initialClient.id) : "");
   const [withInactiveClients, setWithInactiveClients] = useState(!!initialClient && !initialClient.isActive);
-  const [active, setActive] = useState<ActiveFilter>("all");
+  const [active, setActive] = useState<ActiveFilter>("on") // 사용 여부 기본 = 사용 (2026-11-14 Sol);
   const [q, setQ] = useState("");
   const list = useMemo(
     () =>
@@ -103,6 +103,7 @@ export function UsersScreen({
     {
       key: "active",
       header: "사용 여부",
+      align: "center",
       render: (r) => (
         <>
           <ActiveBadge active={r.isActive} />
@@ -165,8 +166,9 @@ export function UsersScreen({
           <>
           <FilterField label="화주사" htmlFor="f-client">
             <ClientPicker id="f-client" value={clientId} onChange={setClientId} clients={clientChoices} />
+            {/* 화주사 칸에 붙여 둔다 — 따로 한 칸을 차지하면 열 맞춤이 어긋남 (2026-11-14 Sol) */}
+            <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </FilterField>
-          <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>
         )}
         <FilterField label="사용 여부">

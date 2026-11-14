@@ -56,7 +56,9 @@ export function ApprovalDetailScreen({
   const waiting = d.status === "WAITING";
   // 재요청 건: 직전 반려본과 비교 (승인대기일 때만 — 반려 상태면 반려본 = 현재 내용)
   const compare = waiting && d.revisionNo > 1 && d.lastReject ? diffLines(d.lines, d.lastReject.lines) : null;
-  const managed = d.lines.some((l) => l.expiryManaged || l.lotManaged);
+  // 소비기한·로트 열은 그 관리 품목이 하나라도 있을 때만 (2026-11-14 Sol, 열 나눔)
+  const anyExp = d.lines.some((l) => l.expiryManaged);
+  const anyLot = d.lines.some((l) => l.lotManaged);
 
   /** 처리 후: 다음 승인대기 건, 없으면 목록 */
   function goNext() {
@@ -134,7 +136,6 @@ export function ApprovalDetailScreen({
         </NoteBox>
       )}
       {marks && <NoteBox tone="info">화주사가 수정한 최신 내용입니다. 바뀐 품목에 표시가 있으니 확인한 뒤 처리하세요.</NoteBox>}
-      {act.error && !conflict && <NoteBox tone="error">{act.error}</NoteBox>}
       {(d.status === "WAITING" || d.status === "REJECTED") && n < 0 && (
         <NoteBox tone="warn">
           입고예정일이 지났습니다. 오늘 일마감까지 {waiting ? "승인·반려하지 않으면" : "화주사가 다시 저장해 승인되지 않으면"} <strong>기한경과 취소</strong>로 자동
@@ -168,7 +169,7 @@ export function ApprovalDetailScreen({
               [
                 "처리 이력",
                 <span key="h">
-                  {d.histories.length}건 ·{" "}
+                  {d.histories.length.toLocaleString()}건 ·{" "}
                   <button type="button" className={page.link} onClick={() => setHistoryOpen(true)}>
                     이력 보기
                   </button>
@@ -193,10 +194,11 @@ export function ApprovalDetailScreen({
             <table className={styles.lines}>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th className={styles.cNo}>#</th>
                   <th>품목</th>
-                  <th>단위</th>
-                  {managed && <th>소비기한 · 로트</th>}
+                  <th className={styles.cUnit}>단위</th>
+                  {anyExp && <th>소비기한</th>}
+                  {anyLot && <th>로트</th>}
                   {compare && <th className={styles.num}>직전</th>}
                   <th className={styles.num}>수량</th>
                   <th className={styles.num}>기준 환산</th>
@@ -208,18 +210,14 @@ export function ApprovalDetailScreen({
                   const m = marks?.diffs[i];
                   return (
                     <tr key={l.lineNo}>
-                      <td className="mono muted">{l.lineNo}</td>
+                      <td className={`${styles.cNo} mono muted`}>{l.lineNo}</td>
                       <td>
                         {l.itemName}
                         <span className={`${styles.sub} mono`}>{l.itemCode}</span>
                       </td>
-                      <td className="mono">{l.unit}</td>
-                      {managed && (
-                        <td className="mono">
-                          {l.expiryManaged ? l.expiryDate : "–"}
-                          <span className={styles.sub}>{l.lotManaged ? l.lotNo : ""}</span>
-                        </td>
-                      )}
+                      <td className={`${styles.cUnit} mono`}>{l.unit}</td>
+                      {anyExp && <td className={`${styles.nowrap} mono cell-center`}>{l.expiryManaged && l.expiryDate ? l.expiryDate : <span className="muted">–</span>}</td>}
+                      {anyLot && <td className="mono">{l.lotManaged && l.lotNo ? l.lotNo : <span className="muted">–</span>}</td>}
                       {compare && <td className={`${styles.num} mono`}>{c?.kind === "new" ? "–" : c?.kind === "changed" ? c.prev.toLocaleString() : l.qty.toLocaleString()}</td>}
                       <td className={`${styles.num} mono`}>
                         {l.qty.toLocaleString()}
@@ -266,7 +264,7 @@ export function ApprovalDetailScreen({
         description="반려하면 지금 내용이 반려본으로 보관되고, 화주사가 사유를 확인해 수정 후 다시 요청합니다."
         target={
           <span>
-            <span className="mono">{d.planNo}</span> · {d.clientName} · {d.lineCount}종
+            <span className="mono">{d.planNo}</span> · {d.clientName} · {d.lineCount.toLocaleString()}품목
           </span>
         }
         reasons={reasons}

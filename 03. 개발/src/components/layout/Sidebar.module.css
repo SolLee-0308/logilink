@@ -156,19 +156,6 @@ a.on:hover {
   font-size: var(--fs-11);
 }
 
-.avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--violet-600);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: var(--fs-12);
-  font-weight: 600;
-  flex: none;
-}
-
 /* 하위 메뉴가 있는 메뉴 */
 .parent {
   width: 100%;

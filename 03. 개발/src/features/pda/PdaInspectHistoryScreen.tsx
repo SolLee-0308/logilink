@@ -36,7 +36,7 @@ export function PdaInspectHistoryScreen({ history }: { history: PdaRcvHistory })
       </section>
       <section className={styles.section}>
         <h2 className={styles.h2}>
-          검수확정 <span className={styles.count}>{rows.length}</span>
+          검수확정 <span className={styles.count}>{rows.length.toLocaleString()}</span>
         </h2>
         {rows.length === 0 ? (
           <p className={styles.empty}>이 날 검수 확정한 차량이 없습니다.</p>
@@ -47,7 +47,7 @@ export function PdaInspectHistoryScreen({ history }: { history: PdaRcvHistory })
                 <Link href={`/pda/inspect/${w.rcvId}?from=${date}`} className={styles.card}>
                   <span className={styles.cardTop}>
                     <b className={`mono ${styles.cardId}`}>{w.vehicleNo}</b>
-                    {w.issueCount ? <Pill tone="amber">이상 {w.issueCount}건</Pill> : <Pill tone="green">이상 없음</Pill>}
+                    {w.issueCount ? <Pill tone="amber">이상 {w.issueCount.toLocaleString()}건</Pill> : <Pill tone="green">이상 없음</Pill>}
                   </span>
                   <span className={styles.meta}>
                     <span className="mono">{w.rcvNo}</span>
@@ -58,7 +58,7 @@ export function PdaInspectHistoryScreen({ history }: { history: PdaRcvHistory })
                       {w.clientName} · {LOAD_TYPE_LABEL[w.loadType]}
                     </span>
                     <span>
-                      {w.confirmedBy} · 입력 {w.inputCount}건{w.workerCount > 1 ? ` · ${w.workerCount}명` : ""}
+                      {w.confirmedBy} · 입력 {w.inputCount.toLocaleString()}건{w.workerCount > 1 ? ` · ${w.workerCount.toLocaleString()}명` : ""}
                     </span>
                   </span>
                 </Link>

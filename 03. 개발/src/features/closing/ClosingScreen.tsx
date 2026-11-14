@@ -106,6 +106,7 @@ export function ClosingScreen({
     {
       key: "no",
       header: "입고예정번호",
+      align: "center",
       render: (r) => (
         <Link href={`/plans/inquiry/${r.id}`} className={`mono ${styles.planLink}`}>
           {r.planNo}
@@ -114,7 +115,7 @@ export function ClosingScreen({
     },
     { key: "client", header: "화주사", render: (r) => r.clientName },
     ...(multiCenter ? [{ key: "center", header: "센터", render: (r: RemainCloseRow) => r.centerName }] : []),
-    { key: "date", header: "입고예정일", render: (r) => <span className="mono">{r.planDate}</span> },
+    { key: "date", header: "입고예정일", align: "center", render: (r) => <span className="mono">{r.planDate}</span> },
     {
       key: "elapsed",
       header: "경과",
@@ -124,7 +125,7 @@ export function ClosingScreen({
         return d > 0 ? <b className={`mono ${isOverdue(d, alertDays) ? styles.over : ""}`}>{d}일</b> : <span className="muted">–</span>;
       },
     },
-    { key: "status", header: "상태", render: (r) => <StatusBadge status={r.status} /> },
+    { key: "status", header: "상태", align: "center", render: (r) => <StatusBadge status={r.status} /> },
     { key: "pct", header: "진행률", align: "right", render: (r) => <span className="mono">{r.pct}%</span> },
     {
       key: "remain",
@@ -134,7 +135,7 @@ export function ClosingScreen({
         <>
           <b className="mono">{qtyText(r.remainByUnit) || "0"}</b>
           <span className={styles.sub}>
-            {r.remainLineCount}/{r.lineCount}품목
+            {r.remainLineCount.toLocaleString()}/{r.lineCount.toLocaleString()}품목
           </span>
         </>
       ),
@@ -142,9 +143,9 @@ export function ClosingScreen({
     {
       key: "asn",
       header: "입고 대기",
-      render: (r) => (r.openAsnCount > 0 ? <Tag tone="warn">ASN {r.openAsnCount}대</Tag> : <span className="muted">–</span>),
+      render: (r) => (r.openAsnCount > 0 ? <Tag tone="warn">ASN {r.openAsnCount.toLocaleString()}대</Tag> : <span className="muted">–</span>),
     },
-    { key: "last", header: "마지막 입고", render: (r) => (r.lastRcvAt ? <span className="mono">{fmtShortDateTime(r.lastRcvAt)}</span> : <span className="muted">없음</span>) },
+    { key: "last", header: "마지막 입고", align: "center", render: (r) => (r.lastRcvAt ? <span className="mono">{fmtShortDateTime(r.lastRcvAt)}</span> : <span className="muted">없음</span>) },
     {
       key: "memo",
       header: "종결 요청 메모",
@@ -177,10 +178,6 @@ export function ClosingScreen({
         )
       ) : (
         <>
-          <AlertStrip count={overdueCount} unit="건" active={elapsed === "over"} onShow={() => setElapsed("over")} onClear={() => setElapsed("all")}>
-            입고예정일에서 {alertDays}일 이상 지난 미종결 입고예정
-          </AlertStrip>
-
           <FilterBar>
             <FilterField label="화주사" htmlFor="cl-client">
               <Select id="cl-client" value={client} onChange={(e) => setClient(e.target.value)}>
@@ -217,6 +214,11 @@ export function ClosingScreen({
             <SearchInput value={search} onChange={setSearch} placeholder="입고예정번호·화주사·품목코드·품목명" />
           </FilterBar>
 
+          {/* 고정 영역(제목·조회조건·탭) 아래, 목록 바로 위 — 있을 때만 보이는 알림은 여기 (2026-11-14 Sol) */}
+          <AlertStrip count={overdueCount} unit="건" active={elapsed === "over"} onShow={() => setElapsed("over")} onClear={() => setElapsed("all")}>
+            입고예정일에서 {alertDays}일 이상 지난 미종결 입고예정
+          </AlertStrip>
+
           <ListToolbar total={list.length}>
             {picked.size > 0 && (
               <span className={styles.picked}>
@@ -247,7 +249,7 @@ export function ClosingScreen({
         title="잔량 종결"
         description="고른 입고예정의 남은 잔량을 종결합니다. 종결은 최종 상태이며 되돌릴 수 없습니다. 다시 입고하려면 새 입고예정을 등록해야 합니다."
         reasonLabel="종결 사유"
-        submitLabel={`${chosen.length}건 잔량 종결`}
+        submitLabel={`${chosen.length.toLocaleString()}건 잔량 종결`}
         closeLabel="닫기"
         placeholder="종결하는 이유를 적어 주세요."
         target={

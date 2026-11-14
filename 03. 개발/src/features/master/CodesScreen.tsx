@@ -5,13 +5,13 @@ import { ActiveBadge, Tag } from "@/components/ui/Badges";
 import { Button, CreateButton } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField } from "@/components/ui/FilterBar";
-import { FormCheck, FormField, FormStatic, Input } from "@/components/ui/Form";
-import { NoteBox } from "@/components/ui/NoteBox";
+import { FormCheck, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
 import { saveCommonCode } from "@/server/master/actions";
 import { loadCommonCode } from "@/server/master/loaders";
 import { EditModal, Full, FormSection, ViewSection, useEditTarget } from "./record";
 import recordStyles from "./ClientsScreen.module.css";
+import guide from "./CodesScreen.module.css";
 import { ACTIVE_OPTIONS, MasterHeader, matchActive, useAction, useSelection, type ActiveFilter } from "./shared";
 import { LastChanged } from "./history";
 import { RULES } from "./rules";
@@ -27,7 +27,7 @@ export function CodesScreen({
   rows: CommonCodeRow[];
 }) {
   const [groupCode, setGroupCode] = useState(groups[0]?.code ?? "");
-  const [active, setActive] = useState<ActiveFilter>("all");
+  const [active, setActive] = useState<ActiveFilter>("on") // 사용 여부 기본 = 사용 (2026-11-14 Sol);
   const group = groups.find((g) => g.code === groupCode);
   const list = useMemo(
     () => rows.filter((r) => r.groupCode === groupCode && matchActive(active, r.isActive)),
@@ -39,11 +39,11 @@ export function CodesScreen({
   const nextOrder = (list.reduce((m, r) => Math.max(m, r.sortOrder), 0) || 0) + 10;
 
   const columns: Column<CommonCodeRow>[] = [
-    { key: "code", header: "코드", render: (r) => <span className="mono">{r.code}</span> },
+    { key: "code", header: "코드", align: "center", render: (r) => <span className="mono">{r.code}</span> },
     { key: "name", header: "코드명", wrap: true, render: (r) => r.name },
-    { key: "order", header: "순서", align: "right", render: (r) => <span className="mono">{r.sortOrder}</span> },
+    { key: "order", header: "순서", align: "center", render: (r) => <span className="mono">{r.sortOrder}</span> },
     { key: "text", header: "상세 내용", render: (r) => (r.requiresText ? "필수" : "선택") },
-    { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
+    { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
   return (
@@ -59,28 +59,27 @@ export function CodesScreen({
         }
       />
       <FilterBar>
-        <FilterField label="코드 그룹">
-          <ChipGroup
+        {/* 코드 그룹은 드롭다운 (2026-11-14 Sol) — 그룹이 늘어도 한 칸 */}
+        <FilterField label="코드 그룹" htmlFor="f-group">
+          <Select
+            id="f-group"
             value={groupCode}
-            onChange={(v) => {
-              setGroupCode(v);
+            onChange={(e) => {
+              setGroupCode(e.target.value);
               sel.select(null);
             }}
-            options={groups.map((g) => ({ value: g.code, label: g.name }))}
-          />
+          >
+            {groups.map((g) => (
+              <option key={g.code} value={g.code}>
+                {g.name}
+              </option>
+            ))}
+          </Select>
         </FilterField>
         <FilterField label="사용 여부">
           <ChipGroup options={ACTIVE_OPTIONS} value={active} onChange={setActive} />
         </FilterField>
       </FilterBar>
-      {group && (
-        <NoteBox tone={group.confirmed ? "info" : "warn"}>
-          <strong>{group.name}</strong> <span className="mono">({group.code})</span>{" "}
-          {group.confirmed ? <Tag tone="accent">정의서 확정</Tag> : <Tag tone="neutral">미확정 · 임시안</Tag>}
-          <br />
-          {group.description}
-        </NoteBox>
-      )}
       <SplitView
         collapsible
         list={
@@ -122,6 +121,7 @@ function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; 
   if (!row || !group) {
     return (
       <SidePanel label="사유 코드 상세">
+        {group && <GroupGuide key={`${group.code}-open`} group={group} defaultOpen />}
         <p className="muted">목록에서 코드를 선택하면 상세가 보입니다.</p>
       </SidePanel>
     );
@@ -144,6 +144,7 @@ function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; 
         </>
       }
     >
+      <GroupGuide key={`${group.code}-${row.id}`} group={group} defaultOpen={false} />
       <ViewSection
         title="기본 정보"
         items={[
@@ -267,5 +268,29 @@ function CodeEditModal({
         </Full>
       </FormSection>
     </EditModal>
+  );
+}
+
+/**
+ * 그룹 안내 (2026-11-14 Sol) — 목록 위 안내 박스 대신 상세 패널 맨 위.
+ * 코드를 고르기 전에는 펼쳐 두고, 코드를 고르면 한 줄(그룹 이름·확정 태그 + ▸)로 접는다. 누르면 다시 펼친다.
+ */
+function GroupGuide({ group, defaultOpen }: { group: CodeGroupRow; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <details className={guide.box} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className={guide.sum}>
+        <span className={guide.chev} aria-hidden="true">
+          ▸
+        </span>
+        <span className={guide.label}>그룹 안내</span>
+        <b>{group.name}</b>
+        {group.confirmed ? <Tag tone="accent">정의서 확정</Tag> : <Tag tone="neutral">미확정 · 임시안</Tag>}
+        {!open && <span className={guide.hint}>펼치기</span>}
+      </summary>
+      <p className={guide.body}>
+        <span className="mono muted">({group.code})</span> {group.description}
+      </p>
+    </details>
   );
 }

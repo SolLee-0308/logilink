@@ -138,33 +138,33 @@ export function TplDashboardScreen({ data }: { data: TplDashboard }) {
 }
 
 const expireColumns = (multi: boolean): Column<DashPlanRow>[] => [
-  { key: "no", header: "입고예정번호", render: (r) => <span className="mono">{r.planNo}</span> },
+  { key: "no", header: "입고예정번호", align: "center", render: (r) => <span className="mono">{r.planNo}</span> },
   { key: "client", header: "화주사", render: (r) => r.clientName },
   ...centerCol<DashPlanRow>(multi),
-  { key: "date", header: "입고예정일", render: (r) => <span className="mono">{r.planDate}</span> },
-  { key: "status", header: "상태", render: (r) => <StatusBadge status={r.status} /> },
+  { key: "date", header: "입고예정일", align: "center", render: (r) => <span className="mono">{r.planDate}</span> },
+  { key: "status", header: "상태", align: "center", render: (r) => <StatusBadge status={r.status} /> },
 ];
 
 const asnColumns = (multi: boolean): Column<DashAsnRow>[] => [
-  { key: "no", header: "ASN번호", render: (r) => <span className="mono">{r.asnNo}</span> },
+  { key: "no", header: "ASN번호", align: "center", render: (r) => <span className="mono">{r.asnNo}</span> },
   { key: "client", header: "화주사", render: (r) => r.clientName },
   ...centerCol<DashAsnRow>(multi),
-  { key: "vehicle", header: "차량번호", render: (r) => <span className="mono">{r.vehicleNo}</span> },
-  { key: "date", header: "출고일", render: (r) => <span className="mono">{r.shipDate}</span> },
+  { key: "vehicle", header: "차량번호", align: "center", render: (r) => <span className="mono">{r.vehicleNo}</span> },
+  { key: "date", header: "출고일", align: "center", render: (r) => <span className="mono">{r.shipDate}</span> },
 ];
 
 const rcvColumns = (multi: boolean): Column<DashRcvRow>[] => [
-  { key: "vehicle", header: "차량번호", render: (r) => <span className="mono">{r.vehicleNo}</span> },
+  { key: "vehicle", header: "차량번호", align: "center", render: (r) => <span className="mono">{r.vehicleNo}</span> },
   { key: "client", header: "화주사", render: (r) => r.clientName },
   ...centerCol<DashRcvRow>(multi),
-  { key: "at", header: "확정", render: (r) => <span className="mono">{fmtShortDateTime(r.confirmedAt)}</span> },
-  { key: "issue", header: "차이 품목", align: "right", render: (r) => <span className={`mono ${styles.warnText}`}>{r.issueCount}</span> },
+  { key: "at", header: "확정", align: "center", render: (r) => <span className="mono">{fmtShortDateTime(r.confirmedAt)}</span> },
+  { key: "issue", header: "차이 품목", align: "right", render: (r) => <span className={`mono ${styles.warnText}`}>{r.issueCount.toLocaleString()}</span> },
 ];
 
 const closeColumns: Column<DashCenter>[] = [
   { key: "name", header: "센터", render: (r) => r.name },
-  { key: "date", header: "오늘 업무일", render: (r) => <span className="mono">{r.businessDate}</span> },
-  { key: "close", header: "일마감 예정", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
+  { key: "date", header: "오늘 업무일", align: "center", render: (r) => <span className="mono">{r.businessDate}</span> },
+  { key: "close", header: "일마감 예정", align: "center", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
   { key: "rcv", header: "오늘 확정 차량", align: "right", render: (r) => <span className="mono">{r.confirmedVehicles}대</span> },
   {
     key: "expire",

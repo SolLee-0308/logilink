@@ -9,7 +9,7 @@ import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, departLo
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { LoadInputView, LoadLineView, LoadView, ScanPreview } from "@/features/loads/types";
 import { deviceId, takeNotice } from "./device";
-import { Icon, InfoRows, Pill } from "./PdaParts";
+import { Icon, InfoRows, Pill, QtyParts, RemainQty } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 /** 다른 작업자 입력을 다시 읽는 간격 */
@@ -286,7 +286,8 @@ export function PdaLoadScreen({
    * 박스 없이 두어 아래 스캔 칸이 화면의 중심이 되게 한다.
    */
   const head = () => (
-    <section className={styles.vHead}>
+    // 상차 작업은 차량 정보 아래 구분선 없이 보라색 스캔 영역을 바로 붙인다 (2026-11-14 Sol)
+    <section className={`${styles.vHead} ${styles.vHeadFlat}`}>
       <span className={styles.idHead}>
         <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
@@ -553,7 +554,7 @@ export function PdaLoadScreen({
         )}
         {/* 작업자 — 이름 한 줄 (2026-11-11 Sol: 꼭 필요한 정보만). 여러 명이면 아직 싣는 사람이 없는지 확인 */}
         <p className={styles.finishSum}>
-          작업자 {view.workers.length}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
+          작업자 {view.workers.length.toLocaleString()}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
         </p>
         {view.workers.length > 1 && <p className={styles.warnText}>다른 작업자가 다 실었는지 확인하세요.</p>}
         {conflict && (
@@ -687,27 +688,25 @@ export function PdaLoadScreen({
               if (Number(qty) > 0) onAdd(false);
             }}
           >
-            {/* 스캔한 품목 — 이름 + 라벨/값 상자 (2026-11-11 Sol: 이전 방식 유지, 필요한 줄만).
-                품목코드 · 지시(지시 상차만) · 지금 합계. 스캔 단위는 기준 단위와 다를 때만 */}
-            <div className={styles.sheetHead}>
-              <span className={styles.iconCircle}>
-                <Icon name="box" size={17} />
-              </span>
-              <b className={styles.previewName}>{preview.itemName}</b>
+            {/* 스캔한 품목 — 머리는 아이콘 없이 [품목코드(연한 회색·작게)] 품목명 (목록과 같은 표기),
+                아래는 라벨/값 줄: 지시 수량 · 합계 수량 · 남은 수량(지시 상차만). 스캔 단위는 기준 단위와 다를 때만 (2026-11-14 Sol) */}
+            <div className={`${styles.sheetHead} ${styles.previewHead}`}>
+              <b className={styles.previewName}>
+                <span className={`${styles.previewCode} mono`}>{preview.itemClientCode ?? preview.itemCode}</span> {preview.itemName}
+              </b>
             </div>
             <InfoRows
               tone="white"
               rows={[
-                ["품목코드", <span key="c" className="mono">{preview.itemClientCode ?? preview.itemCode}</span>],
                 ...(preview.unit !== preview.baseUnit
                   ? ([["스캔 단위", <span key="u" className="mono">{preview.unit} = {preview.factor} {preview.baseUnit}</span>]] as [string, React.ReactNode][])
                   : []),
                 ...(ordered
                   ? ([
                       [
-                        "지시",
+                        "지시 수량",
                         preview.orderBase ? (
-                          qtyInUnit(preview.orderBase, preview.showUnit, preview.showFactor, preview.baseUnit)
+                          <QtyParts key="o" text={qtyInUnit(preview.orderBase, preview.showUnit, preview.showFactor, preview.baseUnit)} />
                         ) : (
                           <span key="x" className={styles.warnInline}>
                             <Icon name="alert" size={15} /> 지시 외
@@ -716,11 +715,18 @@ export function PdaLoadScreen({
                       ],
                     ] as [string, React.ReactNode][])
                   : []),
-                ["지금 합계", <b key="n">{qtyInUnit(preview.loadBase, preview.showUnit, preview.showFactor, preview.baseUnit)}</b>],
+                ["합계 수량", <QtyParts key="n" text={qtyInUnit(preview.loadBase, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                ...(ordered
+                  ? ([["남은 수량", <RemainQty key="r" target={preview.orderBase} done={preview.loadBase} unit={preview.showUnit} factor={preview.showFactor} baseUnit={preview.baseUnit} />]] as [
+                      string,
+                      React.ReactNode,
+                    ][])
+                  : []),
               ]}
             />
-            <label htmlFor="pda-qty" className={styles.label}>
-              추가로 실은 수량 ({preview.unit})
+            {/* 보이는 라벨은 뺐다 — 입력칸 안내 글로 대신 (2026-11-14 Sol). 화면 읽기 프로그램용 라벨은 남김 */}
+            <label htmlFor="pda-qty" className="sr-only">
+              상차할 수량 ({preview.unit})
             </label>
             <div className={styles.qtyRow}>
               <input
@@ -730,7 +736,7 @@ export function PdaLoadScreen({
                 value={qty}
                 onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
-                placeholder="0"
+                placeholder={`상차할 수량 입력 (${preview.unit})`}
                 autoComplete="off"
                 enterKeyHint="done"
                 disabled={pending}
@@ -756,7 +762,7 @@ export function PdaLoadScreen({
       {/* 내 입력 — 접힌 줄, 눌러서 정정·취소 (2026-11-06 Sol 결정: 정보 줄이기) */}
       <details className={styles.fold}>
         <summary className={styles.foldHead}>
-          내 입력 <span className={styles.count}>{myInputs.length}</span>
+          내 입력 <span className={styles.count}>{myInputs.length.toLocaleString()}</span>
           <span className={styles.detailSum}>{myInputs[0] ? `마지막 ${timeOf(myInputs[0].inputAt)}` : "없음"}</span>
           <span className={styles.detailChev}>
             <Icon name="chevD" size={16} />
@@ -915,7 +921,7 @@ function Lines({ view, flash }: { view: LoadView; flash?: { itemId: number; n: n
   return (
     <section className={styles.flat}>
       <h2 className={styles.h2}>
-        품목 <span className={styles.count}>{view.lines.length}</span>
+        품목 <span className={styles.count}>{view.lines.length.toLocaleString()}</span>
         {/* 지시 상차의 '일치 N/M' 태그는 머리 상태 줄로 옮겼다 (2026-11-07 Sol 확정) */}
         {!ordered && <span className={styles.h2Sub}>상차 수량</span>}
       </h2>
@@ -923,7 +929,8 @@ function Lines({ view, flash }: { view: LoadView; flash?: { itemId: number; n: n
         <p className={styles.empty}>{ordered ? "지시 품목이 없습니다." : "아직 실은 품목이 없습니다. 오늘 ASN에 있는 품목만 실을 수 있습니다."}</p>
       ) : (
         <ul className={styles.flatLines}>
-          {view.lines.map((l) => {
+          {/* 지시 수량과 합계가 일치한 품목은 맨 아래로 — 남은 품목이 위에 보이게 (2026-11-14 Sol). 나머지 순서는 그대로 */}
+          {(ordered ? [...view.lines].sort((x, y) => Number(x.state === "match") - Number(y.state === "match")) : view.lines).map((l) => {
             const st = l.loadBase === 0 && l.orderBase > 0 ? "none" : l.state;
             const pct = l.orderBase > 0 ? Math.min(100, (l.loadBase / l.orderBase) * 100) : 100;
             return (
@@ -982,7 +989,7 @@ function LoadSummary({ view }: { view: LoadView }) {
   return (
     <span>
       <b className={match === order.length ? styles.matchAll : undefined}>
-        일치 {match}/{order.length}품목
+        일치 {match}/{order.length.toLocaleString()}품목
       </b>
       {parts.length > 0 && <span className={styles.dim}> · {parts.map(([k, v]) => `${k} ${v}`).join(" · ")}</span>}
     </span>
@@ -996,3 +1003,4 @@ function DepartText({ view }: { view: LoadView }) {
   if (d.system) return <span>{DEPART_TYPE_LABEL[d.type]} · {fmtDateTime(d.at).slice(5, 16)}</span>;
   return <span>{timeOf(d.at)} · {d.by ?? "-"}</span>;
 }
+

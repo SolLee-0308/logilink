@@ -51,22 +51,22 @@ const GRACE_HELP = "승인 전(승인대기·반려) 입고예정은 입고예�
 const WEEKLY_OFF_HELP = "매주 쉬는 요일을 고릅니다. 고르지 않으면 모든 요일을 영업일로 셉니다. 공휴일·임시 휴무는 기준정보 › 휴무일에서 따로 등록합니다.";
 
 export function CentersScreen({ rows, candidates, canEdit }: { rows: CenterRow[]; candidates: ManagerCandidate[]; canEdit: boolean }) {
-  const [active, setActive] = useState<ActiveFilter>("all");
+  const [active, setActive] = useState<ActiveFilter>("on") // 사용 여부 기본 = 사용 (2026-11-14 Sol);
   const list = useMemo(() => rows.filter((r) => matchActive(active, r.isActive)), [rows, active]);
   const sel = useSelection(list.map((r) => r.id));
   const current = sel.active === "new" ? null : (rows.find((r) => r.id === sel.active) ?? null);
   const edit = useEditTarget(loadCenter);
 
   const columns: Column<CenterRow>[] = [
-    { key: "code", header: "센터 코드", render: (r) => <span className="mono">{r.code}</span> },
+    { key: "code", header: "센터 코드", align: "center", render: (r) => <span className="mono">{r.code}</span> },
     { key: "name", header: "센터명", render: (r) => r.name },
     { key: "addr", header: "주소", render: (r) => r.addr1 },
     { key: "tel", header: "입고 문의 전화", render: (r) => <span className="mono">{r.inboundTel}</span> },
-    { key: "manager", header: "센터 담당자", render: (r) => r.managerName ?? <span className="muted">미지정</span> },
-    { key: "dayStart", header: "업무일 시작", render: (r) => <span className="mono">{r.businessDayStart}</span> },
-    { key: "close", header: "일마감 예정 시각", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
+    { key: "manager", header: "센터 담당자", align: "center", render: (r) => r.managerName ?? <span className="muted">미지정</span> },
+    { key: "dayStart", header: "업무일 시작", align: "center", render: (r) => <span className="mono">{r.businessDayStart}</span> },
+    { key: "close", header: "일마감 예정 시각", align: "center", render: (r) => <span className="mono">{r.dailyCloseTime}</span> },
     { key: "off", header: "정기 휴무", render: (r) => (r.weeklyOffDays.length ? weeklyOffLabel(r.weeklyOffDays) : <span className="muted">없음</span>) },
-    { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
+    { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
   return (
@@ -180,7 +180,7 @@ function CenterView({
           ["일마감 예정 시각", <span key="d" className="mono">{row.dailyCloseTime}</span>],
           ["기한경과 취소 유예", `입고예정일 + ${row.expireGraceDays}영업일`],
           ["정기 휴무 요일", weeklyOffLabel(row.weeklyOffDays)],
-          ["소속 사용자", `사용 중 ${row.activeUserCount}명`],
+          ["소속 사용자", `사용 중 ${row.activeUserCount.toLocaleString()}명`],
         ]}
       />
     </SidePanel>

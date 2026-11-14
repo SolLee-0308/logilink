@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
 import { LinkButton, CreateButton } from "@/components/ui/Button";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
@@ -21,7 +22,7 @@ import recordStyles from "./ClientsScreen.module.css";
 import styles from "./ItemsScreen.module.css";
 
 /** 단위 환산 요약: EA · BOX=20 */
-export const uomSummary = (uoms: ItemUomRow[]) => uoms.map((u) => (u.qty === 1 ? u.unit : `${u.unit}=${u.qty}`)).join(" · ");
+export const uomSummary = (uoms: ItemUomRow[]) => uoms.map((u) => (u.qty === 1 ? u.unit : `${u.unit}=${u.qty.toLocaleString()}`)).join(" · ");
 
 
 export const LABELS = {
@@ -62,7 +63,7 @@ export function itemListSearch(f: ItemListQuery) {
   const p = new URLSearchParams();
   if (f.client) p.set("client", f.client);
   if (f.temp !== "all") p.set("temp", f.temp);
-  if (f.active !== "all") p.set("active", f.active);
+  if (f.active !== "on") p.set("active", f.active);
   if (f.q) p.set("q", f.q);
   if (f.item) p.set("item", String(f.item));
   const s = p.toString();
@@ -131,21 +132,35 @@ export function ItemsScreen({
   const activeId = selected !== null && list.some((r) => r.id === selected) ? selected : (list[0]?.id ?? null);
   const current = activeId === null ? null : (rows.find((r) => r.id === activeId) ?? null);
 
-  // 조회조건·선택을 주소에 반영 (서버 다시 읽기 없이) + 등록·수정 화면의 [← 목록]용으로 기억
+  // 화주사를 바꾸면 서버에서 그 화주사 품목만 다시 읽는다 (2026-11-14 Sol, 화주사 먼저 선택)
+  const router = useRouter();
+  const [loading, startLoading] = useTransition();
+  const pickClient = (v: string) => {
+    setClientId(v);
+    setSelected(null);
+  };
+  const needClient = !singleClient && !clientId;
+
+  // 조회조건·선택을 주소에 반영 + 등록·수정 화면의 [← 목록]용으로 기억.
+  // 서버가 읽은 화주사(initial.client)와 다르면 서버에서 다시 읽는다. 이때 history.replaceState를 함께 부르면
+  // 진행 중인 다시 읽기가 취소되어 목록이 비는 문제가 있었다 (2026-11-14 Sol 피드백) → 둘 중 하나만 한다
   useEffect(() => {
     const url = `/master/items${itemListSearch({ client: clientId, temp, active, q, item: activeId })}`;
-    window.history.replaceState(null, "", url);
+    if (!singleClient && clientId !== initial.client) startLoading(() => router.replace(url, { scroll: false }));
+    else window.history.replaceState(null, "", url);
     try {
       sessionStorage.setItem(ITEM_LIST_KEY, url);
     } catch {
       /* 저장소를 못 써도 목록은 동작 */
     }
-  }, [clientId, temp, active, q, activeId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, temp, active, q, activeId, initial.client]);
 
   const columns: Column<ItemRow>[] = [
     {
       key: "code",
       header: "품목코드",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{r.code}</span>
@@ -168,10 +183,29 @@ export function ItemsScreen({
         </>
       ),
     },
-    { key: "uom", header: "단위", render: (r) => <span className="mono">{uomSummary(r.uoms)}</span> },
+    // 단위 — 다른 화면 단위 열처럼 좁게, 단위가 여럿이면 한 줄에 하나씩 (2026-11-14 Sol)
+    {
+      key: "uom",
+      header: "단위",
+      align: "center",
+      width: 56,
+      wrap: true,
+      render: (r) => (
+        <span className="mono">
+          {[...r.uoms]
+            .sort((a, b) => a.qty - b.qty)
+            .map((u) => (
+              <span key={u.unit} style={{ display: "block", whiteSpace: "nowrap" }}>
+                {u.qty === 1 ? u.unit : `${u.unit}=${u.qty.toLocaleString()}`}
+              </span>
+            ))}
+        </span>
+      ),
+    },
     {
       key: "barcode",
       header: "대표 바코드",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{r.barcodes[0]?.barcode}</span>
@@ -182,6 +216,7 @@ export function ItemsScreen({
     {
       key: "manage",
       header: "관리",
+      align: "center",
       render: (r) => (
         <span className="cell-tags">
           {r.expiryManaged && <Tag tone="neutral">소비기한</Tag>}
@@ -190,7 +225,7 @@ export function ItemsScreen({
         </span>
       ),
     },
-    { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
+    { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
   const clientQuery = clientId ? `?client=${clientId}` : "";
@@ -211,11 +246,12 @@ export function ItemsScreen({
               <ClientPicker
                 id="f-client"
                 value={clientId}
-                onChange={setClientId}
+                onChange={pickClient}
                 clients={clients.filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)}
               />
+              {/* 화주사 칸에 붙여 둔다 — 따로 한 칸을 차지하면 열 맞춤이 어긋남 (2026-11-14 Sol) */}
+              <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
             </FilterField>
-            <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>
         )}
         <FilterField label="온도대">
@@ -259,7 +295,7 @@ export function ItemsScreen({
               rowKey={(r) => String(r.id)}
               activeKey={activeId === null ? null : String(activeId)}
               onActivate={(k) => setSelected(Number(k))}
-              empty="조건에 맞는 품목이 없습니다. 조회조건을 바꿔 보세요."
+              empty={needClient ? "화주사를 먼저 고르세요. 고른 화주사의 품목만 불러옵니다." : loading ? "불러오는 중입니다." : "조건에 맞는 품목이 없습니다. 조회조건을 바꿔 보세요."}
             />
           </>
         }
@@ -322,7 +358,7 @@ function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) 
         title="단위 환산"
         items={row.uoms.map((u): [string, React.ReactNode] => [
           `1 ${u.unit}`,
-          u.unit === base ? <span key={u.unit} className="muted">기준 단위</span> : <span key={u.unit} className="mono">{`${u.qty} ${base}`}</span>,
+          u.unit === base ? <span key={u.unit} className="muted">기준 단위</span> : <span key={u.unit} className="mono">{`${u.qty.toLocaleString()} ${base}`}</span>,
         ])}
       />
       <ViewSection

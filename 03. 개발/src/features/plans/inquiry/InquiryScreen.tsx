@@ -2,20 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AsnStatusBadge, StatusBadge } from "@/components/ui/Badges";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { Input, Select } from "@/components/ui/Form";
 import { AlertStrip } from "@/components/ui/AlertStrip";
 import { ModeSwitch } from "@/components/ui/ModeSwitch";
-import { ListToolbar } from "@/components/ui/SplitView";
-import { Tabs } from "@/components/ui/Tabs";
+import { Tabs, TabTotal } from "@/components/ui/Tabs";
+import { useStickyHead } from "@/components/ui/useStickyHead";
 import { dday, ddayLabel } from "@/domain/plan-rules";
 import { qtyInUnit } from "@/domain/load-rules";
 import { ASN_STATUS_META } from "@/domain/asn-rules";
 import { PLAN_STATUS_META } from "@/domain/plan-status";
-import { daysBetween, elapsedDays, isOverdue, overdueCutoff, progressPct, WAIT_STAGE_LABEL, waitStageSummary } from "@/domain/inquiry-rules";
-import { fmtShortDateTime, includesText } from "@/lib/format";
+import { elapsedDays, isOverdue, overdueCutoff, progressPct, WAIT_STAGE_LABEL, waitStageSummary } from "@/domain/inquiry-rules";
+import { fmtDateTime, fmtShortDateTime, includesText } from "@/lib/format";
 import { MasterHeader } from "@/features/master/shared";
 import { ClientFilter, type PickedClient } from "@/features/plans/ClientFinder";
 import { DateRangeField, matchPlanNo } from "@/features/plans/PlanSearchFields";
@@ -171,18 +171,6 @@ export function InquiryScreen({
         actions={<ModeSwitch label="보기" value={tab} onChange={(k: InquiryTab) => apply({ tab: k, st: "open" })} items={VIEW_ITEMS} />}
       />
 
-      {/* 경과 기준 초과 미종결 — 있을 때만 붉은 띠 1줄 (0건이면 자리 없음) */}
-      <AlertStrip
-        count={overdueCount}
-        unit="건"
-        active={overdueOn}
-        onShow={() => apply({ tab: "plan", st: "open", from: "", to: cutoff })}
-        onClear={reset}
-        activeLabel="기준 초과만 보는 중 · 처음 조건으로"
-      >
-        {overdueLabel}
-      </AlertStrip>
-
       <FilterBar>
         <DateRangeField label={tab === "plan" ? "입고예정일" : "출고일"} from={f.from} to={f.to} onFrom={(v) => apply({ from: v })} onTo={(v) => apply({ to: v })} />
         {showClient && (
@@ -236,17 +224,31 @@ export function InquiryScreen({
           count: initial.tab === tab ? (stateCounts[s.key] ?? 0) : undefined,
           ...(tab === "plan" && s.key === "open" ? { alert: overdueCount, alertLabel: `기준 초과 ${overdueCount}건` } : {}),
         }))}
+        aside={
+          <>
+            {(tab === "plan" ? plans.length : vehicles.length) >= 1000 && <span className={styles.cap}>1,000건까지만 보입니다. 기간을 줄여 조회하세요.</span>}
+            {!isDefault && (
+              <button type="button" className={styles.reset} onClick={reset}>
+                처음 조건으로
+              </button>
+            )}
+            <TabTotal total={tab === "plan" ? planList.length : vehicleList.length} />
+          </>
+        }
       />
 
       <div id="inquiry-list" role="tabpanel" aria-labelledby={`tab-${f.st}`} aria-busy={loading} className={`${styles.panel} ${loading ? styles.loading : ""}`}>
-        <ListToolbar total={tab === "plan" ? planList.length : vehicleList.length}>
-          {(tab === "plan" ? plans.length : vehicles.length) >= 1000 && <span className={styles.cap}>1,000건까지만 보입니다. 기간을 줄여 조회하세요.</span>}
-          {!isDefault && (
-            <button type="button" className={styles.reset} onClick={reset}>
-              처음 조건으로
-            </button>
-          )}
-        </ListToolbar>
+        {/* 경과 기준 초과 미종결 — 있을 때만 붉은 띠 1줄 (0건이면 자리 없음) */}
+        <AlertStrip
+          count={overdueCount}
+          unit="건"
+          active={overdueOn}
+          onShow={() => apply({ tab: "plan", st: "open", from: "", to: cutoff })}
+          onClear={reset}
+          activeLabel="기준 초과만 보는 중 · 처음 조건으로"
+        >
+          {overdueLabel}
+        </AlertStrip>
         {tab === "plan" ? (
           <PlanTable rows={planList} item={item} open={open} setOpen={setOpen} today={today} alertDays={alertDays} showClient={showClient} showCenter={multiCenter} />
         ) : (
@@ -278,11 +280,15 @@ function PlanTable({
   showClient: boolean;
   showCenter: boolean;
 }) {
+  // 열 제목 고정 (2026-11-14 Sol)
+  const headRef = useRef<HTMLTableElement>(null);
+  useStickyHead(headRef, rows.length > 0);
   if (!rows.length) return <div className={styles.empty}>조건에 맞는 입고예정이 없습니다. 기간이나 상태를 바꿔 보세요.</div>;
-  const cols = 9 + (showClient ? 1 : 0) + (showCenter ? 1 : 0);
+  // [상세] 열은 뺐다 — 입고예정번호 링크로 상세에 간다 (2026-11-14 Sol)
+  const cols = 8 + (showClient ? 1 : 0) + (showCenter ? 1 : 0);
   return (
     <div className={styles.scroll}>
-      <table className={styles.table}>
+      <table ref={headRef} className={styles.table}>
         <caption className="sr-only">입고예정 목록 (품목별)</caption>
         <thead>
           <tr>
@@ -298,9 +304,6 @@ function PlanTable({
             <th scope="col">차량 현황</th>
             <th scope="col">승인</th>
             <th scope="col">상태</th>
-            <th scope="col">
-              <span className="sr-only">상세</span>
-            </th>
           </tr>
         </thead>
         <tbody>
@@ -314,7 +317,6 @@ function PlanTable({
             const n = dday(p.planDate, today);
             const pct = progressPct(p.lines);
             const incoming = p.lines.reduce((s, l) => s + l.incomingQty, 0);
-            const approvedDays = p.approvedAt ? daysBetween(p.approvedAt.slice(0, 10), today) : null;
             return (
               <Fragment key={key}>
                 <tr
@@ -322,11 +324,11 @@ function PlanTable({
                   onClick={() => !item && setOpen(open === key ? null : key)}
                 >
                   <td className={styles.tCol}>{!item && <Toggle open={expanded} controls={`${key}-lines`} label={p.planNo} />}</td>
-                  <td>
+                  <td className={styles.center}>
                     <span className="mono">{p.planDate}</span>
                     <span className={styles.sub}>{elapsed > 0 ? <span className={over ? styles.over : undefined}>{elapsed}일 경과</span> : ddayLabel(n)}</span>
                   </td>
-                  <td>
+                  <td className={styles.center}>
                     <Link href={`/plans/inquiry/${p.id}`} className={`${styles.no} mono`} onClick={(e) => e.stopPropagation()}>
                       {p.planNo}
                     </Link>
@@ -334,8 +336,8 @@ function PlanTable({
                   {showClient && <td>{p.clientName}</td>}
                   {showCenter && <td>{p.centerName}</td>}
                   <td>
-                    {p.lines.length}품목
-                    {item && <span className={styles.sub}>일치 {lines.length}품목</span>}
+                    {p.lines.length.toLocaleString()}품목
+                    {item && <span className={styles.sub}>일치 {lines.length.toLocaleString()}품목</span>}
                   </td>
                   <td>
                     <Progress pct={pct} />
@@ -351,17 +353,24 @@ function PlanTable({
                       <span className="muted">차량 없음</span>
                     )}
                   </td>
-                  <td>
-                    <span className="mono">{fmtShortDateTime(p.approvedAt)}</span>
-                    <span className={styles.sub}>{approvedDays !== null ? `승인 후 ${approvedDays}일 · ${p.approvedBy ?? ""}` : ""}</span>
+                  {/* 승인 — 1줄 날짜, 2줄 승인자(왼쪽)·시각(오른쪽). 입고예정 등록 '최종 저장'과 같은 형식 (2026-11-14 Sol) */}
+                  <td className={styles.center}>
+                    {p.approvedAt ? (
+                      <span className={styles.stamp}>
+                        <span className="mono">{fmtDateTime(p.approvedAt).slice(0, 10)}</span>
+                        <span className={styles.sub}>
+                          <span className={styles.stampSub}>
+                            <span>{p.approvedBy ?? ""}</span>
+                            <span className="mono">{fmtDateTime(p.approvedAt).slice(11, 16)}</span>
+                          </span>
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="muted">–</span>
+                    )}
                   </td>
-                  <td>
+                  <td className={styles.center}>
                     <StatusBadge status={p.status} />
-                  </td>
-                  <td>
-                    <Link href={`/plans/inquiry/${p.id}`} className={styles.detail} onClick={(e) => e.stopPropagation()}>
-                      상세
-                    </Link>
                   </td>
                 </tr>
                 {expanded && (
@@ -387,7 +396,7 @@ function PlanLines({ lines }: { lines: InquiryPlanLine[] }) {
         <caption className="sr-only">품목 라인</caption>
         <thead>
           <tr>
-            <th scope="col" className={styles.num}>#</th>
+            <th scope="col" className={styles.cNo}>#</th>
             <th scope="col">품목코드</th>
             <th scope="col">품목명</th>
             <th scope="col" className={styles.num}>승인</th>
@@ -404,8 +413,8 @@ function PlanLines({ lines }: { lines: InquiryPlanLine[] }) {
             const remain = remainOf(l);
             return (
               <tr key={l.lineNo}>
-                <td className={`${styles.num} mono`}>{l.lineNo}</td>
-                <td className="mono">{l.itemCode}</td>
+                <td className={`${styles.cNo} mono`}>{l.lineNo}</td>
+                <td className={`${styles.center} mono`}>{l.itemCode}</td>
                 <td className={styles.name}>{l.itemName}</td>
                 <td className={`${styles.num} mono`}>{q(l.baseQty, l)}</td>
                 <td className={`${styles.num} mono`}>{l.incomingQty ? <b className={styles.incoming}>{q(l.incomingQty, l)}</b> : <span className="muted">–</span>}</td>
@@ -444,11 +453,14 @@ function VehicleTable({
   showClient: boolean;
   showCenter: boolean;
 }) {
+  // 열 제목 고정 (2026-11-14 Sol)
+  const headRef = useRef<HTMLTableElement>(null);
+  useStickyHead(headRef, rows.length > 0);
   if (!rows.length) return <div className={styles.empty}>조건에 맞는 차량(ASN)이 없습니다. 기간이나 상태를 바꿔 보세요.</div>;
   const cols = 8 + (showClient ? 1 : 0) + (showCenter ? 1 : 0);
   return (
     <div className={styles.scroll}>
-      <table className={styles.table}>
+      <table ref={headRef} className={styles.table}>
         <caption className="sr-only">차량(ASN) 목록</caption>
         <thead>
           <tr>
@@ -479,11 +491,11 @@ function VehicleTable({
               <Fragment key={key}>
                 <tr className={`${styles.row} ${expanded ? styles.rowOpen : ""}`} onClick={() => !item && setOpen(open === key ? null : key)}>
                   <td className={styles.tCol}>{!item && <Toggle open={expanded} controls={`${key}-lines`} label={`차량 ${v.vehicleNo}`} />}</td>
-                  <td>
+                  <td className={styles.center}>
                     <span className="mono">{v.shipDate}</span>
                     <span className={styles.sub}>{ddayLabel(n)}</span>
                   </td>
-                  <td>
+                  <td className={styles.center}>
                     <span className={`mono ${styles.vehicle}`}>{v.vehicleNo}</span>
                     {(v.driverName || v.driverTel) && (
                       <span className={styles.sub}>
@@ -492,7 +504,7 @@ function VehicleTable({
                       </span>
                     )}
                   </td>
-                  <td className="mono">{v.asnNo}</td>
+                  <td className={`${styles.center} mono`}>{v.asnNo}</td>
                   {showClient && <td>{v.clientName}</td>}
                   {showCenter && <td>{v.centerName}</td>}
                   <td>
@@ -500,7 +512,7 @@ function VehicleTable({
                     {v.planNos.length > 1 && <span className="muted"> 외 {v.planNos.length - 1}건</span>}
                   </td>
                   <td>
-                    {v.lines.length}줄{item && <span className={styles.sub}>일치 {lines.length}줄</span>}
+                    {v.lines.length.toLocaleString()}품목{item && <span className={styles.sub}>일치 {lines.length.toLocaleString()}품목</span>}
                   </td>
                   <td>
                     {received ? (
@@ -512,7 +524,7 @@ function VehicleTable({
                       <b className={styles.incoming}>{v.waitStage ? WAIT_STAGE_LABEL[v.waitStage] : "입고 대기"}</b>
                     )}
                   </td>
-                  <td>
+                  <td className={styles.center}>
                     <AsnStatusBadge status={v.status} />
                   </td>
                 </tr>

@@ -103,12 +103,25 @@ export async function listMyAsns(me: PlanActor): Promise<AsnRow[]> {
 export const canAsnStatus = (me: PlanActor) => can(me.roles, "asnStatus", "view");
 const tplScope = (me: PlanActor): Prisma.AsnWhereInput => (me.centerId ? { centerId: me.centerId } : {});
 
-/** ASN·상차 현황 (3PL) */
-export async function listAsnStatus(me: PlanActor): Promise<AsnRow[]> {
-  if (!canAsnStatus(me)) return [];
+/**
+ * ASN·상차 현황 (3PL) — 출고일 기간으로 서버에서 읽는다 (2026-11-14 Sol, 기본 오늘 ±3일).
+ * rows: 기간 안 ASN·무지시 상차(모든 상태). 기간을 비우면 진행 중 전부 + 최근 30일 완료·취소.
+ * open: 진행 중(상차 대기·상차중·검수 대기) 전부 — 기간과 상관없이 오늘·내일 출고, 출고일 지난 상차 대기 요약용
+ */
+export async function listAsnStatus(me: PlanActor, range: { from: string; to: string } = { from: "", to: "" }): Promise<{ rows: AsnRow[]; open: AsnRow[] }> {
+  if (!canAsnStatus(me)) return { rows: [], open: [] };
   const scope = tplScope(me);
-  const [asns, loads] = await Promise.all([listAsnRows(listWhere(scope), "/plans/asn-status"), unorderedRows(scope.centerId ? { centerId: scope.centerId as number } : {})]);
-  return [...asns, ...loads];
+  const loadScope: Prisma.LoadWhereInput = scope.centerId ? { centerId: scope.centerId as number } : {};
+  const dated = !!(range.from || range.to);
+  const day = (s: string) => new Date(`${s}T00:00:00Z`);
+  const between = { ...(range.from ? { gte: day(range.from) } : {}), ...(range.to ? { lte: day(range.to) } : {}) };
+  const [asns, loads, openAsns, openLoads] = await Promise.all([
+    listAsnRows(dated ? { ...scope, shipDate: between } : listWhere(scope), "/plans/asn-status"),
+    unorderedRows(dated ? { ...loadScope, loadDate: between } : loadScope),
+    listAsnRows({ ...scope, status: { in: ["REGISTERED", "LOADING", "LOADED"] } }, "/plans/asn-status"),
+    unorderedRows({ ...loadScope, rcvs: { none: { status: "CONFIRMED" } } }),
+  ]);
+  return { rows: [...asns, ...loads], open: [...openAsns, ...openLoads.filter((r) => r.status !== "RECEIVED")] };
 }
 
 async function listAsnRows(where: Prisma.AsnWhereInput, base: string): Promise<AsnRow[]> {

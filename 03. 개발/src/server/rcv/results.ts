@@ -23,13 +23,15 @@ export async function listRcvResults(me: PlanActor, q: RcvResultQuery): Promise<
   if (!canRcvResults(me)) return [];
   const confirmed = q.tab === "confirmed";
   const canceled = q.tab === "canceled";
+  // 검수 중은 진행 중 건이라 기간과 상관없이 전부 (2026-11-14 Sol — 오래 걸리는 검수가 목록에서 빠지지 않게)
+  const dated = (confirmed || canceled) && !!(q.from || q.to);
   // 업무일 범위보다 하루씩 넓게 (업무일 시작 시각이 06:00 등이라 달력 날짜와 어긋난다)
   const range = { ...(q.from ? { gte: kstStart(addDays(q.from, -1)) } : {}), ...(q.to ? { lt: kstStart(addDays(q.to, 2)) } : {}) };
   const rows = await db.rcv.findMany({
     where: {
       ...(me.centerId ? { centerId: me.centerId } : {}),
       status: confirmed ? "CONFIRMED" : canceled ? "CANCELED" : "WORKING",
-      ...(q.from || q.to ? (confirmed ? { confirmedAt: range } : canceled ? { reverseDoc: { createdAt: range } } : { createdAt: range }) : {}),
+      ...(dated ? (confirmed ? { confirmedAt: range } : { reverseDoc: { createdAt: range } }) : {}),
     },
     orderBy: confirmed ? [{ confirmedAt: "desc" }, { id: "desc" }] : [{ updatedAt: "desc" }, { id: "desc" }],
     include: {
@@ -98,5 +100,5 @@ export async function listRcvResults(me: PlanActor, q: RcvResultQuery): Promise<
         itemTexts: r.lines.flatMap((l) => [l.item.code, l.item.name]),
       } satisfies RcvResultRow;
     })
-    .filter((r) => (!q.from || r.businessDate >= q.from) && (!q.to || r.businessDate <= q.to));
+    .filter((r) => !dated || ((!q.from || r.businessDate >= q.from) && (!q.to || r.businessDate <= q.to)));
 }

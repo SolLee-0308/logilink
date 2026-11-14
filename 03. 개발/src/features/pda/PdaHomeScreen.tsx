@@ -143,7 +143,7 @@ export function PdaHomeScreen({
           compact
           steps={[
             { label: "상차 시작", done: true },
-            { label: "상차 중", done: w.inputCount > 0, time: `입력 ${w.inputCount}건${w.workerCount > 1 ? ` · ${w.workerCount}명` : ""}` },
+            { label: "상차 중", done: w.inputCount > 0, time: `입력 ${w.inputCount.toLocaleString()}건${w.workerCount > 1 ? ` · ${w.workerCount.toLocaleString()}명` : ""}` },
             { label: "상차완료", done: false },
           ]}
         />
@@ -262,7 +262,7 @@ export function PdaHomeScreen({
       {show("working") && (filter === "working" || home.working.length > 0) && (
         <section className={styles.section}>
           <h2 className={styles.h2}>
-            상차 중인 차량 <span className={styles.count}>{home.working.length}</span>
+            상차 중인 차량 <span className={styles.count}>{home.working.length.toLocaleString()}</span>
           </h2>
           {home.working.length === 0 ? (
             <p className={styles.empty}>상차 중인 차량이 없습니다.</p>
@@ -275,7 +275,7 @@ export function PdaHomeScreen({
       {show("todo") && (
       <section className={styles.section}>
         <h2 className={styles.h2}>
-          상차할 차량 <span className={styles.count}>{todo.length}</span>
+          상차할 차량 <span className={styles.count}>{todo.length.toLocaleString()}</span>
         </h2>
         {todo.length === 0 ? (
           <p className={styles.empty}>{isToday ? "오늘 상차할 지시서가 없습니다." : `출고일이 ${date}인 상차 전 지시서가 없습니다.`}</p>
@@ -296,7 +296,7 @@ export function PdaHomeScreen({
                     </span>
                     <span className={styles.meta}>
                       <span>
-                        {o.driverName ?? "기사 미정"} · {o.lineCount}줄{n < 0 ? ` · 출고일 ${o.shipDate}` : ""}
+                        {o.driverName ?? "기사 미정"} · {o.lineCount.toLocaleString()}품목{n < 0 ? ` · 출고일 ${o.shipDate}` : ""}
                       </span>
                       <span className={styles.cardGo}>
                         시작 <Icon name="arrow" size={13} stroke={2.4} />
@@ -314,7 +314,7 @@ export function PdaHomeScreen({
       {show("done") && (
         <section className={styles.section}>
           <h2 className={styles.h2}>
-            상차완료 <span className={styles.count}>{home.done.length}</span>
+            상차완료 <span className={styles.count}>{home.done.length.toLocaleString()}</span>
           </h2>
           {home.done.length === 0 ? (
             <p className={styles.empty}>{isToday ? "오늘" : date} 상차완료한 차량이 없습니다.</p>
@@ -346,7 +346,7 @@ export function PdaHomeScreen({
                         {w.centerName} · {LOAD_TYPE_LABEL[w.type]}
                       </span>
                       <span>
-                        {w.completedBy} · 입력 {w.inputCount}건
+                        {w.completedBy} · 입력 {w.inputCount.toLocaleString()}건
                       </span>
                     </span>
                     {w.diffReasonName && <span className={styles.metaWarn}>차이 사유: {w.diffReasonName}</span>}

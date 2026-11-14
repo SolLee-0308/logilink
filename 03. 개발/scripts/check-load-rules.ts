@@ -214,7 +214,7 @@ async function main() {
   const asnRow = mine.find((x) => x.kind === "asn" && x.id === asn2.id)!;
   ok(!!asnRow.loadNo?.startsWith("LD-") && asnRow.tab === "loading", "지시 상차 ASN 행에 상차확인서 번호, 상차 진행 탭", asnRow);
   ok(!(await listMyAsns(doyun)).some((x) => x.kind === "load" && x.clientId === jiho.clientId), "다른 화주사 무지시 실적은 보이지 않는다");
-  const tpl = await listAsnStatus(kim);
+  const tpl = (await listAsnStatus(kim)).rows;
   ok(tpl.some((x) => x.kind === "load" && x.vehicleNo === "88거1234") && tpl.some((x) => x.kind === "load" && x.vehicleNo === "70나2222" && x.status === "LOADING"), "3PL 현황에 무지시 상차(상차완료·상차중)가 보인다");
   const det = (await getAsnDetail(minji, asn2.id))!;
   ok(det.load?.status === "COMPLETED" && det.load.diffReasonName === "기타" && det.load.diffReasonText === "기사 요청으로 1개 더", "화주사 ASN 상세에 상차 실적·차이 사유", det.load);

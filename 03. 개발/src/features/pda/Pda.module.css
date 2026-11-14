@@ -2247,3 +2247,79 @@ p.askBody {
   opacity: 0.45;
   cursor: default;
 }
+
+/* ═════════ 상차 스캔 영역 (2026-11-14 Sol) ═════════ */
+/* 품목명 앞 품목코드 — 연한 회색·조금 작게 */
+.previewCode {
+  color: var(--soft);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  margin-right: 2px;
+}
+
+/* 숫자 + 작은 단위(오른쪽) — 숫자 크기는 기존 그대로 */
+.qtyParts {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.qtyUnit {
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* 남은 수량 — 부족(−) 보라, 초과(+) 붉은색, 0은 기본색 */
+.remainMinus .mono {
+  color: var(--violet-600);
+}
+
+.remainPlus .mono {
+  color: var(--st-rej-fg);
+}
+
+/* 상차 작업 머리 — 아래 구분선·여백 없이 보라색 스캔 영역을 위로 붙인다 (2026-11-14 Sol) */
+.vHeadFlat {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.vHeadFlat + .scanCard {
+  margin-top: -4px;
+}
+
+/* 스캔한 품목 이름 줄과 수량 줄(그리드) 사이 여백 */
+.previewHead {
+  margin-bottom: 8px;
+}
+
+/* 수량 입력칸 안내 글 — 숫자(20px 굵게)보다 작고 가늘게 */
+.qty::placeholder {
+  font-size: var(--fs-14);
+  font-weight: 400;
+}
+
+/* 수량 줄(그리드) — 보라 바탕(violet-50 #EFEDFE)보다 아주 옅은 연보라 #FBFAFF, 아래 입력칸과 간격 (2026-11-14 Sol) */
+.previewHead + .info {
+  background: #fbfaff;
+  margin-bottom: 10px;
+}
+
+/* 입력 전 안내 글은 왼쪽 — 숫자를 입력하면 지금처럼 오른쪽 정렬 (2026-11-14 Sol) */
+.qty:placeholder-shown {
+  text-align: left;
+}
+
+/* 입고검수 품목 줄의 반송 수량 — 붉은색 (2026-11-14 Sol) */
+.returnText {
+  color: var(--st-rej-fg);
+}
+
+/* 품목 줄 반송 — 수량 아래 별도 줄 (2026-11-14 Sol) */
+.returnLine {
+  color: var(--st-rej-fg);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}

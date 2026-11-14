@@ -53,6 +53,7 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
     {
       key: "no",
       header: "검수번호",
+      align: "center",
       render: (r) => (
         <Link href={r.href} className={`mono ${styles.planLink}`}>
           {r.rcvNo}
@@ -62,6 +63,7 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
     {
       key: "day",
       header: "업무일",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{r.businessDate}</span>
@@ -73,14 +75,14 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
         </>
       ),
     },
-    { key: "at", header: "확정", render: (r) => <span className="mono">{fmtShortDateTime(r.confirmedAt)}</span> },
-    { key: "vehicle", header: "차량", render: (r) => <span className="mono">{r.vehicleNo}</span> },
+    { key: "at", header: "확정", align: "center", render: (r) => <span className="mono">{fmtShortDateTime(r.confirmedAt)}</span> },
+    { key: "vehicle", header: "차량", align: "center", render: (r) => <span className="mono">{r.vehicleNo}</span> },
     { key: "client", header: "화주사", render: (r) => r.clientName },
     { key: "type", header: "구분", render: (r) => LOAD_TYPE_LABEL[r.loadType] },
-    { key: "lines", header: "품목", align: "right", render: (r) => <span className="mono">{r.lineCount}</span> },
+    { key: "lines", header: "품목", align: "right", render: (r) => <span className="mono">{r.lineCount.toLocaleString()}</span> },
     { key: "good", header: "입고", align: "right", render: (r) => <span className="mono">{n(r.goodBaseQty)}</span> },
     { key: "ret", header: "반송", align: "right", render: (r) => (r.returnBaseQty ? <span className="mono">{n(r.returnBaseQty)}</span> : <span className="muted">–</span>) },
-    { key: "issue", header: "차이", render: (r) => (r.issueCount ? <Tag tone="warn">{r.issueCount}품목</Tag> : <span className="muted">–</span>) },
+    { key: "issue", header: "차이", render: (r) => (r.issueCount ? <Tag tone="warn">{r.issueCount.toLocaleString()}품목</Tag> : <span className="muted">–</span>) },
     { key: "by", header: "확정자", render: (r) => r.confirmedBy ?? "-" },
   ];
 
@@ -88,6 +90,7 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
     {
       key: "no",
       header: "입고예정번호",
+      align: "center",
       render: (p) => (
         <Link href={`/plans/approval/${p.id}`} className={`mono ${styles.planLink}`}>
           {p.planNo}
@@ -95,9 +98,9 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
       ),
     },
     { key: "client", header: "화주사", render: (p) => p.clientName },
-    { key: "date", header: "입고예정일", render: (p) => <span className="mono">{p.planDate}</span> },
-    { key: "status", header: "상태", render: (p) => <StatusBadge status={p.status} /> },
-    { key: "due", header: "취소 예정일", render: (p) => <span className="mono">{p.dueDate}</span> },
+    { key: "date", header: "입고예정일", align: "center", render: (p) => <span className="mono">{p.planDate}</span> },
+    { key: "status", header: "상태", align: "center", render: (p) => <StatusBadge status={p.status} /> },
+    { key: "due", header: "취소 예정일", align: "center", render: (p) => <span className="mono">{p.dueDate}</span> },
   ];
 
   // 미출차 차량 (v1.9 ⑦·D23) — 출차·입차 기록 없이 전날까지 상차완료
@@ -105,19 +108,21 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
     {
       key: "no",
       header: "상차확인서",
+      align: "center",
       render: (d) => (
         <Link href={d.href} className={`mono ${styles.planLink}`}>
           {d.loadNo}
         </Link>
       ),
     },
-    { key: "asn", header: "ASN", render: (d) => (d.asnNo ? <span className="mono">{d.asnNo}</span> : <span className="muted">–</span>) },
-    { key: "vehicle", header: "차량", render: (d) => <span className="mono">{d.vehicleNo}</span> },
+    { key: "asn", header: "ASN", align: "center", render: (d) => (d.asnNo ? <span className="mono">{d.asnNo}</span> : <span className="muted">–</span>) },
+    { key: "vehicle", header: "차량", align: "center", render: (d) => <span className="mono">{d.vehicleNo}</span> },
     { key: "client", header: "화주사", render: (d) => d.clientName },
     { key: "type", header: "구분", render: (d) => LOAD_TYPE_LABEL[d.loadType] },
     {
       key: "done",
       header: "상차완료",
+      align: "center",
       render: (d) => (
         <>
           <span className="mono">{fmtShortDateTime(d.completedAt)}</span>
@@ -128,14 +133,14 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
   ];
 
   const historyColumns: Column<DailyHistoryRow>[] = [
-    { key: "day", header: "업무일", render: (h) => <span className="mono">{h.businessDate}</span> },
-    { key: "at", header: "마감 시각", render: (h) => <span className="mono">{fmtShortDateTime(h.closedAt)}</span> },
+    { key: "day", header: "업무일", align: "center", render: (h) => <span className="mono">{h.businessDate}</span> },
+    { key: "at", header: "마감 시각", align: "center", render: (h) => <span className="mono">{fmtShortDateTime(h.closedAt)}</span> },
     { key: "by", header: "처리자", render: (h) => h.closedBy },
-    { key: "rcv", header: "확정 실적", align: "right", render: (h) => <span className="mono">{h.rcvCount}대 · {h.rcvLineCount}품목</span> },
+    { key: "rcv", header: "확정 실적", align: "right", render: (h) => <span className="mono">{h.rcvCount.toLocaleString()}대 · {h.rcvLineCount.toLocaleString()}품목</span> },
     { key: "good", header: "입고", align: "right", render: (h) => <span className="mono">{n(h.goodBaseQty)}</span> },
     { key: "ret", header: "반송", align: "right", render: (h) => <span className="mono">{n(h.returnBaseQty)}</span> },
-    { key: "expire", header: "기한경과 취소", align: "right", render: (h) => <span className="mono">{h.expireCount}건</span> },
-    { key: "depart", header: "출차 처리", align: "right", render: (h) => (h.departCount ? <span className="mono">{h.departCount}대</span> : <span className="muted">–</span>) },
+    { key: "expire", header: "기한경과 취소", align: "right", render: (h) => <span className="mono">{h.expireCount.toLocaleString()}건</span> },
+    { key: "depart", header: "출차 처리", align: "right", render: (h) => (h.departCount ? <span className="mono">{h.departCount.toLocaleString()}대</span> : <span className="muted">–</span>) },
   ];
 
   return (
@@ -168,22 +173,22 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
       >
         {c.closed ? (
           <p className={styles.plain}>
-            {fmtDateTime(c.closed.at)} · {c.closed.by}님이 마감했습니다 — 검수 실적 <b className="mono">{c.closed.rcvCount}</b>건 확정, 기한경과 <b className="mono">{c.closed.expireCount}</b>건 취소
+            {fmtDateTime(c.closed.at)} · {c.closed.by}님이 마감했습니다 — 검수 실적 <b className="mono">{c.closed.rcvCount.toLocaleString()}</b>건 확정, 기한경과 <b className="mono">{c.closed.expireCount.toLocaleString()}</b>건 취소
             {c.closed.departCount > 0 && (
               <>
-                , 미출차 <b className="mono">{c.closed.departCount}</b>대 출차 처리
+                , 미출차 <b className="mono">{c.closed.departCount.toLocaleString()}</b>대 출차 처리
               </>
             )}
             .
-            {rcvs.length > 0 && <> 마감 뒤 확정된 실적 {rcvs.length}건은 다음 업무일 일마감 때 확정됩니다.</>}
+            {rcvs.length > 0 && <> 마감 뒤 확정된 실적 {rcvs.length.toLocaleString()}건은 다음 업무일 일마감 때 확정됩니다.</>}
           </p>
         ) : (
           <p className={styles.plain}>
-            지금 일마감하면 검수 실적 <b className="mono">{rcvs.length}</b>건(입고 {n(goodSum)} · 반송 {n(retSum)}, 기준 단위)을 확정하고 기한경과 <b className="mono">{expire.length}</b>건을 취소합니다.
+            지금 일마감하면 검수 실적 <b className="mono">{rcvs.length.toLocaleString()}</b>건(입고 {n(goodSum)} · 반송 {n(retSum)}, 기준 단위)을 확정하고 기한경과 <b className="mono">{expire.length.toLocaleString()}</b>건을 취소합니다.
             {departs.length > 0 && (
               <>
                 {" "}
-                미출차 <b className="mono">{departs.length}</b>대는 출차 처리됩니다.
+                미출차 <b className="mono">{departs.length.toLocaleString()}</b>대는 출차 처리됩니다.
               </>
             )}
           </p>
@@ -233,7 +238,7 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
             "미종결 입고예정이 없습니다."
           ) : (
             <>
-              미종결 <b className="mono">{view.unclosedCount}</b>건
+              미종결 <b className="mono">{view.unclosedCount.toLocaleString()}</b>건
               {view.unclosedOverdue > 0 && (
                 <>
                   {" "}
@@ -268,15 +273,15 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
       >
         <ul className={styles.targets}>
           <li>
-            검수 실적 <b className="mono">{rcvs.length}</b>건 확정 (입고 {n(goodSum)} · 반송 {n(retSum)}, 기준 단위){prevDays > 0 && ` — 이전 업무일 ${prevDays}건 포함`}
+            검수 실적 <b className="mono">{rcvs.length.toLocaleString()}</b>건 확정 (입고 {n(goodSum)} · 반송 {n(retSum)}, 기준 단위){prevDays > 0 && ` — 이전 업무일 ${prevDays}건 포함`}
           </li>
           <li>
-            기한경과 <b className="mono">{expire.length}</b>건 취소 (승인 전 건, 사유 "기한경과(일마감 자동)")
+            기한경과 <b className="mono">{expire.length.toLocaleString()}</b>건 취소 (승인 전 건, 사유 "기한경과(일마감 자동)")
           </li>
           <li>
-            미출차 <b className="mono">{departs.length}</b>대 출차 처리 (일마감 처리(시스템), 전날까지 상차완료한 차량)
+            미출차 <b className="mono">{departs.length.toLocaleString()}</b>대 출차 처리 (일마감 처리(시스템), 전날까지 상차완료한 차량)
           </li>
-          <li>미종결 입고예정 {view.unclosedCount}건은 그대로 둡니다 (승인 이후 건은 계속 입고 가능)</li>
+          <li>미종결 입고예정 {view.unclosedCount.toLocaleString()}건은 그대로 둡니다 (승인 이후 건은 계속 입고 가능)</li>
         </ul>
       </Modal>
     </div>

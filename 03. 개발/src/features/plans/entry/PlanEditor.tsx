@@ -221,7 +221,7 @@ export function PlanEditor({
       }
       return next;
     });
-    toast.show(`${items.length}개 품목을 넣었습니다. 수량을 입력하세요.`);
+    toast.show(`${items.length.toLocaleString()}개 품목을 넣었습니다. 수량을 입력하세요.`);
     setFinder(null);
   }
 
@@ -369,7 +369,7 @@ export function PlanEditor({
                 value={onlyIssues}
                 onChange={setOnlyIssues}
                 options={[
-                  { value: "all", label: `전체 ${lines.length}` },
+                  { value: "all", label: `전체 ${lines.length.toLocaleString()}` },
                   { value: "issues", label: `확인 필요 ${issueCount}` },
                 ]}
               />
@@ -545,7 +545,10 @@ function LineRow({
   const id = `${idPrefix}-ln-${line.key}`;
   const uom = item?.uoms.find((u) => u.unit === line.unit);
   const qty = parseQty(line.qty);
-  const msgs = [...new Set(Object.values(errors))];
+  // 소비기한·로트 경고는 칸 위쪽 테두리에 짧게 걸쳐 보여 주고(2026-11-14 Sol), 행 아래 줄에는 나머지 오류만
+  const msgs = [...new Set(Object.entries(errors).filter(([k]) => k !== "expiryDate" && k !== "lotNo").map(([, m]) => m))];
+  const expiryNote = errors.expiryDate ? (!line.expiryDate ? "필수 입력" : minExpiry && line.expiryDate < minExpiry ? `${minExpiry.slice(5)} 이후` : "확인 필요") : null;
+  const lotNote = errors.lotNo ? (!line.lotNo.trim() ? "필수 입력" : "확인 필요") : null;
   const showIssues = flagged && line.issues.length > 0;
   return (
     <>
@@ -651,22 +654,35 @@ function LineRow({
         </td>
         <td className={styles.cDate}>
           {item?.expiryManaged ? (
-            <Input
-              type="date"
-              aria-label={`${no}번째 줄 소비기한`}
-              min={minExpiry}
-              title={`${minExpiry} 이후 날짜 (입고예정일 + 최소 잔여일수)`}
-              value={line.expiryDate}
-              onChange={(e) => onChange({ expiryDate: e.target.value })}
-              aria-invalid={!!errors.expiryDate || undefined}
-            />
+            <FieldNote id={`${id}-exp`} note={expiryNote} message={errors.expiryDate}>
+              <Input
+                type="date"
+                aria-label={`${no}번째 줄 소비기한`}
+                min={minExpiry}
+                title={errors.expiryDate ?? `${minExpiry} 이후 날짜 (입고예정일 + 최소 잔여일수)`}
+                value={line.expiryDate}
+                onChange={(e) => onChange({ expiryDate: e.target.value })}
+                aria-invalid={!!errors.expiryDate || undefined}
+                aria-describedby={errors.expiryDate ? `${id}-exp` : undefined}
+              />
+            </FieldNote>
           ) : (
             <span className="muted">{item ? "관리 안 함" : "–"}</span>
           )}
         </td>
         <td className={styles.cLot}>
           {item?.lotManaged ? (
-            <Input aria-label={`${no}번째 줄 로트`} maxLength={40} value={line.lotNo} onChange={(e) => onChange({ lotNo: e.target.value })} aria-invalid={!!errors.lotNo || undefined} />
+            <FieldNote id={`${id}-lot`} note={lotNote} message={errors.lotNo}>
+              <Input
+                aria-label={`${no}번째 줄 로트`}
+                maxLength={40}
+                value={line.lotNo}
+                onChange={(e) => onChange({ lotNo: e.target.value })}
+                title={errors.lotNo}
+                aria-invalid={!!errors.lotNo || undefined}
+                aria-describedby={errors.lotNo ? `${id}-lot` : undefined}
+              />
+            </FieldNote>
           ) : (
             <span className="muted">{item ? "관리 안 함" : "–"}</span>
           )}
@@ -691,5 +707,27 @@ function LineRow({
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * 칸 위쪽 테두리에 걸친 짧은 경고 (2026-11-14 Sol) — 행 높이를 바꾸지 않는다.
+ * 짧은 글(필수 입력 / 12-01 이후)만 보이고, 전체 문장은 마우스를 올리면(title) 또는 화면 읽기 프로그램(describedby)으로.
+ */
+function FieldNote({ id, note, message, children }: { id: string; note: string | null; message?: string; children: React.ReactNode }) {
+  return (
+    <span className={styles.noteWrap}>
+      {children}
+      {note && (
+        <>
+          <span className={styles.noteTag} aria-hidden="true" title={message}>
+            {note}
+          </span>
+          <span id={id} className="sr-only">
+            {message}
+          </span>
+        </>
+      )}
+    </span>
   );
 }

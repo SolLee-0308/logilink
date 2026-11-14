@@ -20,10 +20,12 @@ interface TabsProps<K extends string> {
   label: string;
   /** 탭 패널 id (aria-controls) */
   panelId?: string;
+  /** 탭 줄 오른쪽 끝 — 예: 총 건수 (2026-11-14 Sol) */
+  aside?: React.ReactNode;
 }
 
 /** 활성 탭은 violet-600 + 흰 글자. 좌우 화살표·Home·End로 이동 */
-export function Tabs<K extends string>({ items, value, onChange, label, panelId }: TabsProps<K>) {
+export function Tabs<K extends string>({ items, value, onChange, label, panelId, aside }: TabsProps<K>) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
   function onKeyDown(e: React.KeyboardEvent, index: number) {
@@ -70,6 +72,16 @@ export function Tabs<K extends string>({ items, value, onChange, label, panelId 
           </button>
         );
       })}
+      {aside && <div className={styles.aside}>{aside}</div>}
     </div>
+  );
+}
+
+/** 탭 줄 오른쪽 끝 총 건수 — 모든 목록 화면 공통 (2026-11-14 Sol) */
+export function TabTotal({ total }: { total: number }) {
+  return (
+    <span>
+      총 <strong className="mono">{total.toLocaleString()}</strong>건
+    </span>
   );
 }

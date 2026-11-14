@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tag } from "@/components/ui/Badges";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { Select } from "@/components/ui/Form";
-import { ListToolbar } from "@/components/ui/SplitView";
-import { Tabs } from "@/components/ui/Tabs";
+import { Tabs, TabTotal } from "@/components/ui/Tabs";
 import { LOAD_TYPE_LABEL } from "@/domain/load-rules";
 import { addDays } from "@/domain/inquiry-rules";
 import { fmtDateTime, includesText } from "@/lib/format";
@@ -17,6 +16,7 @@ import { reverseRcv } from "@/server/rcv/web-actions";
 import { MasterHeader, useAction } from "@/features/master/shared";
 import { RejectModal, type ReasonOption } from "@/features/shared/RejectModal";
 import { DateRangeField } from "@/features/plans/PlanSearchFields";
+import { ClientFilter, type PickedClient } from "@/features/plans/ClientFinder";
 import { RCV_RESULT_RULES } from "./rules";
 import type { RcvResultQuery, RcvResultRow, RcvResultTab } from "./types";
 import styles from "./RcvResultsScreen.module.css";
@@ -38,6 +38,7 @@ export function RcvResultsScreen({
   today,
   canCancel = false,
   cancelReasons = [],
+  initialClient = null,
 }: {
   query: RcvResultQuery;
   rows: RcvResultRow[];
@@ -46,30 +47,46 @@ export function RcvResultsScreen({
   /** 입고취소 권한 — 3PL 관리자 */
   canCancel?: boolean;
   cancelReasons?: ReasonOption[];
+  /** 주소의 화주사 조건 */
+  initialClient?: PickedClient | null;
 }) {
   const router = useRouter();
   const act = useAction();
   /** 입고취소할 실적 */
   const [reversing, setReversing] = useState<RcvResultRow | null>(null);
   const canceledTab = query.tab === "canceled";
-  const [client, setClient] = useState("");
-  const [center, setCenter] = useState("");
-  const [closed, setClosed] = useState<CloseFilter>("all");
-  const [issue, setIssue] = useState<IssueFilter>("all");
-  const [search, setSearch] = useState("");
+  // 화주사는 다른 조회 화면과 같은 화주사 찾기 (2026-11-14 Sol). 조건은 모두 주소에 남긴다
+  const [pickedClient, setPickedClient] = useState<PickedClient | null>(initialClient);
+  const client = pickedClient ? String(pickedClient.id) : "";
+  const [center, setCenter] = useState(query.center);
+  const [closed, setClosed] = useState<CloseFilter>(query.closed);
+  const [issue, setIssue] = useState<IssueFilter>(query.issue);
+  const [search, setSearch] = useState(query.q);
   const confirmed = query.tab === "confirmed";
+  const working = query.tab === "working";
   const multiCenter = centers.length > 1 || new Set(rows.map((r) => r.centerId)).size > 1;
-  const clients = useMemo(() => [...new Map(rows.map((r) => [r.clientId, r.clientName])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [rows]);
 
-  /** 서버 조건(탭·기간)을 주소로 — 빈 기간은 "-" */
-  const go = (next: Partial<RcvResultQuery>) => {
-    const q = { ...query, ...next };
+  /** 조건 → 주소 — 빈 기간은 "-" */
+  const urlOf = (q: RcvResultQuery) => {
     const p = new URLSearchParams();
     if (q.tab !== "confirmed") p.set("tab", q.tab);
     p.set("from", q.from || "-");
     p.set("to", q.to || "-");
-    router.replace(`/rcv-results?${p}`, { scroll: false });
+    if (q.client) p.set("client", q.client);
+    if (q.center) p.set("center", q.center);
+    if (q.closed !== "all") p.set("closed", q.closed);
+    if (q.issue !== "all") p.set("issue", q.issue);
+    if (q.q) p.set("q", q.q);
+    return `/rcv-results?${p}`;
   };
+  const local = { client, center, closed, issue, q: search };
+  /** 서버 조건(탭·기간)이 바뀌면 다시 읽는다 */
+  const go = (next: Partial<RcvResultQuery>) => router.replace(urlOf({ ...query, ...local, ...next }), { scroll: false });
+  // 화면에서 거르는 조건은 주소만 바꾼다 (다시 읽지 않음)
+  useEffect(() => {
+    window.history.replaceState(null, "", urlOf({ ...query, ...local }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, center, closed, issue, search]);
 
   const list = useMemo(
     () =>
@@ -92,6 +109,7 @@ export function RcvResultsScreen({
     {
       key: "no",
       header: "검수번호",
+      align: "center",
       render: (r) => (
         <Link href={r.href} className={`mono ${styles.link}`}>
           {r.rcvNo}
@@ -102,6 +120,7 @@ export function RcvResultsScreen({
     {
       key: "at",
       header: confirmed ? "확정일" : canceledTab ? "입고취소" : "시작",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{fmtDateTime(confirmed ? r.confirmedAt : canceledTab ? (r.reverse?.at ?? null) : r.startedAt) || "-"}</span>
@@ -111,7 +130,7 @@ export function RcvResultsScreen({
         </>
       ),
     },
-    { key: "vehicle", header: "차량", render: (r) => <span className="mono">{r.vehicleNo}</span> },
+    { key: "vehicle", header: "차량", align: "center", render: (r) => <span className="mono">{r.vehicleNo}</span> },
     { key: "client", header: "화주사", render: (r) => r.clientName },
     ...(multiCenter ? [{ key: "center", header: "센터", render: (r: RcvResultRow) => r.centerName }] : []),
     {
@@ -127,12 +146,12 @@ export function RcvResultsScreen({
         </>
       ),
     },
-    { key: "lines", header: "품목", align: "right", render: (r) => <span className="mono">{r.lineCount}</span> },
+    { key: "lines", header: "품목", align: "right", render: (r) => <span className="mono">{r.lineCount.toLocaleString()}</span> },
     { key: "good", header: "입고", align: "right", render: (r) => <span className="mono">{n(r.goodBaseQty)}</span> },
     { key: "ret", header: "반송", align: "right", render: (r) => (r.returnBaseQty ? <span className="mono">{n(r.returnBaseQty)}</span> : <span className="muted">–</span>) },
     ...(confirmed
       ? [
-          { key: "issue", header: "차이", render: (r: RcvResultRow) => (r.issueCount ? <Tag tone="warn">{r.issueCount}품목</Tag> : <span className="muted">–</span>) },
+          { key: "issue", header: "차이", render: (r: RcvResultRow) => (r.issueCount ? <Tag tone="warn">{r.issueCount.toLocaleString()}품목</Tag> : <span className="muted">–</span>) },
           {
             key: "close",
             header: "일마감",
@@ -179,7 +198,7 @@ export function RcvResultsScreen({
                 ),
             },
           ]
-        : [{ key: "workers", header: "검수자", align: "right" as const, render: (r: RcvResultRow) => <span className="mono">{r.workerCount}명</span> }]),
+        : [{ key: "workers", header: "검수자", align: "right" as const, render: (r: RcvResultRow) => <span className="mono">{r.workerCount.toLocaleString()}명</span> }]),
   ];
 
   return (
@@ -187,27 +206,26 @@ export function RcvResultsScreen({
       <MasterHeader title="입고검수 실적" count={rows.length} rules={RCV_RESULT_RULES} crumbs={["입고 운영", "입고검수 실적"]} />
 
       <FilterBar>
-        <DateRangeField label="업무일" from={query.from} to={query.to} onFrom={(v) => go({ from: v })} onTo={(v) => go({ to: v })} />
-        <FilterField label="빠른 선택">
-          <ChipGroup
-            value={query.from === today && query.to === today ? "today" : query.from === addDays(today, -6) && query.to === today ? "week" : "custom"}
-            onChange={(v) => v !== "custom" && go(v === "today" ? { from: today, to: today } : { from: addDays(today, -6), to: today })}
-            options={[
-              { value: "today", label: "오늘" },
-              { value: "week", label: "최근 7일" },
-              { value: "custom", label: "직접" },
-            ]}
-          />
-        </FilterField>
+        {/* 기간 이름은 탭에 맞게, 검수 중은 기간과 상관없이 전부라 흐리게 (2026-11-14 Sol). [오늘][최근 7일]은 기간 옆 버튼 */}
+        <DateRangeField
+          label={confirmed ? "확정 업무일" : canceledTab ? "입고취소 업무일" : "기간(전체)"}
+          from={working ? "" : query.from}
+          to={working ? "" : query.to}
+          onFrom={(v) => go({ from: v })}
+          onTo={(v) => go({ to: v })}
+          disabled={working}
+        >
+          <span className={styles.quick} role="group" aria-label="기간 빠른 선택">
+            <button type="button" aria-pressed={!working && query.from === today && query.to === today} onClick={() => go({ from: today, to: today })} disabled={working}>
+              오늘
+            </button>
+            <button type="button" aria-pressed={!working && query.from === addDays(today, -6) && query.to === today} onClick={() => go({ from: addDays(today, -6), to: today })} disabled={working}>
+              최근 7일
+            </button>
+          </span>
+        </DateRangeField>
         <FilterField label="화주사" htmlFor="rr-client">
-          <Select id="rr-client" value={client} onChange={(e) => setClient(e.target.value)}>
-            <option value="">전체</option>
-            {clients.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </Select>
+          <ClientFilter id="rr-client" value={pickedClient} onChange={setPickedClient} />
         </FilterField>
         {multiCenter && (
           <FilterField label="센터" htmlFor="rr-center">
@@ -258,20 +276,22 @@ export function RcvResultsScreen({
           { key: "working", label: "검수 중", count: query.tab === "working" ? rows.length : undefined },
           { key: "canceled", label: "입고취소", count: canceledTab ? rows.length : undefined },
         ]}
+        aside={
+          <>
+            <span className={styles.sum}>
+              입고 <b className="mono">{n(sum.good)}</b> · 반송 <b className="mono">{n(sum.ret)}</b>
+              {confirmed && (
+                <>
+                  {" "}
+                  · 차이 있음 <b className="mono">{sum.issue}</b>대 · 미마감 <b className="mono">{sum.open}</b>대
+                </>
+              )}
+              <span className={styles.unit}> (기준 단위 합계)</span>
+            </span>
+            <TabTotal total={list.length} />
+          </>
+        }
       />
-
-      <ListToolbar total={list.length}>
-        <span className={styles.sum}>
-          입고 <b className="mono">{n(sum.good)}</b> · 반송 <b className="mono">{n(sum.ret)}</b>
-          {confirmed && (
-            <>
-              {" "}
-              · 차이 있음 <b className="mono">{sum.issue}</b>대 · 미마감 <b className="mono">{sum.open}</b>대
-            </>
-          )}
-          <span className={styles.unit}> (기준 단위 합계)</span>
-        </span>
-      </ListToolbar>
 
       <DataTable
         caption={confirmed ? "검수 확정 실적" : canceledTab ? "입고취소한 실적" : "검수 중인 차량"}

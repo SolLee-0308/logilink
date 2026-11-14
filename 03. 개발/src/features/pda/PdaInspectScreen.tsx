@@ -11,7 +11,7 @@ import {
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { RcvInputView, RcvLineView, RcvScanPreview, RcvView } from "@/features/rcv/types";
 import { deviceId, takeNotice } from "./device";
-import { Icon, InfoRows, Pill, Steps } from "./PdaParts";
+import { Icon, InfoRows, Pill, QtyParts, RemainQty } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 const POLL_MS = 5000;
@@ -244,7 +244,8 @@ export function PdaInspectScreen({
    * 차량번호·상차 구분 알약 + 상태 한 줄(검수 중 · 시작 · 화주사). 상차확인서·지시서·검수자는 아래 '검수 정보'로.
    */
   const head = (
-    <section className={styles.vHead}>
+    // 차량 머리 아래 구분선 없이 보라색 스캔 영역을 바로 붙인다 — 상차 작업과 같게 (2026-11-14 Sol)
+    <section className={`${styles.vHead} ${styles.vHeadFlat}`}>
       <span className={styles.idHead}>
         <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
@@ -253,7 +254,7 @@ export function PdaInspectScreen({
       <span className={styles.vStatus}>
         {view.startedAt ? (
           <>
-            <b>검수 중</b> · {hm(view.startedAt)} 시작 · {view.clientName}
+            <b>검수 중</b> · {hm(view.startedAt)} 시작 · {hm(view.arrivedAt)} 입차 · {view.clientName}
           </>
         ) : (
           <>
@@ -261,16 +262,7 @@ export function PdaInspectScreen({
           </>
         )}
       </span>
-      {/* 단계 (v1.9): 상차완료 → 입차 → 검수 중 → 검수확정 */}
-      <Steps
-        compact
-        steps={[
-          { label: "상차완료", done: true, time: hm(view.load.completedAt) },
-          { label: "입차", done: !!view.arrivedAt, time: hm(view.arrivedAt) },
-          { label: "검수 중", done: !!view.startedAt, time: view.startedAt ? hm(view.startedAt) : undefined },
-          { label: "검수확정", done: false },
-        ]}
-      />
+      {/* 단계 타임라인은 뺐다 — 상태 줄에 시작·입차 시각을 함께 보인다 (2026-11-14 Sol) */}
     </section>
   );
 
@@ -327,7 +319,7 @@ export function PdaInspectScreen({
         <RcvLines view={view} reasons={reasons} pending={pending} onDone={after} />
         <section className={styles.sheet}>
           <h2 className={styles.h2}>
-            자동 배분 <span className={styles.count}>{view.allocs.length}</span>
+            자동 배분 <span className={styles.count}>{view.allocs.length.toLocaleString()}</span>
           </h2>
           {view.allocs.length === 0 ? (
             <p className={styles.empty}>배분한 수량이 없습니다 (0 확인·품목 불일치만).</p>
@@ -367,8 +359,8 @@ export function PdaInspectScreen({
         <p className={styles.help}>검수 확정은 차량당 한 번입니다. 확정하면 입고예정에 자동 배분하고, 이후에는 고칠 수 없습니다.</p>
         <p className={styles.finishSum}>
           입력 <b className="mono">{enteredCount}</b>
-          <span className="mono">/{planned.length}</span>품목
-          {diffLines.length > 0 && <span className={styles.warnInline}> · 차이 {diffLines.length}</span>}
+          <span className="mono">/{planned.length.toLocaleString()}</span>품목
+          {diffLines.length > 0 && <span className={styles.warnInline}> · 차이 {diffLines.length.toLocaleString()}</span>}
         </p>
         {/* 차이 품목 — 사유는 수량으로 시스템이 정한다. 고르지 않고 확인만 (2026-11-13 Sol, A안) */}
         {diffLines.length > 0 && (
@@ -385,13 +377,13 @@ export function PdaInspectScreen({
         )}
         {/* 검수자 — 이름 한 줄 (상차완료 확인과 같게). 여러 명이면 아직 세는 사람이 없는지 확인 */}
         <p className={styles.finishSum}>
-          검수자 {view.workers.length}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
+          검수자 {view.workers.length.toLocaleString()}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
         </p>
         {view.workers.length > 1 && <p className={styles.warnText}>다른 검수자가 아직 세고 있지 않은지 확인하세요.</p>}
         {unentered && (
           <div className={styles.confirm} role="alertdialog" aria-label="입력하지 않은 품목">
             <p>
-              <b>입력하지 않은 품목이 {unentered.length}개 있습니다.</b> 시스템이 대신 0으로 처리하지 않습니다.
+              <b>입력하지 않은 품목이 {unentered.length.toLocaleString()}개 있습니다.</b> 시스템이 대신 0으로 처리하지 않습니다.
             </p>
             <ul className={styles.unentered}>
               {unentered.map((n) => (
@@ -527,11 +519,12 @@ export function PdaInspectScreen({
               if (Number(qty) > 0) onAdd(false);
             }}
           >
-            <div className={styles.sheetHead}>
-              <span className={styles.iconCircle}>
-                <Icon name="box" size={17} />
-              </span>
-              <b className={styles.previewName}>{preview.itemName}</b>
+            {/* 스캔한 품목 — 상차 작업과 같은 형식 (2026-11-14 Sol): 아이콘 없이 [품목코드] 품목명,
+                수량 줄은 상차 · 정상 · 반송 · 남은 수량(정상+반송 − 상차). 스캔 단위는 기준 단위와 다를 때만 */}
+            <div className={`${styles.sheetHead} ${styles.previewHead}`}>
+              <b className={styles.previewName}>
+                <span className={`${styles.previewCode} mono`}>{preview.itemCode}</span> {preview.itemName}
+              </b>
             </div>
             {preview.mismatch ? (
               <p className={styles.error}>상차 실적에 없는 품목입니다. 입고하지 않고 품목 불일치 반송으로 기록합니다.</p>
@@ -539,9 +532,13 @@ export function PdaInspectScreen({
               <InfoRows
                 tone="white"
                 rows={[
-                  ["스캔 단위", <span key="u" className="mono">{preview.unit}{preview.unit !== preview.baseUnit ? ` (= ${preview.factor} ${preview.baseUnit})` : ""}</span>],
-                  ["상차 수량", qtyInUnit(preview.expect, preview.showUnit, preview.showFactor, preview.baseUnit)],
-                  ["지금 정상 / 반송", `${qtyInUnit(preview.good, preview.showUnit, preview.showFactor, preview.baseUnit)} / ${qtyInUnit(preview.damaged, preview.showUnit, preview.showFactor, preview.baseUnit)}`],
+                  ...(preview.unit !== preview.baseUnit
+                    ? ([["스캔 단위", <span key="u" className="mono">{preview.unit} = {preview.factor} {preview.baseUnit}</span>]] as [string, React.ReactNode][])
+                    : []),
+                  ["상차 수량", <QtyParts key="e" text={qtyInUnit(preview.expect, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                  ["정상 수량", <QtyParts key="g" text={qtyInUnit(preview.good, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                  ["반송 수량", <QtyParts key="d" text={qtyInUnit(preview.damaged, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                  ["남은 수량", <RemainQty key="r" target={preview.expect} done={preview.good + preview.damaged} unit={preview.showUnit} factor={preview.showFactor} baseUnit={preview.baseUnit} />],
                 ]}
               />
             )}
@@ -554,8 +551,9 @@ export function PdaInspectScreen({
                 ))}
               </div>
             )}
-            <label htmlFor="pda-rcv-qty" className={styles.label}>
-              추가로 센 수량 ({preview.unit})
+            {/* 보이는 라벨은 뺐다 — 입력칸 안내 글이 고른 구분(정상/반송)을 보여 준다 (2026-11-14 Sol) */}
+            <label htmlFor="pda-rcv-qty" className="sr-only">
+              {preview.mismatch || kind === "DAMAGED" ? "반송" : "정상"} 수량 ({preview.unit})
             </label>
             <div className={styles.qtyRow}>
               <input
@@ -565,7 +563,7 @@ export function PdaInspectScreen({
                 value={qty}
                 onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
-                placeholder="0"
+                placeholder={`${preview.mismatch || kind === "DAMAGED" ? "반송" : "정상"} 수량 입력 (${preview.unit})`}
                 autoComplete="off"
                 enterKeyHint="done"
                 disabled={pending}
@@ -600,7 +598,7 @@ export function PdaInspectScreen({
       {/* 내 입력 — 상차 작업과 같이 아래 접힌 줄 */}
       <details className={styles.fold}>
         <summary className={styles.foldHead}>
-          내 입력 <span className={styles.count}>{myInputs.length}</span>
+          내 입력 <span className={styles.count}>{myInputs.length.toLocaleString()}</span>
           <span className={styles.detailSum}>{myInputs[0] ? `마지막 ${hm(myInputs[0].inputAt)}` : "없음"}</span>
           <span className={styles.detailChev}>
             <Icon name="chevD" size={16} />
@@ -698,7 +696,7 @@ export function PdaInspectScreen({
       <div className={`${styles.bottomBar} ${styles.barRow}`}>
         {attention.length > 0 && (
           <span className={`${styles.barInfo} ${styles.warnInline}`}>
-            확인 필요 <b className="mono">{attention.length}</b>
+            확인 필요 <b className="mono">{attention.length.toLocaleString()}</b>
           </span>
         )}
         {/* 1개 이상 검수했을 때만 (2026-11-06 Sol) */}
@@ -810,14 +808,15 @@ function RcvLines({
   return (
     <section className={styles.flat}>
       <h2 className={styles.h2}>
-        품목 <span className={styles.count}>{view.lines.length}</span>
+        품목 <span className={styles.count}>{view.lines.length.toLocaleString()}</span>
         {/* 입력 진행 강조 (2026-11-06 Sol) */}
         <span className={`${styles.progressTag} ${planned.length > 0 && entered === planned.length ? styles.progressDone : ""}`}>
-          입력 <b className="mono">{entered}</b> / {planned.length}
+          입력 <b className="mono">{entered}</b> / {planned.length.toLocaleString()}
         </span>
       </h2>
       <ul className={`${styles.rcvLines} ${styles.rcvFlat}`}>
-        {view.lines.map((l) => (
+        {/* 더 셀 게 없는 품목(일치·0 확인)은 맨 아래로 — 남은 품목이 위에 보이게 (2026-11-14 Sol). 나머지 순서는 그대로 */}
+        {[...view.lines].sort((x, y) => Number(x.state === "match" || x.state === "zero") - Number(y.state === "match" || y.state === "zero")).map((l) => (
           <RcvLineItem key={l.itemId} view={view} line={l} reasons={reasons} pending={pending} onDone={onDone} editable={editable && view.status === "WORKING"} lit={lit === l.itemId} />
         ))}
       </ul>
@@ -864,9 +863,8 @@ function RcvLineItem({
     return names.map((n) => [n, sum.has(n) ? sum.get(n)! : null]);
   })();
 
-  const qtyText = l.mismatch
-    ? `반송 ${f(l, l.mismatchQty)}`
-    : `${f(l, l.good)}${l.damaged ? ` · 반송 ${f(l, l.damaged)}` : ""} / ${f(l, l.expect)}`;
+  // 정상 / 상차 한 줄, 반송은 그 아래 줄에 붉은색 — 긴 품목명이 눌리지 않게 수량 칸을 좁힌다 (2026-11-14 Sol)
+  const qtyText = l.mismatch ? <span className={styles.returnText}>반송 {f(l, l.mismatchQty)}</span> : `${f(l, l.good)} / ${f(l, l.expect)}`;
 
   return (
     <li id={`rcv-line-${l.itemId}`} className={`${styles.rcvLine} ${lit ? styles.lit : ""} ${l.zeroConfirm ? styles.rcvZero : ""}`}>
@@ -882,6 +880,7 @@ function RcvLineItem({
           </span>
           <span className={styles.lineQty}>
             <b className="mono">{qtyText}</b>
+            {!l.mismatch && l.damaged > 0 && <span className={`${styles.returnLine} mono`}>반송 {f(l, l.damaged)}</span>}
             <span className={`${styles.stText} ${problem && editable ? styles.rst_problem : styles[`rst_${l.state}`]}`}>{problem && editable ? "확인 필요" : RCV_LINE_STATE_LABEL[l.state]}</span>
           </span>
           {/* 진행 막대 — 상차 수량 대비 센 수량(정상+반송), 상차 작업의 품목 줄과 같은 색 */}
@@ -972,7 +971,7 @@ function RcvLineItem({
                 </>
               )}
               <span className={styles.dim}>
-                훼손 사진 {l.imageIds.length}/{RCV_IMAGE_MAX}
+                훼손 사진 {l.imageIds.length.toLocaleString()}/{RCV_IMAGE_MAX}
               </span>
             </div>
           )}
@@ -991,7 +990,7 @@ const BAR_TONE: Record<RcvLineState, string> = { todo: "st_none", short: "st_sho
  */
 /** 확정 확인 창의 차이 품목 한 줄 — 수량·상태와 시스템이 정한 사유 (2026-11-13 Sol, A안: 고르지 않음) */
 function ReasonRow({ line: l, reasons }: { line: RcvLineView; reasons: ReasonOption[] }) {
-  const qty = l.mismatch ? `반송 ${f(l, l.mismatchQty)}` : `${f(l, l.good + l.damaged)} / ${f(l, l.expect)}`;
+  const qty = l.mismatch ? <span className={styles.returnText}>반송 {f(l, l.mismatchQty)}</span> : `${f(l, l.good + l.damaged)} / ${f(l, l.expect)}`;
   return (
     <li>
       <span className={styles.reasonHead}>

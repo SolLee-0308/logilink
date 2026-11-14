@@ -54,7 +54,7 @@ export function ClientsScreen({
   candidates: ManagerCandidate[];
   canEdit: boolean;
 }) {
-  const [active, setActive] = useState<ActiveFilter>("all");
+  const [active, setActive] = useState<ActiveFilter>("on") // 사용 여부 기본 = 사용 (2026-11-14 Sol);
   const [center, setCenter] = useState("");
   const [q, setQ] = useState("");
   const list = useMemo(
@@ -72,14 +72,14 @@ export function ClientsScreen({
   const edit = useEditTarget(loadClient);
 
   const columns: Column<ClientRow>[] = [
-    { key: "code", header: "화주사 코드", render: (r) => <span className="mono">{r.code}</span> },
+    { key: "code", header: "화주사 코드", align: "center", render: (r) => <span className="mono">{r.code}</span> },
     { key: "name", header: "화주사명", render: (r) => r.name },
-    { key: "biz", header: "사업자등록번호", render: (r) => <span className="mono">{r.bizNo}</span> },
+    { key: "biz", header: "사업자등록번호", align: "center", render: (r) => <span className="mono">{r.bizNo}</span> },
     { key: "centers", header: "이용 센터", render: (r) => r.centers.map((c) => c.name).join(", ") },
-    { key: "manager", header: "3PL 담당", render: (r) => r.managerName },
-    { key: "items", header: "품목", align: "right", render: (r) => <><span className="mono">{r.itemCount}</span>개</> },
-    { key: "users", header: "사용자", align: "right", render: (r) => <><span className="mono">{r.userCount}</span>명</> },
-    { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
+    { key: "manager", header: "3PL 담당", align: "center", render: (r) => r.managerName },
+    { key: "items", header: "품목", align: "right", render: (r) => <span className="mono">{r.itemCount.toLocaleString()}</span> },
+    { key: "users", header: "사용자", align: "right", render: (r) => <span className="mono">{r.userCount.toLocaleString()}</span> },
+    { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
   return (
@@ -182,8 +182,8 @@ function ClientView({ row, canEdit, onEdit, opening }: { row: ClientRow | null; 
       <ViewSection
         title="요약"
         items={[
-          ["품목", <Link key="i" className={styles.link} href={`/master/items?client=${row.id}`}>{row.itemCount}개</Link>],
-          ["사용자", <Link key="u" className={styles.link} href={`/master/users?client=${row.id}`}>{row.userCount}명</Link>],
+          ["품목", <Link key="i" className={styles.link} href={`/master/items?client=${row.id}`}>{row.itemCount.toLocaleString()}개</Link>],
+          ["사용자", <Link key="u" className={styles.link} href={`/master/users?client=${row.id}`}>{row.userCount.toLocaleString()}명</Link>],
           [
             "미종결 전표",
             <span key="c">

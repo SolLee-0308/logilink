@@ -224,7 +224,7 @@ function ExcelTab({ options, onSaved, onCancel }: { options: EntryOptions; onSav
       <div className={styles.body}>
         <div className={styles.sourceBar}>
           <span>
-            엑셀 <strong>{draft.fileName}</strong>에서 <strong className="mono">{draft.lines.length}</strong>행을 불러왔습니다.
+            엑셀 <strong>{draft.fileName}</strong>에서 <strong className="mono">{draft.lines.length.toLocaleString()}</strong>행을 불러왔습니다.
           </span>
           <Button
             size="sm"
@@ -380,7 +380,7 @@ function AiTab({ options, onSaved, onCancel }: { options: EntryOptions; onSaved:
       <div className={styles.body}>
         <div className={styles.sourceBar}>
           <span>
-            이미지 <strong className="mono">{draft.images.length}</strong>장에서 <strong className="mono">{draft.lines.length}</strong>줄을 판독했습니다. 판독 결과는 저장 전까지 초안입니다.
+            이미지 <strong className="mono">{draft.images.length.toLocaleString()}</strong>장에서 <strong className="mono">{draft.lines.length.toLocaleString()}</strong>줄을 판독했습니다. 판독 결과는 저장 전까지 초안입니다.
           </span>
           <Button
             size="sm"
@@ -453,7 +453,7 @@ function AiTab({ options, onSaved, onCancel }: { options: EntryOptions; onSaved:
       <Step no={2} title="판독 후 확인" description="AI가 품목과 수량을 읽어 편집 화면에 채웁니다. 원본 이미지와 대조해 확인 필요 줄을 고친 뒤 저장합니다.">
         <div>
           <Button variant="primary" onClick={read} disabled={busy || !files.length}>
-            {busy ? "판독 중… (최대 1분)" : `이미지 ${files.length}장 판독`}
+            {busy ? "판독 중… (최대 1분)" : `이미지 ${files.length.toLocaleString()}장 판독`}
           </Button>
         </div>
       </Step>

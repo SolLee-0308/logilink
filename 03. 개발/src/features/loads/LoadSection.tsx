@@ -18,7 +18,7 @@ export function LoadLinesTable({ load }: { load: LoadView }) {
   const ordered = load.type === "ORDERED";
   const f = (l: LoadLineView, n: number) => qtyInUnit(n, l.showUnit, l.showFactor, l.baseUnit);
   const columns: Column<LoadLineView>[] = [
-    { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
+    { key: "code", header: "품목코드", align: "center", render: (l) => <span className="mono">{l.itemCode}</span> },
     { key: "name", header: "품목명", wrap: true, render: (l) => l.itemName },
     ...(ordered ? [{ key: "order", header: "지시", align: "right" as const, render: (l: LoadLineView) => <span className="mono">{l.orderBase ? f(l, l.orderBase) : "–"}</span> }] : []),
     {
@@ -43,7 +43,7 @@ export function LoadLinesTable({ load }: { load: LoadView }) {
               return d === 0 ? <span className="muted">0</span> : <span className={`mono ${d < 0 ? styles.minus : styles.plus}`}>{d > 0 ? "+" : "−"}{qtyInUnit(Math.abs(d), l.showUnit, l.showFactor, l.baseUnit)}</span>;
             },
           },
-          { key: "state", header: "비교", render: (l: LoadLineView) => <Badge tone={STATE_TONE[l.state]}>{LINE_STATE_LABEL[l.state]}</Badge> },
+          { key: "state", header: "비교", align: "center" as const, render: (l: LoadLineView) => <Badge tone={STATE_TONE[l.state]}>{LINE_STATE_LABEL[l.state]}</Badge> },
         ]
       : []),
   ];
@@ -71,6 +71,7 @@ export function LoadSection({ load }: { load: LoadView }) {
       }
     >
       <div className={styles.info}>
+        {/* 왼쪽: 상태·확인서·작업자·차이 사유 / 오른쪽: 시각(상차 시작·재개·완료·출차·입차) (2026-11-14 Sol) */}
         <ViewSection
           items={[
             ["상차 상태", <Badge key="s" tone={meta.tone}>{meta.label}</Badge>],
@@ -81,25 +82,6 @@ export function LoadSection({ load }: { load: LoadView }) {
                 {load.revisionNo > 1 && <b> · {load.revisionNo}차</b>}
               </span>,
             ],
-            // 상차 재개 (정의서 v1.5 D20) — 이전 차수로 인쇄한 확인서는 무효
-            ...(load.lastReopen
-              ? ([
-                  [
-                    "상차 재개",
-                    `${fmtDateTime(load.lastReopen.at)} · ${load.lastReopen.by} · ${load.lastReopen.reasonName ?? ""}${load.lastReopen.reasonText ? ` — ${load.lastReopen.reasonText}` : ""}`,
-                  ],
-                ] as [string, React.ReactNode][])
-              : []),
-            ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
-            ["상차완료", done ? `${fmtDateTime(load.completedAt)} · ${load.completedBy}` : null],
-            // 출차 (v1.9) — 저장값. 사람이 누른 출차는 처리자, 시스템 처리는 "입차 처리(시스템)"·"일마감 처리(시스템)"
-            ["출차", !done ? null : load.departure ? `${fmtDateTime(load.departure.at)} · ${departureLabel(load.departure)}` : "출차 전"],
-            // 입차 (v1.9) — 3PL 입고검수자가 PDA로 기록
-            ["입차", !done ? null : load.arrival ? `${fmtDateTime(load.arrival.at)} · ${load.arrival.by ?? "-"}` : "입차 전"],
-          ]}
-        />
-        <ViewSection
-          items={[
             [
               "작업자",
               load.workers.length ? (
@@ -107,7 +89,7 @@ export function LoadSection({ load }: { load: LoadView }) {
                   {load.workers.map((w, i) => (
                     <span key={w.workerId}>
                       {i > 0 && ", "}
-                      {w.name} <span className="muted mono">{w.count}건 · {fmtShortDateTime(w.lastAt)}</span>
+                      {w.name} <span className="muted mono">{w.count.toLocaleString()}건 · {fmtShortDateTime(w.lastAt)}</span>
                     </span>
                   ))}
                 </span>
@@ -124,6 +106,25 @@ export function LoadSection({ load }: { load: LoadView }) {
                 "차이 없음"
               ) : null,
             ],
+          ]}
+        />
+        <ViewSection
+          items={[
+            ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
+            // 상차 재개 (정의서 v1.5 D20) — 이전 차수로 인쇄한 확인서는 무효
+            ...(load.lastReopen
+              ? ([
+                  [
+                    "상차 재개",
+                    `${fmtDateTime(load.lastReopen.at)} · ${load.lastReopen.by} · ${load.lastReopen.reasonName ?? ""}${load.lastReopen.reasonText ? ` — ${load.lastReopen.reasonText}` : ""}`,
+                  ],
+                ] as [string, React.ReactNode][])
+              : []),
+            ["상차완료", done ? `${fmtDateTime(load.completedAt)} · ${load.completedBy}` : null],
+            // 출차 (v1.9) — 저장값. 사람이 누른 출차는 처리자, 시스템 처리는 "입차 처리(시스템)"·"일마감 처리(시스템)"
+            ["출차", !done ? null : load.departure ? `${fmtDateTime(load.departure.at)} · ${departureLabel(load.departure)}` : "출차 전"],
+            // 입차 (v1.9) — 3PL 입고검수자가 PDA로 기록
+            ["입차", !done ? null : load.arrival ? `${fmtDateTime(load.arrival.at)} · ${load.arrival.by ?? "-"}` : "입차 전"],
           ]}
         />
       </div>

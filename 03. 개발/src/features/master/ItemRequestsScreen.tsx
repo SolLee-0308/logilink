@@ -4,11 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Tag } from "@/components/ui/Badges";
 import { CreateButton } from "@/components/ui/Button";
-import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
+import { CellSub, DataTable, DateStamp, type Column } from "@/components/ui/DataTable";
 import { FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { ClientPicker } from "@/features/plans/ClientFinder";
-import { ListToolbar } from "@/components/ui/SplitView";
-import { Tabs } from "@/components/ui/Tabs";
+import { Tabs, TabTotal } from "@/components/ui/Tabs";
 import { ITEM_REQUEST_STATUS_META, SOURCE_LABEL, STORAGE_TEMP_LABEL } from "@/domain/master";
 import { fmtShortDateTime, includesText } from "@/lib/format";
 import { REQ_LIST_KEY, REQ_TABS, reqListSearch, type ReqListQuery, type ReqTab } from "./item-request-list";
@@ -107,6 +106,7 @@ export function ItemRequestsScreen({
     {
       key: "no",
       header: "요청번호",
+      align: "center",
       render: (r) => {
         const dup = r.status === "WAITING" ? findDuplicates(itemKeys, r.clientId, r.clientCode, r.barcode) : null;
         return (
@@ -119,28 +119,19 @@ export function ItemRequestsScreen({
       },
     },
     ...(clients.length > 1 ? [{ key: "client", header: "화주사", render: (r: ItemRequestRow) => r.clientName }] : []),
-    { key: "code", header: "화주사 품목코드", render: (r) => (r.clientCode ? <span className="mono">{r.clientCode}</span> : <span className="muted">–</span>) },
+    { key: "code", header: "화주사 품목코드", align: "center", render: (r) => (r.clientCode ? <span className="mono">{r.clientCode}</span> : <span className="muted">–</span>) },
     { key: "name", header: "품목명", wrap: true, render: (r) => r.itemName },
-    { key: "unit", header: "단위", render: (r) => <span className="mono">{r.unit}</span> },
+    { key: "unit", header: "단위", align: "center", width: 56, render: (r) => <span className="mono">{r.unit}</span> },
     // 바코드 열은 목록에서 뺐다(상세에만, 2026-11-07 Sol 피드백). 검색은 바코드로도 된다
-    { key: "temp", header: "온도대", render: (r) => (r.storageTemp ? STORAGE_TEMP_LABEL[r.storageTemp] : <span className="muted">모름</span>) },
+    { key: "temp", header: "온도대", align: "center", render: (r) => (r.storageTemp ? STORAGE_TEMP_LABEL[r.storageTemp] : <span className="muted">모름</span>) },
     // 원본 열은 3PL 목록에만 (화주사는 자기가 고른 입력 방법이라 볼 필요가 없다, 2026-11-07 Sol 확정)
-    ...(canReview ? [{ key: "source", header: "원본", render: (r: ItemRequestRow) => SOURCE_LABEL[r.source] }] : []),
+    ...(canReview ? [{ key: "source", header: "원본", align: "center" as const, render: (r: ItemRequestRow) => SOURCE_LABEL[r.source] }] : []),
     {
       key: "requested",
       header: tab === "wait" ? "요청" : tab === "done" ? (canReview ? "내 처리" : "등록") : "반려",
-      render: (r) =>
-        tab === "wait" ? (
-          <>
-            <span className="mono">{fmtShortDateTime(r.requestedAt)}</span>
-            <CellSub>{r.requestedBy}</CellSub>
-          </>
-        ) : (
-          <>
-            <span className="mono">{fmtShortDateTime(r.processedAt)}</span>
-            <CellSub>{r.processedBy}</CellSub>
-          </>
-        ),
+      align: "center",
+      // 1줄 날짜, 2줄 이름(왼쪽)·시각(오른쪽) (2026-11-14 Sol)
+      render: (r) => (tab === "wait" ? <DateStamp at={r.requestedAt} by={r.requestedBy} /> : <DateStamp at={r.processedAt} by={r.processedBy} />),
     },
     ...(tab === "rej"
       ? [{ key: "reason", header: "반려 사유", wrap: true, render: (r: ItemRequestRow) => r.rejectReasonName ?? "–" }]
@@ -148,6 +139,7 @@ export function ItemRequestsScreen({
     {
       key: "status",
       header: "상태",
+      align: "center",
       render: (r) => <Badge tone={ITEM_REQUEST_STATUS_META[r.status].tone}>{ITEM_REQUEST_STATUS_META[r.status].label}</Badge>,
     },
   ];
@@ -171,15 +163,15 @@ export function ItemRequestsScreen({
                 onChange={setClientId}
                 clients={clients.filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)}
               />
+              {/* 화주사 칸에 붙여 둔다 — 따로 한 칸을 차지하면 열 맞춤이 어긋남 (2026-11-14 Sol) */}
+              <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
             </FilterField>
-            <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>
         )}
         <SearchInput value={q} onChange={setQ} placeholder="요청번호, 품목명, 품목코드, 바코드 검색" />
       </FilterBar>
-      <Tabs label="요청 상태" value={tab} onChange={setTab} panelId="req-body" items={REQ_TABS.map((k) => ({ key: k, label: tabLabel[k], count: counts[k] }))} />
+      <Tabs label="요청 상태" value={tab} onChange={setTab} panelId="req-body" items={REQ_TABS.map((k) => ({ key: k, label: tabLabel[k], count: counts[k] }))} aside={<TabTotal total={list.length} />} />
       <div id="req-body" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        <ListToolbar total={list.length} />
         <DataTable
           caption="품목 등록 요청 목록"
           columns={columns}

@@ -25,3 +25,18 @@
 .act {
   margin-top: 6px;
 }
+
+/* 버튼을 같은 줄 오른쪽 끝에 (actionRight) */
+.inline {
+  align-items: center;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.actRight {
+  flex: none;
+  margin-left: auto;
+}
