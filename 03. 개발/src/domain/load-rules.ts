@@ -5,7 +5,7 @@
  * 2026-11-05 Sol 결정: 지시수량 초과는 입력할 때 경고·확인만 받고, 사유는 상차완료 때 차이 사유로 한 번만 받는다.
  */
 import type { ItemUnit } from "./master";
-import { businessDateOf, businessDayRange } from "./business-day";
+import { businessDayRange } from "./business-day";
 import type { StatusTone } from "./plan-status";
 
 export const LOAD_STATUSES = ["WORKING", "COMPLETED"] as const;
@@ -89,31 +89,51 @@ export const normalizeDocNo = (s: string) => normalizeScan(s).replace(/\s+/g, ""
 export const LOAD_CONFLICT_MSG = "그사이 다른 작업자가 입력했습니다. 최신 합계를 다시 확인한 뒤 상차완료하세요.";
 export const LOAD_DONE_MSG = "이미 상차완료된 차량입니다. 더 실어야 하면 출차·입고검수 전에 [상차 재개]를 누르세요(지시 상차만).";
 
-/* ───────── 출차 (2026-11-12 Sol) ───────── */
+/* ───────── 출차 (2026-11-12 Sol, 정의서 v1.9 수정) ───────── */
 
 /**
- * 출차 — PDA 상차담당이 상차완료 화면에서 [출차]를 누른다. 출차 후에는 상차 재개 불가(되돌리기 없음).
- * 누르지 않았으면 상차완료한 업무일(도착 센터의 업무일 시작 시각 기준)이 지나면 출차로 본다 — 자동 출차.
- * 자동 출차는 DB에 쓰지 않고 볼 때마다 판단한다(배치 없음). 시각은 그 업무일이 끝난 시각으로 보여 준다.
+ * 출차 — PDA 상차담당이 차량이 실제로 떠날 때 [출차]를 누른다. 출차 후에는 상차 재개 불가(되돌리기 없음).
+ * 자동 출차(조회 시 판단)는 폐지(v1.8·v1.9). 누락된 출차는 시스템이 입차 때(입차 처리) 또는
+ * 일마감 때(일마감 처리, 전날까지 상차완료분) 저장한다. 화면은 저장된 값만 보여 준다.
  */
+export const DEPART_TYPES = ["MANUAL", "ARRIVAL", "DAILY_CLOSE"] as const;
+export type DepartType = (typeof DEPART_TYPES)[number];
+export const DEPART_TYPE_LABEL: Record<DepartType, string> = {
+  MANUAL: "사람",
+  ARRIVAL: "입차 처리(시스템)",
+  DAILY_CLOSE: "일마감 처리(시스템)",
+};
+
 export interface Departure {
-  /** 출차 시각 — 자동 출차면 완료한 업무일이 끝난 시각 */
   at: string;
-  /** 처리자 — 자동 출차면 null */
   by: string | null;
-  auto: boolean;
+  type: DepartType;
+  /** 시스템 처리(입차·일마감) 여부 */
+  system: boolean;
 }
 
-export function departureOf(
-  l: { status: string; completedAt: Date | null; departedAt: Date | null; departedBy: string | null },
+export function departureOf(l: { departedAt: Date | null; departedBy: string | null; departType: DepartType | null }): Departure | null {
+  if (!l.departedAt) return null;
+  const type = l.departType ?? "MANUAL";
+  return { at: l.departedAt.toISOString(), by: l.departedBy, type, system: type !== "MANUAL" };
+}
+
+/** 출차 표시 문구 — "사람"은 처리자 이름, 시스템 처리는 구분 이름 */
+export const departureLabel = (d: Departure) => (d.system ? DEPART_TYPE_LABEL[d.type] : d.by ?? DEPART_TYPE_LABEL.MANUAL);
+
+/**
+ * 일마감 처리(시스템) 대상 — 출차·입차 기록이 없고 일마감하는 업무일 "전날까지" 상차완료한 차량 (v1.9 ⑦·D23).
+ * 당일 상차분은 빼서 저녁에 싣고 다음 날 아침 떠나는 차량이 출발 전에 출차로 기록되지 않게 한다.
+ * 반환값: 상차완료 시각이 이 시각보다 앞서면 대상 (= 마감 업무일의 시작 시각)
+ */
+export const dailyDepartBefore = (closeBusinessDate: string, businessDayStart: string) => businessDayRange(closeBusinessDate, businessDayStart).gte;
+
+export function isDailyDepartTarget(
+  l: { status: string; completedAt: Date | null; departedAt: Date | null; arrivedAt: Date | null },
+  closeBusinessDate: string,
   businessDayStart: string,
-  now: Date = new Date(),
-): Departure | null {
-  if (l.status !== "COMPLETED" || !l.completedAt) return null;
-  if (l.departedAt) return { at: l.departedAt.toISOString(), by: l.departedBy, auto: false };
-  const doneDay = businessDateOf(l.completedAt, businessDayStart);
-  if (doneDay < businessDateOf(now, businessDayStart)) return { at: businessDayRange(doneDay, businessDayStart).lt.toISOString(), by: null, auto: true };
-  return null;
+) {
+  return l.status === "COMPLETED" && !!l.completedAt && !l.departedAt && !l.arrivedAt && l.completedAt < dailyDepartBefore(closeBusinessDate, businessDayStart);
 }
 
 export const DEPART_CONFIRM_MSG = "출차하면 상차를 다시 열 수 없습니다. 차량 문을 닫고 상차확인서를 기사에게 넘긴 뒤 누르세요.";

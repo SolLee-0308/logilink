@@ -1,3 +1,4 @@
+import type { WaitStage } from "@/domain/inquiry-rules";
 import type { ItemUnit } from "@/domain/master";
 import type { AsnStatus } from "@/domain/asn-rules";
 import type { PlanStatus } from "@/domain/plan-status";
@@ -17,7 +18,7 @@ export interface InquiryPlanLine {
   /** 입고예정 단위 1개 = 기준 단위 몇 개 */
   factor: number;
   baseQty: number;
-  /** 오는 중 — 아직 입고(검수 확정)되지 않은 ASN에 담긴 수량 */
+  /** 입고 대기 — 아직 입고(검수 확정)되지 않은 ASN에 담긴 수량 */
   incomingQty: number;
   rcvQty: number;
   returnQty: number;
@@ -26,6 +27,8 @@ export interface InquiryPlanLine {
 
 export interface InquiryPlanRow {
   id: number;
+  /** 입고 대기 차량(ASN)별 단계 — 미종결 건만, 입고완료·취소 차량 제외 (v1.9 D27) */
+  waitStages: WaitStage[];
   planNo: string;
   clientId: number;
   clientName: string;
@@ -37,6 +40,8 @@ export interface InquiryPlanRow {
   approvedBy: string | null;
   /** 이 입고예정이 실린 차량(취소 제외) 수 */
   vehicleCount: number;
+  /** 검수 확정으로 이 입고예정에 배분된 무지시 상차 차량 수 — 확정 전에는 세지 않는다 (2026-11-14 Sol) */
+  unorderedCount: number;
   lines: InquiryPlanLine[];
 }
 
@@ -55,7 +60,7 @@ export interface InquiryVehicleLine {
   /** 이 차량에서 들어와 이 라인에 배분된 입고·반송 (검수 확정 뒤) */
   rcvQty: number;
   returnQty: number;
-  /** 오는 중 — ASN이 아직 입고 전이면 지시수량, 입고완료면 0 */
+  /** 입고 대기 — ASN이 아직 입고 전이면 지시수량, 입고완료면 0 */
   incomingQty: number;
   /** 입고예정 라인 전체 잔량 (승인 − 입고 − 반송 − 종결) */
   planRemainQty: number;
@@ -63,6 +68,8 @@ export interface InquiryVehicleLine {
 
 export interface InquiryVehicleRow {
   id: number;
+  /** 입고 대기 단계 — 입고완료·취소면 null (v1.9 D27) */
+  waitStage: WaitStage | null;
   asnNo: string;
   clientId: number;
   clientName: string;
@@ -84,9 +91,9 @@ export interface CenterOption {
   name: string;
 }
 
-/** 상세 — 공통 상세 + 오는 중·차량·배분 이력·취소 가능 여부 */
+/** 상세 — 공통 상세 + 입고 대기·차량·배분 이력·취소 가능 여부 */
 export interface InquiryDetail extends PlanDetail {
-  /** 라인 번호 → 오는 중(기준 단위) */
+  /** 라인 번호 → 입고 대기(기준 단위) */
   incoming: Record<number, number>;
   vehicles: {
     id: number;
@@ -94,10 +101,14 @@ export interface InquiryDetail extends PlanDetail {
     shipDate: string;
     vehicleNo: string;
     status: AsnStatus;
+    /** 입고 대기 단계 — 입고완료·취소면 null (v1.9 D27) */
+    waitStage: WaitStage | null;
     /** 이 입고예정에서 담은 수량 [단위, 수량] */
     qtyByUnit: [ItemUnit, number][];
     lineCount: number;
   }[];
+  /** 검수 확정으로 이 입고예정에 배분된 무지시 상차 차량 수 (2026-11-14 Sol) */
+  unorderedCount: number;
   allocs: {
     id: number;
     confirmedAt: string | null;

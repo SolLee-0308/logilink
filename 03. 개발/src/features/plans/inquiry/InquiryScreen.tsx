@@ -14,7 +14,7 @@ import { dday, ddayLabel } from "@/domain/plan-rules";
 import { qtyInUnit } from "@/domain/load-rules";
 import { ASN_STATUS_META } from "@/domain/asn-rules";
 import { PLAN_STATUS_META } from "@/domain/plan-status";
-import { daysBetween, elapsedDays, isOverdue, overdueCutoff, progressPct } from "@/domain/inquiry-rules";
+import { daysBetween, elapsedDays, isOverdue, overdueCutoff, progressPct, WAIT_STAGE_LABEL, waitStageSummary } from "@/domain/inquiry-rules";
 import { fmtShortDateTime, includesText } from "@/lib/format";
 import { MasterHeader } from "@/features/master/shared";
 import { ClientFilter, type PickedClient } from "@/features/plans/ClientFinder";
@@ -295,7 +295,7 @@ function PlanTable({
             {showCenter && <th scope="col">센터</th>}
             <th scope="col">품목</th>
             <th scope="col">진행률</th>
-            <th scope="col">오는 중</th>
+            <th scope="col">차량 현황</th>
             <th scope="col">승인</th>
             <th scope="col">상태</th>
             <th scope="col">
@@ -341,13 +341,14 @@ function PlanTable({
                     <Progress pct={pct} />
                   </td>
                   <td>
-                    {p.vehicleCount ? (
+                    {p.vehicleCount + p.unorderedCount ? (
                       <>
-                        {incoming > 0 ? <b className={styles.incoming}>오는 중</b> : <span className="muted">입고 끝</span>}
-                        <span className={styles.sub}>차량 {p.vehicleCount}대</span>
+                        {incoming > 0 ? <b className={styles.incoming}>입고 대기</b> : <span className="muted">입고 끝</span>}
+                        {/* 차량(ASN)별 단계 대수 (v1.9 D27) — 예: "운송 중 1대 · 상차 전 1대" */}
+                        <span className={styles.sub}>{vehicleSub(incoming > 0 ? waitStageSummary(p.waitStages) : "", p.vehicleCount, p.unorderedCount)}</span>
                       </>
                     ) : (
-                      <span className="muted">ASN 없음</span>
+                      <span className="muted">차량 없음</span>
                     )}
                   </td>
                   <td>
@@ -390,7 +391,7 @@ function PlanLines({ lines }: { lines: InquiryPlanLine[] }) {
             <th scope="col">품목코드</th>
             <th scope="col">품목명</th>
             <th scope="col" className={styles.num}>승인</th>
-            <th scope="col" className={styles.num}>오는 중</th>
+            <th scope="col" className={styles.num}>검수 전</th>
             <th scope="col" className={styles.num}>입고</th>
             <th scope="col" className={styles.num}>반송</th>
             <th scope="col" className={styles.num}>종결</th>
@@ -508,7 +509,7 @@ function VehicleTable({
                         <span className={styles.sub}>{fmtShortDateTime(v.receivedAt)} 확정</span>
                       </>
                     ) : (
-                      <b className={styles.incoming}>오는 중</b>
+                      <b className={styles.incoming}>{v.waitStage ? WAIT_STAGE_LABEL[v.waitStage] : "입고 대기"}</b>
                     )}
                   </td>
                   <td>
@@ -542,7 +543,7 @@ function VehicleLines({ lines }: { lines: InquiryVehicleLine[] }) {
             <th scope="col">품목코드</th>
             <th scope="col">품목명</th>
             <th scope="col" className={styles.num}>지시</th>
-            <th scope="col" className={styles.num}>오는 중</th>
+            <th scope="col" className={styles.num}>검수 전</th>
             <th scope="col" className={styles.num}>입고</th>
             <th scope="col" className={styles.num}>반송</th>
             <th scope="col" className={styles.num}>입고예정 잔량</th>
@@ -569,4 +570,13 @@ function VehicleLines({ lines }: { lines: InquiryVehicleLine[] }) {
       </table>
     </div>
   );
+}
+
+/**
+ * 차량 현황 칸 아래 줄 — 입고 대기면 ASN 차량 단계 대수, 아니면 차량 대수.
+ * 무지시 상차 차량은 검수 확정으로 배분된 뒤에만 세고 구분해 보여 준다 (2026-11-14 Sol)
+ */
+function vehicleSub(stageSummary: string, asnCount: number, unorderedCount: number) {
+  if (stageSummary) return unorderedCount ? `${stageSummary} · 무지시 입고 ${unorderedCount}대` : stageSummary;
+  return `차량 ${asnCount + unorderedCount}대${unorderedCount ? `(무지시 ${unorderedCount}대)` : ""}`;
 }

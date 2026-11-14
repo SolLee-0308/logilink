@@ -44,26 +44,35 @@ test("스캔값 정리", () => {
   assert.equal(normalizeDocNo(" lo-20261105-0001 "), "LO-20261105-0001");
 });
 
-/* 출차 (2026-11-12 Sol) — [출차]를 누르면 그 시각, 안 눌렀으면 상차완료한 업무일이 지나면 자동 출차 */
-test("출차: 누른 출차가 있으면 그 시각·처리자", async () => {
+/* 출차 (2026-11-12 Sol, 정의서 v1.9) — 저장된 출차만 본다. 자동 출차(조회 시 판단)는 폐지 */
+test("출차: 저장된 출차가 있으면 시각·처리자·구분", async () => {
   const { departureOf } = await import("./load-rules");
-  const d = departureOf(
-    { status: "COMPLETED", completedAt: new Date("2026-11-12T05:00:00Z"), departedAt: new Date("2026-11-12T05:30:00Z"), departedBy: "오세라" },
-    "06:00",
-    new Date("2026-11-20T00:00:00Z"),
-  );
-  assert.deepEqual(d, { at: "2026-11-12T05:30:00.000Z", by: "오세라", auto: false });
+  const at = new Date("2026-11-12T05:30:00Z");
+  assert.deepEqual(departureOf({ departedAt: at, departedBy: "오세라", departType: "MANUAL" }), { at: at.toISOString(), by: "오세라", type: "MANUAL", system: false });
+  assert.deepEqual(departureOf({ departedAt: at, departedBy: "김검수", departType: "ARRIVAL" }), { at: at.toISOString(), by: "김검수", type: "ARRIVAL", system: true });
 });
 
-test("출차: 안 눌렀으면 같은 업무일에는 출차 전, 업무일이 바뀌면 자동 출차(그 업무일 끝 시각)", async () => {
+test("출차: 저장된 출차가 없으면 업무일이 지나도 출차 아님 (자동 출차 폐지)", async () => {
   const { departureOf } = await import("./load-rules");
-  // KST 11-12 14:00 완료 → 업무일 11-12 (06:00 시작), 11-13 05:59까지 같은 업무일
-  const l = { status: "COMPLETED", completedAt: new Date("2026-11-12T05:00:00Z"), departedAt: null, departedBy: null };
-  assert.equal(departureOf(l, "06:00", new Date("2026-11-12T20:59:00Z")), null); // KST 11-13 05:59
-  assert.deepEqual(departureOf(l, "06:00", new Date("2026-11-12T21:00:00Z")), { at: "2026-11-12T21:00:00.000Z", by: null, auto: true }); // KST 11-13 06:00
+  assert.equal(departureOf({ departedAt: null, departedBy: null, departType: null }), null);
 });
 
-test("출차: 상차 중이면 출차 없음", async () => {
-  const { departureOf } = await import("./load-rules");
-  assert.equal(departureOf({ status: "WORKING", completedAt: null, departedAt: null, departedBy: null }, "06:00", new Date("2026-12-01T00:00:00Z")), null);
+test("출차 표시: 사람은 처리자, 시스템 처리는 구분 이름", async () => {
+  const { departureOf, departureLabel } = await import("./load-rules");
+  const at = new Date("2026-11-12T05:30:00Z");
+  assert.equal(departureLabel(departureOf({ departedAt: at, departedBy: "오세라", departType: "MANUAL" })!), "오세라");
+  assert.equal(departureLabel(departureOf({ departedAt: at, departedBy: "박운영", departType: "DAILY_CLOSE" })!), "일마감 처리(시스템)");
+  assert.equal(departureLabel(departureOf({ departedAt: at, departedBy: "김검수", departType: "ARRIVAL" })!), "입차 처리(시스템)");
+});
+
+test("일마감 처리(시스템) 대상: 출차·입차 기록 없고 마감 업무일 전날까지 상차완료 (당일분 제외)", async () => {
+  const { isDailyDepartTarget } = await import("./load-rules");
+  const base = { status: "COMPLETED", departedAt: null, arrivedAt: null };
+  // 마감 업무일 11-13, 업무일 시작 06:00 → KST 11-13 06:00 (= 11-12T21:00Z) 전에 완료한 차량만
+  assert.equal(isDailyDepartTarget({ ...base, completedAt: new Date("2026-11-12T20:59:00Z") }, "2026-11-13", "06:00"), true); // KST 11-13 05:59 (11-12 업무일)
+  assert.equal(isDailyDepartTarget({ ...base, completedAt: new Date("2026-11-12T21:00:00Z") }, "2026-11-13", "06:00"), false); // KST 11-13 06:00 (당일)
+  const old = new Date("2026-11-10T05:00:00Z");
+  assert.equal(isDailyDepartTarget({ ...base, completedAt: old, departedAt: old }, "2026-11-13", "06:00"), false); // 이미 출차
+  assert.equal(isDailyDepartTarget({ ...base, completedAt: old, arrivedAt: old }, "2026-11-13", "06:00"), false); // 입차함
+  assert.equal(isDailyDepartTarget({ ...base, status: "WORKING", completedAt: null }, "2026-11-13", "06:00"), false); // 상차 중
 });

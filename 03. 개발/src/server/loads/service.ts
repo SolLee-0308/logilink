@@ -24,6 +24,7 @@ import {
   LOAD_PREFIX,
   addQtyError,
   departureOf,
+  DEPART_TYPE_LABEL,
   hasLoadDiff,
   normalizeDocNo,
   normalizeScan,
@@ -61,11 +62,6 @@ async function lockLoad(tx: Tx, id: number) {
   return tx.load.findUnique({ where: { id } });
 }
 
-/** 출차 여부 — [출차]를 눌렀거나, 상차완료한 업무일(도착 센터 기준)이 지났으면 출차 (2026-11-12 Sol) */
-async function departureOfLoad(tx: Tx, load: { centerId: number; status: string; completedAt: Date | null; departedAt: Date | null; departedBy: string | null }) {
-  const center = await tx.center.findUniqueOrThrow({ where: { id: load.centerId }, select: { businessDayStart: true } });
-  return departureOf(load, center.businessDayStart);
-}
 
 /* ═════════ 지시 상차 시작 — 상차지시서 바코드 스캔 ═════════ */
 
@@ -459,8 +455,9 @@ export async function reopenLoad(me: PlanActor, input: ReopenInput): Promise<Act
       if (load.status !== "COMPLETED") return fail("STATE", "상차 중인 차량입니다. 그대로 이어서 실으면 됩니다.");
       // 무지시 상차는 재개하지 않는다 (2026-11-12 Sol) — 더 실을 물량은 새 무지시 상차로
       if (load.loadType === "UNORDERED") return fail("STATE", "무지시 상차는 재개할 수 없습니다. 더 실을 물량은 새 무지시 상차로 등록하세요.");
-      // 출차한 차량은 재개하지 않는다 (2026-11-12 Sol) — [출차]를 눌렀거나 상차완료한 업무일이 지났으면 출차
-      if (await departureOfLoad(tx, load)) return fail("STATE", "출차한 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
+      // 출차한 차량은 재개하지 않는다 (2026-11-12 Sol, v1.9: 저장된 출차만 — 사람·입차 처리·일마감 처리). 입차하면 출차도 저장된다
+      const dep = departureOf(load);
+      if (dep) return fail("STATE", dep.system ? `출차가 ${DEPART_TYPE_LABEL[dep.type]}로 기록된 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.` : "출차한 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
       const rcv = await tx.rcv.findFirst({ where: { loadId: load.id, status: { in: ["WORKING", "CONFIRMED"] } }, select: { id: true } });
       if (rcv) return fail("STATE", "입고검수가 시작된 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
 
@@ -501,7 +498,7 @@ export async function reopenLoad(me: PlanActor, input: ReopenInput): Promise<Act
 
 /**
  * 출차 — 상차완료한 차량을 내보낸다. 상태는 상차완료 그대로 두고 출차 시각·처리자만 남긴다.
- * 출차 후에는 상차 재개 불가, 되돌리기 없음. 지시·무지시 모두. 이미 출차(직접 또는 업무일이 지나 자동)면 막는다.
+ * 출차 후에는 상차 재개 불가, 되돌리기 없음. 지시·무지시 모두. 이미 출차(사람·입차 처리·일마감 처리)면 막는다.
  */
 export async function departLoad(me: PlanActor, input: { loadId: number }): Promise<ActionResult<{ departedAt: string }>> {
   if (!canLoad(me)) return forbidden();
@@ -510,13 +507,13 @@ export async function departLoad(me: PlanActor, input: { loadId: number }): Prom
       const load = await lockLoad(tx, input.loadId);
       if (!load || load.clientId !== me.clientId) return notFound();
       if (load.status !== "COMPLETED") return fail("STATE", "상차완료한 차량만 출차할 수 있습니다. 먼저 상차완료하세요.");
-      const dep = await departureOfLoad(tx, load);
-      if (dep) return fail("STATE", dep.auto ? "상차완료한 업무일이 지나 이미 출차로 처리된 차량입니다." : "이미 출차한 차량입니다.");
+      const dep = departureOf(load);
+      if (dep) return fail("STATE", dep.system ? `이미 ${DEPART_TYPE_LABEL[dep.type]}로 출차가 기록된 차량입니다.` : "이미 출차한 차량입니다.");
 
       const now = new Date();
       const r = await tx.load.updateMany({
         where: { id: load.id, status: "COMPLETED", departedAt: null },
-        data: { departedAt: now, departedBy: me.name, departUserId: me.id, version: { increment: 1 } },
+        data: { departedAt: now, departedBy: me.name, departUserId: me.id, departType: "MANUAL", version: { increment: 1 } },
       });
       if (!r.count) return fail("STATE", "이미 출차했거나 상차가 다시 열린 차량입니다. 화면을 새로 고치세요.");
       await tx.loadHistory.create({ data: { loadId: load.id, action: "DEPART", revisionNo: load.revisionNo, actor: me.name, actorId: me.id } });

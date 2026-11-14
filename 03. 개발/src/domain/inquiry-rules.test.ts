@@ -50,3 +50,18 @@ test("조회조건 주소: 기본값은 주소에 남기지 않고, 빈 기간�
   // 탭에 없는 상태는 미종결로
   assert.equal(parseInquiryQuery({ tab: "vehicle", st: "CLOSED" }, today).st, "open");
 });
+
+/* 입고 대기 단계 (정의서 v1.9 ⑤ · D27) */
+test("입고 대기 단계: 상차 전 → 상차중 → 출차 대기 → 운송 중 → 도착·검수 대기 → 검수중", async () => {
+  const { waitStageOf, waitStageSummary } = await import("./inquiry-rules");
+  const t0 = "2026-11-14T00:00:00Z";
+  const done = { status: "COMPLETED", departedAt: null, arrivedAt: null };
+  assert.equal(waitStageOf({ asnStatus: "REGISTERED", load: null, rcv: null }), "BEFORE_LOAD");
+  assert.equal(waitStageOf({ asnStatus: "LOADING", load: { status: "WORKING", departedAt: null, arrivedAt: null }, rcv: null }), "LOADING");
+  assert.equal(waitStageOf({ asnStatus: "LOADED", load: done, rcv: null }), "DEPART_WAIT");
+  assert.equal(waitStageOf({ asnStatus: "LOADED", load: { ...done, departedAt: t0 }, rcv: null }), "IN_TRANSIT");
+  assert.equal(waitStageOf({ asnStatus: "LOADED", load: { ...done, departedAt: t0, arrivedAt: t0 }, rcv: { startedAt: null } }), "ARRIVED");
+  assert.equal(waitStageOf({ asnStatus: "LOADED", load: { ...done, departedAt: t0, arrivedAt: t0 }, rcv: { startedAt: t0 } }), "INSPECTING");
+  assert.equal(waitStageOf({ asnStatus: "RECEIVED", load: done, rcv: null }), null);
+  assert.equal(waitStageSummary(["IN_TRANSIT", "BEFORE_LOAD", null, "IN_TRANSIT"]), "운송 중 2대 · 상차 전 1대");
+});

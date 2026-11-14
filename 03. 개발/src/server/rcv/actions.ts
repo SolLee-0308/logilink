@@ -60,3 +60,8 @@ export async function reloadRcv(id: number): Promise<ActionResult<RcvView>> {
   const v = await getPdaRcv(await getPdaActor(), id);
   return v ? { ok: true, message: "", data: v } : fail("NOT_FOUND", "검수 건을 찾을 수 없습니다.");
 }
+
+/** 입차 취소 — 첫 입력 전, 사유 필수 (정의서 v1.9 ⑥ · C11) */
+export async function voidRcv(input: { rcvId: number; reasonCode: string; reasonText?: string | null }) {
+  return refresh(await svc.voidRcv(await getPdaActor(), input));
+}

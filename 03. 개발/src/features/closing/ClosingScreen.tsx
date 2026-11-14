@@ -30,7 +30,7 @@ const qtyText = (byUnit: [string, number][]) => byUnit.map(([u, q]) => `${q.toLo
 /**
  * 잔량 종결·일마감 (정의서 ⑦, 2026-11-12) — 3PL 관리자·운영담당.
  * 잔량 종결 탭: 미종결 입고예정을 경과일 순으로 보고, 골라서 사유와 함께 종결(건별·일괄, 한 번에 최대 50건).
- * 오는 중인 ASN이 있는 건은 고를 수 없다(임시안). 행의 입고예정번호를 누르면 입고예정 조회 상세로.
+ * 입고 대기 중인 ASN이 있는 건은 고를 수 없다(임시안). 행의 입고예정번호를 누르면 입고예정 조회 상세로.
  * 일마감 탭(2026-11-12): 센터의 지금 업무일 마감 — DailyCloseTab.
  */
 export function ClosingScreen({
@@ -96,7 +96,7 @@ export function ClosingScreen({
       header: <input type="checkbox" aria-label="고를 수 있는 건 모두 고르기" checked={allOn} onChange={toggleAll} disabled={!selectable.length} />,
       render: (r) =>
         r.openAsnCount > 0 ? (
-          <span className={styles.lock} title="오는 중인 ASN이 있어 종결할 수 없습니다">
+          <span className={styles.lock} title="입고 대기 중인 ASN이 있어 종결할 수 없습니다">
             –
           </span>
         ) : (
@@ -141,7 +141,7 @@ export function ClosingScreen({
     },
     {
       key: "asn",
-      header: "오는 중",
+      header: "입고 대기",
       render: (r) => (r.openAsnCount > 0 ? <Tag tone="warn">ASN {r.openAsnCount}대</Tag> : <span className="muted">–</span>),
     },
     { key: "last", header: "마지막 입고", render: (r) => (r.lastRcvAt ? <span className="mono">{fmtShortDateTime(r.lastRcvAt)}</span> : <span className="muted">없음</span>) },

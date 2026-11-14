@@ -29,6 +29,8 @@ export interface AsnRow {
   loadNo: string | null;
   /** 상차완료 차량의 출차 — 출차 전이면 null (2026-11-12 Sol) */
   departure: Departure | null;
+  /** 입차 시각 (v1.9) — 입차 전이면 null */
+  arrivedAt: string | null;
   tab: AsnTab;
   status: AsnStatus;
   centerId: number;

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { Barcode } from "@/components/ui/Barcode";
-import { LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_TYPE_LABEL, LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
 import { fmtDateTime } from "@/lib/format";
 import type { LoadConfirmPrint } from "./types";
 import styles from "@/features/asn/LoadOrderSheet.module.css";
@@ -80,7 +80,9 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
               {/* 출차 (2026-11-12 Sol) — 출차 전에 인쇄하면 "출차 전" */}
               <tr>
                 <th scope="row">출차</th>
-                <td className="mono">{d.departure ? (d.departure.auto ? `자동 출차 · ${fmtDateTime(d.departure.at)}` : fmtDateTime(d.departure.at)) : "출차 전"}</td>
+                <td className="mono">
+                  {d.departure ? `${fmtDateTime(d.departure.at)}${d.departure.system ? ` · ${DEPART_TYPE_LABEL[d.departure.type]}` : ""}` : "출차 전"}
+                </td>
               </tr>
             </tbody>
           </table>

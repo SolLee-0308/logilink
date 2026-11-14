@@ -6,14 +6,15 @@ import styles from "./Pda.module.css";
 
 /**
  * PDA 대시보드 — 입고검수자 (임시안 U45-⑦)
- * 오늘 진행률(확정 / 대기+검수 중+확정) → 검수 대기·검수 중·검수확정·이상 있음 4칸 → 내 입력 건수 → 최근 확정 3대
+ * 오늘 진행률(확정 / 입차 전+도착·검수 대기+검수 중+확정) → 도착·검수 대기·검수 중·검수확정·이상 있음 4칸 → 내 입력 건수·입차 전 대수 → 최근 확정 3대
+ * v1.9: "검수 대기"를 입차 기준으로 나눔 — 칸은 센터에 도착한 차량(도착·검수 대기), 아직 오는 차량(입차 전)은 위 줄에 대수만
  */
 export function PdaInspectDashboardScreen({ data }: { data: PdaRcvDashboard }) {
-  const total = data.waiting + data.working + data.done;
+  const total = data.waiting + data.arrived + data.working + data.done;
   const pct = total ? Math.round((data.done / total) * 100) : 0;
   // 상차담당 대시보드와 같은 칸 (2026-11-12 Sol) — 상태 색(대기 기본 · 검수 중 주황 · 확정 초록 · 이상 붉은) + 왼쪽 위 아이콘·이름, 숫자 오른쪽 아래
   const tiles: [string, number, string, string, IconName][] = [
-    ["검수 대기", data.waiting, "/pda/inspect?st=todo", "", "truck"],
+    ["도착·검수 대기", data.arrived, "/pda/inspect?st=todo", "", "truck"],
     ["검수 중", data.working, "/pda/inspect?st=working", styles.tilePart, "scan"],
     ["검수확정", data.done, "/pda/inspect?st=done", styles.tileDone, "check"],
     ["이상 있음", data.issueDone, "/pda/inspect?st=done", styles.tileRej, "alert"],
@@ -32,7 +33,9 @@ export function PdaInspectDashboardScreen({ data }: { data: PdaRcvDashboard }) {
         <span className={styles.heroBar} aria-hidden="true">
           <span style={{ width: `${pct}%` }} />
         </span>
-        <span className={styles.heroK}>내 입력 {data.myInputs}건</span>
+        <span className={styles.heroK}>
+          내 입력 {data.myInputs}건 · 입차 전 {data.waiting}대
+        </span>
       </section>
       <section className={styles.tiles}>
         {tiles.map(([k, v, href, tone, icon]) => (

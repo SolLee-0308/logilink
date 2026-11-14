@@ -61,7 +61,7 @@ const viewInclude = {
 type LoadRow = Prisma.LoadGetPayload<{ include: typeof viewInclude }>;
 
 function toView(l: LoadRow, meId: number | null): LoadView {
-  const departure = departureOf(l, l.center.businessDayStart);
+  const departure = departureOf(l);
   // 보여 줄 단위: ASN 지시 단위 → 처음 스캔한 단위 → 기준 단위
   const asnUnit = new Map<number, ItemUnit>();
   for (const a of l.asn?.lines ?? []) if (!asnUnit.has(a.itemId)) asnUnit.set(a.itemId, a.unit);
@@ -108,6 +108,7 @@ function toView(l: LoadRow, meId: number | null): LoadView {
     // 지시 상차만, 상차완료 + 출차 전 + 검수 전 (무지시는 재개 안 함, 출차 후 재개 안 함 — 2026-11-12 Sol)
     canReopen: l.status === "COMPLETED" && l.loadType === "ORDERED" && !departure && l.rcvs.length === 0,
     departure,
+    arrival: l.arrivedAt ? { at: iso(l.arrivedAt), by: l.arrivedBy } : null,
     canDepart: l.status === "COMPLETED" && !departure,
     lastReopen: l.histories[0]
       ? { at: iso(l.histories[0].at), by: l.histories[0].actor, reasonName: l.histories[0].reasonName, reasonText: l.histories[0].reasonText }
@@ -224,7 +225,7 @@ const pdaRow = (l: RowLoad): PdaWorkingRow => ({
   loadDate: ymd(l.loadDate),
   shipDate: l.asn ? ymd(l.asn.shipDate) : null,
   revisionNo: l.revisionNo,
-  departure: departureOf(l, l.center.businessDayStart),
+  departure: departureOf(l),
   inputCount: l.inputs.length,
   workerCount: new Set(l.inputs.map((i) => i.workerId)).size,
   completedAt: l.completedAt ? iso(l.completedAt) : null,

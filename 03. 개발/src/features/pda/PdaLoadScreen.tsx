@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Barcode } from "@/components/ui/Barcode";
-import { DEPART_CONFIRM_MSG, LINE_STATE_LABEL, LOAD_TYPE_LABEL, UNORDERED_REASON_CODE, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_CONFIRM_MSG, DEPART_TYPE_LABEL, LINE_STATE_LABEL, LOAD_TYPE_LABEL, UNORDERED_REASON_CODE, qtyInUnit } from "@/domain/load-rules";
 import { fmtDateTime } from "@/lib/format";
 import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, departLoad, previewScan, reloadLoad, reopenLoad } from "@/server/loads/actions";
 import type { ReasonOption } from "@/features/shared/RejectModal";
@@ -36,7 +36,7 @@ const overAsk = (source: "add" | "edit", fe?: Record<string, string>): Ask | nul
  * 3) 본인 입력만 취소·정정, 다른 작업자 입력은 몇 초마다 합계에 반영
  * 4) 상차완료: 작업자·품목 합계를 보고 확인, 차이가 있으면 사유 선택 → 상차확인서 발행
  * 5) 상차 재개(v1.5 D20): 지시 상차만, 출차·검수 시작 전까지 사유와 함께 재개 → 다시 완료하면 같은 번호 다음 차수 (무지시 재개 안 함, 2026-11-12)
- * 6) 출차(2026-11-12 Sol): 상차완료 화면 [출차] → 확인 창 → 이후 재개 불가. 안 누르면 상차완료한 업무일이 지나면 자동 출차
+ * 6) 출차(2026-11-12 Sol, v1.9): 상차완료 화면 [출차] → 확인 창 → 이후 재개 불가. 누르지 않으면 3PL 입차 때·일마감 때 시스템이 출차를 저장한다
  * 화면 배치(2026-11-05 참고 UI): 차량 머리·진행 단계 → 스캔 카드 → 품목 → 상차 정보 → 내 입력 타임라인 → 아래 고정 [상차완료]
  */
 export function PdaLoadScreen({
@@ -342,7 +342,7 @@ export function PdaLoadScreen({
               ["차량번호", <span key="v" className="mono">{view.vehicleNo}</span>],
               ["도착 센터", view.centerName],
               ["완료", `${view.completedAt ? timeOf(view.completedAt) : "-"} · ${view.completedBy ?? "-"}`],
-              // 출차 (2026-11-12 Sol) — 출차 전 / 시각·처리자 / 업무일이 지나 자동 출차
+              // 출차 (2026-11-12 Sol, v1.9) — 출차 전 / 시각·처리자 / 시스템 처리(입차·일마감) 구분
               ["출차", <DepartText key="dep" view={view} />],
               // ASN 대비 상차 — 품목 목록 대신 요약만 (2026-11-07 Sol 피드백)
               ["ASN 대비 상차", <LoadSummary key="sum" view={view} />],
@@ -989,10 +989,10 @@ function LoadSummary({ view }: { view: LoadView }) {
   );
 }
 
-/** 출차 표시 (2026-11-12 Sol) — 출차 전 / "14:30 · 처리자" / "자동 출차(업무일 마감) 11-13 06:00" */
+/** 출차 표시 (2026-11-12 Sol, v1.9) — 출차 전 / "14:30 · 처리자" / "입차 처리(시스템) · 11-13 09:10" */
 function DepartText({ view }: { view: LoadView }) {
   const d = view.departure;
   if (!d) return <span className={styles.warnInline}>출차 전</span>;
-  if (d.auto) return <span>자동 출차(업무일 마감) · {fmtDateTime(d.at).slice(5, 16)}</span>;
+  if (d.system) return <span>{DEPART_TYPE_LABEL[d.type]} · {fmtDateTime(d.at).slice(5, 16)}</span>;
   return <span>{timeOf(d.at)} · {d.by ?? "-"}</span>;
 }

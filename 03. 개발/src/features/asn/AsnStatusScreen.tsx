@@ -9,6 +9,7 @@ import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { Input } from "@/components/ui/Form";
 import { ListToolbar } from "@/components/ui/SplitView";
 import { Tabs } from "@/components/ui/Tabs";
+import { DEPART_TYPE_LABEL } from "@/domain/load-rules";
 import { dday, ddayLabel } from "@/domain/plan-rules";
 import { fmtShortDateTime, includesText } from "@/lib/format";
 import { MasterHeader } from "@/features/master/shared";
@@ -204,9 +205,15 @@ export function AsnStatusScreen({
       render: (r) => (
         <>
           <AsnStatusBadge status={r.status} />
-          {/* 상차완료 차량의 출차 (2026-11-12 Sol) — 센터가 도착 예상을 볼 수 있게 */}
+          {/* 상차완료 차량의 출차·입차 (v1.9) — 센터가 도착 예상을 볼 수 있게. 시스템 처리 출차는 구분 표시 */}
           {r.status === "LOADED" && (
-            <CellSub>{r.departure ? (r.departure.auto ? "자동 출차" : `출차 ${fmtShortDateTime(r.departure.at)}`) : "출차 전"}</CellSub>
+            <CellSub>
+              {r.arrivedAt
+                ? `입차 ${fmtShortDateTime(r.arrivedAt)}`
+                : r.departure
+                  ? `출차 ${fmtShortDateTime(r.departure.at)}${r.departure.system ? ` · ${DEPART_TYPE_LABEL[r.departure.type]}` : ""}`
+                  : "출차 전"}
+            </CellSub>
           )}
         </>
       ),

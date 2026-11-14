@@ -108,3 +108,9 @@ textarea::placeholder {
 input[type="date"][data-empty]::-webkit-datetime-edit {
   color: var(--placeholder);
 }
+
+/* 그리드 열 제목은 모두 가운데 정렬 (2026-11-14 Sol) — 칸 데이터의 정렬(숫자 오른쪽 등)은 그대로 둔다.
+   화면마다 열 제목 정렬을 따로 정해 둔 곳(왼쪽·오른쪽)이 있어 !important로 한 번에 맞춘다 */
+thead th {
+  text-align: center !important;
+}

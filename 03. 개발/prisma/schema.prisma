@@ -741,6 +741,8 @@ enum AsnAction {
   LOAD_REOPEN // 상차 재개 (정의서 v1.5 D20, 상차완료 → 상차중)
   LOAD_DEPART // 출차 (2026-11-12 Sol, 상태는 상차완료 그대로)
   RECEIVE_CANCEL // 입고취소 역전표 (입고완료 → 상차완료, 2026-11-12)
+  ARRIVE // 입차 (정의서 v1.9 ⑥·D25, 상태는 상차완료 그대로)
+  ARRIVE_CANCEL // 입차 취소 (첫 입력 전, 사유 필수)
 }
 
 /// ASN 헤더 (TB_ASN_H) — 차량 1대 단위. 입고예정번호를 두지 않고 라인이 입고예정 라인을 가리킨다 (D9)
@@ -888,11 +890,16 @@ model Load {
   completeUserId Int?       @map("complete_user_id")
   completedBy    String?    @map("completed_by") @db.VarChar(50)
   completedAt    DateTime?  @map("complete_dt") @db.Timestamptz(3)
-  /// 출차 (2026-11-12 Sol) — PDA 상차담당이 [출차]를 누른 시각. 출차 후에는 상차 재개 불가.
-  /// 누르지 않았으면 상차완료한 업무일이 지나면 출차로 본다(값은 비어 있고 조회 때 판단)
+  /// 출차 (2026-11-12 Sol, v1.9 수정) — 출차 시각. 출차 후에는 상차 재개 불가.
+  /// 자동 출차(조회 시 판단)는 폐지 — 누락은 시스템이 입차·일마감 때 저장한다(구분 depart_type)
   departedAt     DateTime?  @map("depart_dt") @db.Timestamptz(3)
   departedBy     String?    @map("departed_by") @db.VarChar(50)
   departUserId   Int?       @map("depart_user_id")
+  departType     DepartType? @map("depart_type")
+  /// 입차 (정의서 v1.9 ⑥·D25) — 3PL 입고검수자가 도착 차량을 스캔한 시각. 입차 취소하면 비운다
+  arrivedAt      DateTime?  @map("arrive_dt") @db.Timestamptz(3)
+  arrivedBy      String?    @map("arrived_by") @db.VarChar(50)
+  arriveUserId   Int?       @map("arrive_user_id")
   createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   createdBy      String     @map("created_by") @db.VarChar(50)
   updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -917,7 +924,16 @@ model Load {
 enum LoadAction {
   COMPLETE // 상차완료 (상차확인서 발행)
   REOPEN // 상차 재개 (출차·검수 시작 전, 사유 필수)
-  DEPART // 출차 (2026-11-12 Sol)
+  DEPART // 출차 (2026-11-12 Sol) — 사람·시스템 처리 모두. 구분은 reason_text
+  ARRIVE // 입차 (정의서 v1.9 ⑥·D25)
+  ARRIVE_CANCEL // 입차 취소 (첫 입력 전, 사유 필수)
+}
+
+/// 출차 구분 (정의서 v1.9 ④·D23) — 사람이 [출차]를 눌렀는지, 시스템이 입차·일마감 때 저장했는지
+enum DepartType {
+  MANUAL // 사람 — 상차담당이 [출차]
+  ARRIVAL // 입차 처리(시스템) — 출차 기록 없이 입차함
+  DAILY_CLOSE // 일마감 처리(시스템) — 전날까지 상차완료, 출차·입차 기록 없이 일마감
 }
 
 /// 상차 실적 처리 이력 (TB_LOAD_HIS) — 상차완료·재개를 차수와 함께 남긴다 (정의서 v1.5 D20). 무지시 상차는 ASN 이력이 없어 여기에만 남는다
@@ -997,6 +1013,7 @@ enum RcvStatus {
   WORKING // 검수중
   CONFIRMED // 확정 (자동 배분 완료)
   CANCELED // 입고취소 (역전표로 배분을 되돌림, 2026-11-12) — 같은 차량은 다시 검수할 수 있다
+  VOIDED // 입차 취소 (정의서 v1.9, 첫 입력 전만) — 입력이 없어 실적 영향 없음
 }
 
 /// 검수 입력 구분 — 정상 / 훼손·오염 반송 / 품목 불일치 반송(상차 실적에 없는 품목)
@@ -1024,6 +1041,15 @@ model Rcv {
   /// 검수일 (KST)
   rcvDate        DateTime  @map("rcv_dt") @db.Date
   status         RcvStatus @default(WORKING)
+  /// 검수 시작 = 첫 입력(품목 스캔 또는 0 입력) 시각 (정의서 v1.9 D26). 입차 직후는 비어 있다(도착·검수 대기)
+  startedAt      DateTime? @map("start_dt") @db.Timestamptz(3)
+  /// 입차 취소 (VOIDED) — 처리자·시각·사유(ARRIVE_CANCEL 그룹)
+  voidedAt       DateTime? @map("void_dt") @db.Timestamptz(3)
+  voidedBy       String?   @map("voided_by") @db.VarChar(50)
+  voidUserId     Int?      @map("void_user_id")
+  voidReasonCode String?   @map("void_reason_cd") @db.VarChar(20)
+  voidReasonName String?   @map("void_reason_nm") @db.VarChar(100)
+  voidReasonText String?   @map("void_reason_text") @db.VarChar(500)
   version        Int       @default(1)
   confirmUserId  Int?      @map("confirm_user_id")
   confirmedBy    String?   @map("confirmed_by") @db.VarChar(50)
@@ -1102,6 +1128,8 @@ model DailyClose {
   returnBaseQty Int      @map("return_base_qty")
   /// 기한경과로 취소한 입고예정 수
   expireCount   Int      @map("expire_cnt")
+  /// 일마감 처리(시스템)로 출차를 저장한 차량 수 (정의서 v1.9 ⑦)
+  departCount   Int      @default(0) @map("depart_cnt")
 
   center Center @relation(fields: [centerId], references: [id])
   rcvs   Rcv[]

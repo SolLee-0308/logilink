@@ -8,7 +8,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { PlanActor } from "@/server/plans/service";
 import { can } from "@/domain/permissions";
 import type { ItemUnit } from "@/domain/master";
-import { qtyInUnit } from "@/domain/load-rules";
+import { departureOf, qtyInUnit } from "@/domain/load-rules";
 import { lineDiff, needsReason, rcvLineState } from "@/domain/rcv-rules";
 import { todayKst } from "@/lib/format";
 import type { PdaRcvDashboard, PdaRcvHistory, PdaRcvHome, PdaRcvRow, RcvLineView, RcvView } from "@/features/rcv/types";
@@ -106,6 +106,12 @@ function toView(r: RcvFull, meId: number | null): RcvView {
     id: r.id,
     rcvNo: r.rcvNo,
     status: r.status,
+    startedAt: iso(r.startedAt),
+    arrivedAt: iso(r.load.arrivedAt),
+    arrivedBy: r.load.arrivedBy,
+    departure: departureOf(r.load),
+    voided: r.status === "VOIDED" && r.voidedAt ? { at: iso(r.voidedAt)!, by: r.voidedBy ?? "", reasonName: r.voidReasonName ?? "", reasonText: r.voidReasonText } : null,
+    canVoid: r.status === "WORKING" && !r.startedAt && r.inputs.length === 0 && !r.lines.some((l) => l.zeroConfirm),
     clientName: r.client.name,
     centerName: r.center.name,
     vehicleNo: r.vehicleNo,
@@ -171,13 +177,21 @@ export async function getRcvOfLoad(loadId: number): Promise<RcvView | null> {
 const ROW_INCLUDE = {
   client: { select: { name: true } },
   center: { select: { name: true } },
-  load: { select: { id: true, loadNo: true, loadType: true, completedAt: true, loadOrder: { select: { orderNo: true } }, _count: { select: { lines: true } } } },
+  load: {
+    select: {
+      id: true, loadNo: true, loadType: true, completedAt: true, arrivedAt: true, departedAt: true, departedBy: true, departType: true,
+      loadOrder: { select: { orderNo: true } }, _count: { select: { lines: true } },
+    },
+  },
   inputs: { where: { canceledAt: null }, select: { workerId: true } },
   lines: { select: { expectBaseQty: true, goodBaseQty: true, damagedBaseQty: true, mismatchBaseQty: true, mismatch: true, zeroConfirm: true } },
 } satisfies Prisma.RcvInclude;
 
 const rcvRow = (r: Prisma.RcvGetPayload<{ include: typeof ROW_INCLUDE }>): PdaRcvRow => ({
   rcvId: r.id,
+  arrivedAt: iso(r.load.arrivedAt),
+  startedAt: iso(r.startedAt),
+  departure: departureOf(r.load),
   rcvNo: r.rcvNo,
   loadId: r.load.id,
   loadNo: r.load.loadNo,
@@ -198,8 +212,8 @@ const rcvRow = (r: Prisma.RcvGetPayload<{ include: typeof ROW_INCLUDE }>): PdaRc
 });
 
 /**
- * PDA 입고검수 — 검수 대기·검수 중·확정 차량 (2026-11-12 Sol: 검수 내역을 합침)
- * 날짜 규칙: 검수 대기·검수 중은 남은 일이라 날짜와 상관없이 모두, 확정은 그 날짜(확정 시각 KST)
+ * PDA 입고검수 — 입차 전·도착·검수 대기·검수 중·확정 차량 (2026-11-12 Sol: 검수 내역을 합침, v1.9: 입차·검수 시작 구분)
+ * 날짜 규칙: 확정 전 차량은 남은 일이라 날짜와 상관없이 모두, 확정은 그 날짜(확정 시각 KST)
  */
 export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHome | null> {
   if (!canInspect(me)) return null;
@@ -207,6 +221,7 @@ export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHo
   const day = date && date <= today ? date : today;
   const scope = rcvCenterScope(me);
   const [loads, working, done] = await Promise.all([
+    // 진행·확정 검수가 없는 상차완료 차량 — 입차 전(오는 중), 또는 입고취소 뒤 다시 검수할 차량(입차 기록 있음)
     db.load.findMany({
       where: { ...scope, status: "COMPLETED", rcvs: { none: { status: { in: [...ACTIVE_RCV] } } } },
       orderBy: [{ completedAt: "asc" }, { id: "asc" }],
@@ -215,11 +230,11 @@ export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHo
     db.rcv.findMany({ where: { ...scope, status: "WORKING" }, orderBy: { id: "desc" }, include: ROW_INCLUDE }),
     db.rcv.findMany({ where: { ...scope, status: "CONFIRMED", confirmedAt: kstDay(day) }, orderBy: [{ confirmedAt: "desc" }, { id: "desc" }], include: ROW_INCLUDE }),
   ]);
-  return {
-    today,
-    date: day,
-    waiting: loads.map((l) => ({
+  const loadRow = (l: (typeof loads)[number]): PdaRcvRow => ({
       rcvId: null,
+      arrivedAt: iso(l.arrivedAt),
+      startedAt: null,
+      departure: departureOf(l),
       rcvNo: null,
       loadId: l.id,
       loadNo: l.loadNo,
@@ -235,8 +250,15 @@ export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHo
       confirmedAt: null,
       confirmedBy: null,
       issueCount: 0,
-    })),
-    working: working.map(rcvRow),
+    });
+  const rows = working.map(rcvRow);
+  return {
+    today,
+    date: day,
+    waiting: loads.filter((l) => !l.arrivedAt).map(loadRow),
+    // 도착·검수 대기: 입차하고 첫 입력 전인 전표 + 입고취소 뒤 재검수 전 차량. 입차 순
+    arrived: [...rows.filter((r) => !r.startedAt), ...loads.filter((l) => l.arrivedAt).map(loadRow)].sort((a, b) => (a.arrivedAt ?? "").localeCompare(b.arrivedAt ?? "")),
+    working: rows.filter((r) => !!r.startedAt),
     done: done.map(rcvRow),
   };
 }
@@ -264,6 +286,7 @@ export async function pdaRcvDashboard(me: PlanActor): Promise<PdaRcvDashboard | 
   return {
     today: home.today,
     waiting: home.waiting.length,
+    arrived: home.arrived.length,
     working: home.working.length,
     done: rows.length,
     issueDone: rows.filter((r) => r.issueCount > 0).length,

@@ -12,6 +12,7 @@ import { PRE_APPROVAL, businessDateOf, expireCutoff, expireDueDate, type OffDays
 import { needsReason } from "@/domain/rcv-rules";
 import { alertDays } from "@/server/plans/inquiry";
 import { remainOf } from "@/domain/close-rules";
+import { dailyDepartBefore } from "@/domain/load-rules";
 import type { DailyView, RemainCloseRow } from "@/features/closing/types";
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -78,13 +79,14 @@ export async function listRemainClose(me: PlanActor): Promise<RemainCloseRow[]> 
 
 /* ═════════ 일마감 (정의서 ⑦·D18·D21, 2026-11-12) ═════════ */
 
-type Client = Pick<typeof db, "rcv" | "inboundPlan" | "holiday">;
+type Client = Pick<typeof db, "rcv" | "inboundPlan" | "holiday" | "load">;
 type CenterRow = { id: number; businessDayStart: string; expireGraceDays: number; weeklyOffDays: number[] };
 
 /**
  * 일마감 대상 — 화면과 실행이 같은 기준을 쓴다.
  * - 확정할 검수 실적: 그 센터의 검수 확정 건 중 아직 일마감되지 않은 것 전부(지난 업무일에 마감을 건너뛴 건·마감 뒤 확정된 건 포함)
  * - 기한경과 취소: 승인 전(승인대기·반려)이고 입고예정일 + 유예 영업일이 지금 업무일 이전(포함)인 건 (D21)
+ * - 일마감 처리(시스템) 출차: 그 센터로 오는 차량 중 출차·입차 기록이 없고 마감 업무일 전날까지 상차완료한 차량 (v1.9 ⑦·D23)
  */
 export async function dailyTargets(client: Client, c: CenterRow, now: Date = new Date()) {
   const today = businessDateOf(now, c.businessDayStart);
@@ -94,7 +96,7 @@ export async function dailyTargets(client: Client, c: CenterRow, now: Date = new
   });
   const off: OffDays = { weekly: c.weeklyOffDays, holidays: new Set(holidays.map((h) => ymd(h.date))) };
   const cutoff = expireCutoff(today, c.expireGraceDays, off);
-  const [rcvs, expire] = await Promise.all([
+  const [rcvs, expire, departs] = await Promise.all([
     client.rcv.findMany({
       where: { centerId: c.id, status: "CONFIRMED", dailyCloseId: null, confirmedAt: { lte: now } },
       orderBy: [{ confirmedAt: "asc" }, { id: "asc" }],
@@ -109,8 +111,13 @@ export async function dailyTargets(client: Client, c: CenterRow, now: Date = new
       orderBy: [{ planDate: "asc" }, { planNo: "asc" }],
       include: { client: { select: { name: true } } },
     }),
+    client.load.findMany({
+      where: { centerId: c.id, status: "COMPLETED", departedAt: null, arrivedAt: null, completedAt: { lt: dailyDepartBefore(today, c.businessDayStart) } },
+      orderBy: [{ completedAt: "asc" }, { id: "asc" }],
+      include: { client: { select: { name: true } }, asn: { select: { id: true, asnNo: true } } },
+    }),
   ]);
-  return { today, off, rcvs, expire };
+  return { today, off, rcvs, expire, departs };
 }
 
 /** 확정 수량 합계 — 입고(정상)·반송(훼손 + 품목 불일치), 기준 단위 */
@@ -128,7 +135,7 @@ export async function dailyCloseView(me: PlanActor, centerParam: string): Promis
   if (!centers.length) return null;
   const c = centers.find((x) => String(x.id) === centerParam) ?? centers[0];
   const now = new Date();
-  const [{ today, off, rcvs, expire }, closedToday, history, days] = await Promise.all([
+  const [{ today, off, rcvs, expire, departs }, closedToday, history, days] = await Promise.all([
     dailyTargets(db, c, now),
     db.dailyClose.findUnique({ where: { centerId_businessDate: { centerId: c.id, businessDate: new Date(`${businessDateOf(now, c.businessDayStart)}T00:00:00Z`) } } }),
     db.dailyClose.findMany({ where: { centerId: c.id }, orderBy: { businessDate: "desc" }, take: 14 }),
@@ -147,7 +154,9 @@ export async function dailyCloseView(me: PlanActor, centerParam: string): Promis
       businessDayStart: c.businessDayStart,
       dailyCloseTime: c.dailyCloseTime,
       expireGraceDays: c.expireGraceDays,
-      closed: closedToday ? { at: closedToday.closedAt.toISOString(), by: closedToday.closedBy, rcvCount: closedToday.rcvCount, expireCount: closedToday.expireCount } : null,
+      closed: closedToday
+        ? { at: closedToday.closedAt.toISOString(), by: closedToday.closedBy, rcvCount: closedToday.rcvCount, expireCount: closedToday.expireCount, departCount: closedToday.departCount }
+        : null,
     },
     rcvs: rcvs.map((r) => {
       const s = rcvSums(r.lines);
@@ -177,6 +186,17 @@ export async function dailyCloseView(me: PlanActor, centerParam: string): Promis
       status: p.status as "WAITING" | "REJECTED",
       dueDate: expireDueDate(ymd(p.planDate), c.expireGraceDays, off),
     })),
+    departs: departs.map((l) => ({
+      id: l.id,
+      loadNo: l.loadNo,
+      asnNo: l.asn?.asnNo ?? null,
+      vehicleNo: l.vehicleNo,
+      clientName: l.client.name,
+      loadType: l.loadType,
+      completedAt: l.completedAt!.toISOString(),
+      completedDate: businessDateOf(l.completedAt!, c.businessDayStart),
+      href: l.asn ? `/plans/asn-status/${l.asn.id}` : `/plans/loads/${l.id}`,
+    })),
     unclosedCount,
     unclosedOverdue,
     alertDays: days,
@@ -190,6 +210,7 @@ export async function dailyCloseView(me: PlanActor, centerParam: string): Promis
       goodBaseQty: h.goodBaseQty,
       returnBaseQty: h.returnBaseQty,
       expireCount: h.expireCount,
+      departCount: h.departCount,
     })),
   };
 }

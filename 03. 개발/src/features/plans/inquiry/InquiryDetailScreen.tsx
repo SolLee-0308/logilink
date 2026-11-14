@@ -10,7 +10,7 @@ import { NoteBox } from "@/components/ui/NoteBox";
 import { Timeline, type TimelineEntry } from "@/components/ui/Timeline";
 import { dday, ddayLabel } from "@/domain/plan-rules";
 import { qtyInUnit } from "@/domain/load-rules";
-import { daysBetween, elapsedDays, isOverdue, progressPct } from "@/domain/inquiry-rules";
+import { daysBetween, elapsedDays, isOverdue, progressPct, WAIT_STAGE_LABEL } from "@/domain/inquiry-rules";
 import { PLAN_ACTION_LABEL, PLAN_INPUT_METHOD_LABEL } from "@/domain/plan-status";
 import { fmtDateTime, fmtShortDateTime } from "@/lib/format";
 import { cancelApprovedPlan } from "@/server/plans/actions";
@@ -69,7 +69,7 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
     { key: "qty", header: "승인", align: "right", render: (l) => <span className="mono">{qf(l, l.baseQty)}</span> },
     {
       key: "incoming",
-      header: "오는 중",
+      header: "검수 전",
       align: "right",
       render: (l) => (d.incoming[l.lineNo] ? <b className={`${styles.incoming} mono`}>{qf(l, d.incoming[l.lineNo])}</b> : <span className="muted">–</span>),
     },
@@ -86,6 +86,8 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
     { key: "asn", header: "ASN번호", render: (v) => <span className="mono">{v.asnNo}</span> },
     { key: "qty", header: "이 입고예정에서 담은 수량", render: (v) => <span className="mono">{`${v.lineCount}줄 · ${v.qtyByUnit.map(([u, n]) => `${u} ${n.toLocaleString()}`).join(" · ")}`}</span> },
     { key: "status", header: "상태", render: (v) => <AsnStatusBadge status={v.status} /> },
+    // 입고 대기 단계 (v1.9 D27) — 상차 전·상차중·출차 대기·운송 중·도착·검수 대기·검수중
+    { key: "stage", header: "입고 대기 단계", render: (v) => (v.waitStage ? WAIT_STAGE_LABEL[v.waitStage] : <span className="muted">–</span>) },
   ];
 
   const allocColumns: Column<Alloc>[] = [
@@ -167,7 +169,7 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
                   <span className="mono">{pct}%</span>
                 </span>,
               ],
-              ["차량", d.vehicles.filter((v) => v.status !== "CANCELED").length ? `${d.vehicles.filter((v) => v.status !== "CANCELED").length}대` : "ASN 없음"],
+              ["차량", vehicleText(d.vehicles.filter((v) => v.status !== "CANCELED").length, d.unorderedCount)],
               ["메모", d.memo],
             ]}
           />
@@ -218,4 +220,11 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
       />
     </>
   );
+}
+
+/** 상단 요약 "차량" — ASN 차량 + 검수 확정으로 배분된 무지시 상차 차량(구분 표시, 2026-11-14 Sol) */
+function vehicleText(asnCount: number, unorderedCount: number) {
+  const total = asnCount + unorderedCount;
+  if (!total) return "차량 없음";
+  return `${total}대${unorderedCount ? `(무지시 ${unorderedCount}대)` : ""}`;
 }

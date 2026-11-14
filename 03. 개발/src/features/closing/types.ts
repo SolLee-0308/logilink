@@ -45,7 +45,7 @@ export interface DailyCenter {
   dailyCloseTime: string;
   expireGraceDays: number;
   /** 이 업무일 일마감 — 아직이면 null */
-  closed: { at: string; by: string; rcvCount: number; expireCount: number } | null;
+  closed: { at: string; by: string; rcvCount: number; expireCount: number; departCount: number } | null;
 }
 
 /** 이번 일마감으로 확정할 검수 실적 — 아직 일마감되지 않은 검수 확정 건 */
@@ -90,6 +90,7 @@ export interface DailyHistoryRow {
   goodBaseQty: number;
   returnBaseQty: number;
   expireCount: number;
+  departCount: number;
 }
 
 export interface DailyView {
@@ -98,9 +99,25 @@ export interface DailyView {
   center: DailyCenter;
   rcvs: DailyRcvRow[];
   expire: DailyExpireRow[];
+  /** 이번 일마감 때 일마감 처리(시스템)로 출차를 저장할 차량 (v1.9 ⑦) */
+  departs: DailyDepartRow[];
   /** 미종결 입고예정 수 · 그중 경과 기준 초과 — 일마감과 무관, 잔량 종결 탭으로 */
   unclosedCount: number;
   unclosedOverdue: number;
   alertDays: number;
   history: DailyHistoryRow[];
+}
+
+/** 이번 일마감 때 일마감 처리(시스템) 출차로 저장될 차량 — 출차·입차 기록 없이 전날까지 상차완료 (v1.9 ⑦·D23) */
+export interface DailyDepartRow {
+  id: number;
+  loadNo: string;
+  asnNo: string | null;
+  vehicleNo: string;
+  clientName: string;
+  loadType: "ORDERED" | "UNORDERED";
+  completedAt: string;
+  /** 상차완료 업무일 */
+  completedDate: string;
+  href: string;
 }

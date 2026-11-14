@@ -58,8 +58,10 @@ export interface LoadView {
   revisionNo: number;
   /** 지시 상차 + 상차완료 + 출차 전 + 검수(진행·확정)가 없을 때만 재개 가능 (무지시는 재개 안 함, 2026-11-12) */
   canReopen: boolean;
-  /** 출차 (2026-11-12 Sol) — [출차] 시각·처리자, 또는 상차완료한 업무일이 지나 자동 출차. 출차 전이면 null */
+  /** 출차 (v1.9) — 저장값. 사람([출차]) 또는 입차 처리(시스템)·일마감 처리(시스템). 출차 전이면 null */
   departure: Departure | null;
+  /** 입차 (v1.9) — 3PL 입고검수자가 PDA로 기록. 입차 전이면 null */
+  arrival: { at: string; by: string | null } | null;
   /** 상차완료 + 출차 전이면 [출차] 가능 */
   canDepart: boolean;
   /** 마지막 상차 재개 */

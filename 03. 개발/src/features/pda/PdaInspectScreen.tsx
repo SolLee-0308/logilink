@@ -2,16 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_TYPE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
 import { RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
 import { fmtDateTime } from "@/lib/format";
 import {
-  addRcvImage, addRcvInput, cancelRcvInput, confirmRcv, correctRcvInput, deleteRcvImage, previewRcvScan, reloadRcv, setRcvLineInfo, setRcvZero,
+  addRcvImage, addRcvInput, cancelRcvInput, confirmRcv, correctRcvInput, deleteRcvImage, previewRcvScan, reloadRcv, setRcvLineInfo, setRcvZero, voidRcv,
 } from "@/server/rcv/actions";
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { RcvInputView, RcvLineView, RcvScanPreview, RcvView } from "@/features/rcv/types";
 import { deviceId, takeNotice } from "./device";
-import { Icon, InfoRows, Pill } from "./PdaParts";
+import { Icon, InfoRows, Pill, Steps } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 const POLL_MS = 5000;
@@ -47,14 +47,18 @@ async function compress(file: File): Promise<string> {
  * 4) 검수 확정: 검수자·품목 합계를 보고 확정, 미입력 품목은 [돌아가서 스캔] / [남은 품목 전부 0 처리] → 자동 배분
  * 2026-11-12 Sol: 상차 작업과 같은 UI — 확정 확인·수량 경고·입력 취소는 아래에서 올라오는 창, 토스트 대신 그 품목 줄 강조,
  *   머리는 차량·상차 구분 + 짧은 상태 줄, 상차확인서·지시서·검수자는 접힌 '검수 정보', 완료 화면은 방금 확정/목록 조회 구분
+ * v1.9: 머리 아래 단계(상차완료 → 입차 → 검수 중 → 검수확정). 첫 입력 전이면 "도착·검수 대기"이고 [입차 취소](사유 필수)를 할 수 있다.
  */
 export function PdaInspectScreen({
   initial,
   reasons,
+  voidReasons = [],
   homeHref = "/pda/inspect",
 }: {
   initial: RcvView;
   reasons: ReasonOption[];
+  /** 입차 취소 사유 (ARRIVE_CANCEL) */
+  voidReasons?: ReasonOption[];
   /** [처음으로] — 들어온 메뉴의 첫 화면(대시보드 또는 조회조건을 유지한 입고검수 목록) (2026-11-13 Sol) */
   homeHref?: string;
 }) {
@@ -75,6 +79,8 @@ export function PdaInspectScreen({
   const [finishing, setFinishing] = useState(false);
   const [unentered, setUnentered] = useState<string[] | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
+  /** 입차 취소 창 — 사유 코드·상세 */
+  const [voiding, setVoiding] = useState<{ code: string; text: string } | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const working = view.status === "WORKING";
@@ -181,6 +187,26 @@ export function PdaInspectScreen({
     if (warned) setTimeout(() => qtyRef.current?.select(), 0);
   };
 
+  /** 입차 취소 (v1.9 ⑥·C11) — 첫 입력 전만. 끝나면 입고검수 첫 화면으로 */
+  const onVoid = () =>
+    start(async () => {
+      if (!voiding) return;
+      setError(null);
+      const r = await voidRcv({ rcvId: view.id, reasonCode: voiding.code, reasonText: voiding.text });
+      if (r.ok) {
+        setVoiding(null);
+        router.push(homeHref);
+        router.refresh();
+        return;
+      }
+      setError(r.error);
+      if (r.code === "STATE") {
+        setVoiding(null);
+        await reload();
+      }
+    });
+  const voidChosen = voidReasons.find((r) => r.code === voiding?.code);
+
   const onComplete = (zeroRest = false) =>
     start(async () => {
       setError(null);
@@ -225,10 +251,50 @@ export function PdaInspectScreen({
         <Pill tone={view.load.type === "ORDERED" ? "blue" : "amber"}>{LOAD_TYPE_LABEL[view.load.type]}</Pill>
       </span>
       <span className={styles.vStatus}>
-        <b>검수 중</b> · {hm(view.createdAt)} 시작 · {view.clientName}
+        {view.startedAt ? (
+          <>
+            <b>검수 중</b> · {hm(view.startedAt)} 시작 · {view.clientName}
+          </>
+        ) : (
+          <>
+            <b>도착·검수 대기</b> · {hm(view.arrivedAt)} 입차 · {view.clientName}
+          </>
+        )}
       </span>
+      {/* 단계 (v1.9): 상차완료 → 입차 → 검수 중 → 검수확정 */}
+      <Steps
+        compact
+        steps={[
+          { label: "상차완료", done: true, time: hm(view.load.completedAt) },
+          { label: "입차", done: !!view.arrivedAt, time: hm(view.arrivedAt) },
+          { label: "검수 중", done: !!view.startedAt, time: view.startedAt ? hm(view.startedAt) : undefined },
+          { label: "검수확정", done: false },
+        ]}
+      />
     </section>
   );
+
+  /* ═════════ 입차 취소된 전표 (v1.9) ═════════ */
+  if (view.status === "VOIDED") {
+    return (
+      <section className={styles.success}>
+        <h2 className={styles.successTitle}>입차를 취소한 차량입니다.</h2>
+        <p className={styles.successSub}>이 검수 전표는 쓰지 않습니다. 차량이 다시 오면 상차확인서를 스캔해 입차하세요.</p>
+        <InfoRows
+          rows={[
+            ["검수 번호", <span key="n" className="mono">{view.rcvNo}</span>],
+            ["차량번호", <span key="v" className="mono">{view.vehicleNo}</span>],
+            ["상차확인서", <span key="l" className="mono">{view.load.loadNo}</span>],
+            ["입차 취소", `${fmtDateTime(view.voided?.at ?? null)} · ${view.voided?.by ?? ""}`],
+            ["사유", `${view.voided?.reasonName ?? "-"}${view.voided?.reasonText ? ` — ${view.voided.reasonText}` : ""}`],
+          ]}
+        />
+        <button type="button" className={styles.blackPill} onClick={() => router.push(homeHref)}>
+          처음으로
+        </button>
+      </section>
+    );
+  }
 
   /* ═════════ 확정 뒤 — 결과·배분 ═════════ */
   if (!working) {
@@ -513,9 +579,18 @@ export function PdaInspectScreen({
             </button>
           </form>
         )}
-        {error && (
+        {error && !voiding && (
           <p className={styles.error} role="alert">
             {error}
+          </p>
+        )}
+        {/* 입차 취소 — 첫 입력 전에만 (잘못 스캔한 차량 등, v1.9 ⑥·C11) */}
+        {view.canVoid && !preview && (
+          <p className={styles.help}>
+            품목을 스캔하면 검수가 시작됩니다. 잘못 입차한 차량이면{" "}
+            <button type="button" className={styles.link} onClick={() => (setError(null), setVoiding({ code: "", text: "" }))} disabled={pending}>
+              입차 취소
+            </button>
           </p>
         )}
       </section>
@@ -611,6 +686,8 @@ export function PdaInspectScreen({
             ["상차확인서", <span key="l" className="mono">{view.load.loadNo}</span>],
             ["지시서", view.load.orderNo ? <span key="o" className="mono">{view.load.orderNo}</span> : "ASN 없음 (무지시)"],
             ["상차완료", hm(view.load.completedAt)],
+            ["출차", view.departure ? `${fmtDateTime(view.departure.at).slice(5, 16)} · ${view.departure.system ? DEPART_TYPE_LABEL[view.departure.type] : view.departure.by ?? "-"}` : "-"],
+            ["입차", view.arrivedAt ? `${fmtDateTime(view.arrivedAt).slice(5, 16)} · ${view.arrivedBy ?? "-"}` : "-"],
             ...(view.load.driverName ? ([["기사", view.load.driverName]] as [string, React.ReactNode][]) : []),
             ["검수자", view.workers.length ? view.workers.map((w) => w.name).join(", ") : "-"],
           ]}
@@ -636,6 +713,53 @@ export function PdaInspectScreen({
       </div>
       {finishSheet}
       {askSheet}
+      {voiding && (
+        <div className={styles.modalScrim}>
+          <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="void-title">
+            <h2 id="void-title" className={styles.h2}>
+              입차 취소
+            </h2>
+            <p className={styles.help}>
+              <b className="mono">{view.vehicleNo}</b> 입차를 취소합니다. 검수 전표도 함께 취소되고, 차량은 다시 입차 전으로 돌아갑니다. 이미 기록된 출차는 그대로 둡니다.
+            </p>
+            <label htmlFor="pda-void" className={styles.label}>
+              입차 취소 사유
+            </label>
+            <select id="pda-void" className={styles.field} value={voiding.code} onChange={(e) => setVoiding({ ...voiding, code: e.target.value })} disabled={pending} autoFocus>
+              <option value="">사유를 고르세요</option>
+              {voidReasons.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+            {voidChosen?.requiresText && (
+              <textarea
+                className={`${styles.field} ${styles.textarea}`}
+                value={voiding.text}
+                onChange={(e) => setVoiding({ ...voiding, text: e.target.value })}
+                placeholder="상세 내용 (필수)"
+                maxLength={500}
+                rows={3}
+                disabled={pending}
+              />
+            )}
+            {error && (
+              <p className={styles.error} role="alert">
+                {error}
+              </p>
+            )}
+            <div className={styles.btnRow}>
+              <button type="button" className={styles.secondary} onClick={() => (setVoiding(null), setError(null))} disabled={pending}>
+                그만두기
+              </button>
+              <button type="button" className={styles.dangerBtn} onClick={onVoid} disabled={pending || !voiding.code || (!!voidChosen?.requiresText && !voiding.text.trim())}>
+                입차 취소
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }

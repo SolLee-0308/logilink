@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/Badges";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { LINE_STATE_LABEL, LOAD_STATUS_META, LOAD_TYPE_LABEL, qtyInUnit, type LineState } from "@/domain/load-rules";
+import { LINE_STATE_LABEL, LOAD_STATUS_META, LOAD_TYPE_LABEL, departureLabel, qtyInUnit, type LineState } from "@/domain/load-rules";
 import type { StatusTone } from "@/domain/plan-status";
 import { fmtDateTime, fmtShortDateTime } from "@/lib/format";
 import { ViewSection } from "@/features/master/record";
@@ -92,17 +92,10 @@ export function LoadSection({ load }: { load: LoadView }) {
               : []),
             ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
             ["상차완료", done ? `${fmtDateTime(load.completedAt)} · ${load.completedBy}` : null],
-            // 출차 (2026-11-12 Sol) — PDA [출차], 안 누르면 상차완료한 업무일이 지나 자동 출차
-            [
-              "출차",
-              !done
-                ? null
-                : load.departure
-                  ? load.departure.auto
-                    ? `자동 출차(업무일 마감) · ${fmtDateTime(load.departure.at)}`
-                    : `${fmtDateTime(load.departure.at)} · ${load.departure.by ?? "-"}`
-                  : "출차 전",
-            ],
+            // 출차 (v1.9) — 저장값. 사람이 누른 출차는 처리자, 시스템 처리는 "입차 처리(시스템)"·"일마감 처리(시스템)"
+            ["출차", !done ? null : load.departure ? `${fmtDateTime(load.departure.at)} · ${departureLabel(load.departure)}` : "출차 전"],
+            // 입차 (v1.9) — 3PL 입고검수자가 PDA로 기록
+            ["입차", !done ? null : load.arrival ? `${fmtDateTime(load.arrival.at)} · ${load.arrival.by ?? "-"}` : "입차 전"],
           ]}
         />
         <ViewSection

@@ -15,10 +15,11 @@ import type { PlanActor } from "@/server/plans/service";
 import { resolveScan, type Resolved } from "@/server/loads/service";
 import { asDate, canInspect, rcvCenterScope, ACTIVE_RCV } from "@/server/rcv/queries";
 import { RCV_CANCEL_GROUP, RCV_DIFF_GROUP } from "@/domain/master";
+import { DEPART_TYPE_LABEL } from "@/domain/load-rules";
 import { can } from "@/domain/permissions";
 import { RCV_REVERSE_PREFIX, REVERSE_LOCKED_PLAN, planStatusAfterReverse, rcvCancelBlock } from "@/domain/rcv-cancel-rules";
-import { ASN_COUNTED, DISTRIBUTABLE_PLAN, docNoPrefix, nextDocNo, normalizeVehicleNo } from "@/domain/asn-rules";
-import { addQtyError, normalizeDocNo, normalizeScan, qtyInUnit } from "@/domain/load-rules";
+import { ASN_COUNTED, DISTRIBUTABLE_PLAN, docNoPrefix, nextDocNo } from "@/domain/asn-rules";
+import { addQtyError, normalizeScan, qtyInUnit } from "@/domain/load-rules";
 import {
   RCV_CONFLICT_MSG,
   RCV_DONE_MSG,
@@ -27,7 +28,12 @@ import {
   RCV_IMAGE_MIN,
   RCV_PREFIX,
   RCV_REASON,
+  ARRIVE_CANCEL_GROUP,
+  ENTRY_SEARCH_MIN,
   allocate,
+  arriveCancelBlock,
+  normalizeEntryQuery,
+  pickEntry,
   autoReason,
   needsReason,
   planStatusAfterReceive,
@@ -66,46 +72,74 @@ async function reasonOf(tx: Tx | typeof db, code: string) {
   return c && c.isActive ? c : null;
 }
 
-/* ═════════ 검수 시작 — 상차확인서·상차지시서 바코드 또는 차량번호 (R1 · C6) ═════════ */
+/* ═════════ 입차 — 상차확인서·상차지시서 바코드, 번호 또는 차량번호 (정의서 v1.9 ⑥ · C11 · D25) ═════════ */
 
+/**
+ * 입고검수 첫 화면의 입력 하나로 입차와 검수 진입을 함께 처리한다.
+ * - 스캔·번호를 끝까지 정확히 입력하고 일치 대상이 1건 → 바로 진입. 입차 전이면 입차(+ 입고검수 전표 생성), 입차한 차량이면 그 전표로
+ * - 일부만 입력(포함 검색)했거나 정확히 일치하는 대상이 여럿 → 후보 목록 (화면에서 골라 loadId로 다시 부른다)
+ * - 입차 때 출차 기록이 없으면 출차를 "입차 처리(시스템)"으로 같은 트랜잭션에서 저장 (④ 출차, C11)
+ * - 입고취소 뒤 재검수: 이미 입차한 차량이므로 입차 기록은 두고 새 전표만 만든다
+ */
 export async function startRcv(
   me: PlanActor,
   input: { code?: string; loadId?: number },
-): Promise<ActionResult<{ rcvId?: number; candidates?: RcvCandidate[]; notice?: string }>> {
+): Promise<ActionResult<{ rcvId?: number; candidates?: RcvCandidate[]; notice?: string; arrived?: boolean }>> {
   if (!canInspect(me)) return forbidden();
   const scope = rcvCenterScope(me);
   let loadId = input.loadId ?? null;
 
   if (!loadId) {
-    const raw = normalizeDocNo(input.code ?? "");
-    if (!raw) return fail("VALIDATION", "상차확인서·상차지시서 바코드를 스캔하거나 차량번호를 입력하세요.", { code: "스캔하거나 입력하세요." });
-    if (raw.startsWith("LD-")) {
-      const l = await db.load.findFirst({ where: { loadNo: raw, ...scope }, select: { id: true } });
-      if (!l) return fail("NOT_FOUND", `상차확인서 ${raw}을(를) 찾을 수 없습니다. 이 센터로 오는 차량인지 확인하세요.`);
-      loadId = l.id;
-    } else if (raw.startsWith("LO-")) {
-      const lo = await db.loadOrder.findUnique({ where: { orderNo: raw }, select: { status: true, asn: { select: { centerId: true } }, load: { select: { id: true } } } });
-      if (!lo || (scope.centerId && lo.asn.centerId !== scope.centerId)) return fail("NOT_FOUND", `상차지시서 ${raw}을(를) 찾을 수 없습니다. 이 센터로 오는 차량인지 확인하세요.`);
-      if (!lo.load) return fail("STATE", `아직 상차하지 않은 차량입니다(${raw}). 상차완료된 차량만 검수할 수 있습니다.`);
-      loadId = lo.load.id;
-    } else {
-      const vehicleNo = normalizeVehicleNo(input.code ?? "");
-      const loads = await db.load.findMany({
-        where: { vehicleNo, ...scope, status: "COMPLETED", rcvs: { none: { status: "CONFIRMED" } } },
-        orderBy: { completedAt: "desc" },
-        include: { client: { select: { name: true } }, center: { select: { name: true } } },
-      });
-      if (!loads.length) {
-        const working = await db.load.count({ where: { vehicleNo, ...scope, status: "WORKING" } });
-        return working
-          ? fail("STATE", `${vehicleNo} 차량은 아직 상차 중입니다. 상차완료된 차량만 검수할 수 있습니다.`)
-          : fail("NOT_FOUND", `${vehicleNo} 차량의 검수할 상차 실적이 없습니다. 차량번호를 확인하거나 상차확인서를 스캔하세요.`);
+    const q = normalizeEntryQuery(input.code ?? "");
+    if (!q) return fail("VALIDATION", "상차확인서·상차지시서 바코드를 스캔하거나 번호·차량번호를 입력하세요.", { code: "스캔하거나 입력하세요." });
+    // 문서 번호를 끝까지 정확히 입력(스캔) — 검수 확정된 차량도 찾아 안내한다
+    if (q.startsWith("LD-")) {
+      const l = await db.load.findFirst({ where: { loadNo: q, ...scope }, select: { id: true } });
+      if (l) loadId = l.id;
+    } else if (q.startsWith("LO-")) {
+      const lo = await db.loadOrder.findUnique({ where: { orderNo: q }, select: { asn: { select: { centerId: true } }, load: { select: { id: true } } } });
+      if (lo && !(scope.centerId && lo.asn.centerId !== scope.centerId)) {
+        if (!lo.load) return fail("STATE", `아직 상차하지 않은 차량입니다(${q}). 상차완료된 차량만 입차할 수 있습니다.`);
+        loadId = lo.load.id;
       }
-      if (loads.length > 1)
-        return ok("같은 차량번호로 검수할 실적이 여럿입니다. 상차확인서 번호를 확인해 고르세요.", {
-          candidates: loads.map((l) => ({ loadId: l.id, loadNo: l.loadNo, clientName: l.client.name, centerName: l.center.name, completedAt: l.completedAt?.toISOString() ?? null })),
+    }
+    if (!loadId) {
+      if (q.length < ENTRY_SEARCH_MIN) return fail("VALIDATION", `${ENTRY_SEARCH_MIN}자 이상 입력하세요.`, { code: `${ENTRY_SEARCH_MIN}자 이상 입력하세요.` });
+      const loads = await db.load.findMany({
+        where: {
+          ...scope,
+          status: "COMPLETED",
+          rcvs: { none: { status: "CONFIRMED" } },
+          OR: [{ loadNo: { contains: q } }, { loadOrder: { orderNo: { contains: q } } }, { vehicleNo: { contains: q } }],
+        },
+        orderBy: [{ completedAt: "desc" }, { id: "desc" }],
+        take: 50,
+        include: { client: { select: { name: true } }, center: { select: { name: true } }, loadOrder: { select: { orderNo: true } } },
+      });
+      const pick = pickEntry(
+        q,
+        loads.map((l) => ({ loadId: l.id, loadNo: l.loadNo, orderNo: l.loadOrder?.orderNo ?? null, vehicleNo: l.vehicleNo, l })),
+      );
+      if (pick.kind === "none") {
+        const working = await db.load.count({ where: { ...scope, status: "WORKING", OR: [{ loadNo: q }, { vehicleNo: q }] } });
+        return working
+          ? fail("STATE", `${q} 차량은 아직 상차 중입니다. 상차완료된 차량만 입차할 수 있습니다.`)
+          : fail("NOT_FOUND", `입차할 수 있는 차량이 없습니다(${q}). 번호를 확인하거나 상차확인서를 스캔하세요. 상차완료 전 차량·다른 센터로 가는 차량은 찾지 않습니다.`);
+      }
+      if (pick.kind === "list")
+        return ok(pick.exact ? "같은 번호로 찾은 차량이 여럿입니다. 상차확인서 번호를 확인해 고르세요." : `'${q}'(으)로 찾은 차량 ${pick.rows.length}대입니다. 골라 주세요.`, {
+          candidates: pick.rows.map(({ l }) => ({
+            loadId: l.id,
+            loadNo: l.loadNo,
+            orderNo: l.loadOrder?.orderNo ?? null,
+            vehicleNo: l.vehicleNo,
+            clientName: l.client.name,
+            centerName: l.center.name,
+            completedAt: l.completedAt?.toISOString() ?? null,
+            arrived: !!l.arrivedAt,
+          })),
         });
-      loadId = loads[0].id;
+      loadId = pick.row.loadId;
     }
   }
 
@@ -115,10 +149,35 @@ export async function startRcv(
       await tx.$queryRaw`SELECT id FROM tb_load_h WHERE id = ${loadId} FOR UPDATE`;
       const load = await tx.load.findUnique({ where: { id: loadId! }, include: { lines: true } });
       if (!load || !inScope(me, load)) return fail("NOT_FOUND", "상차 실적을 찾을 수 없습니다. 이 센터로 오는 차량인지 확인하세요.");
-      if (load.status !== "COMPLETED") return fail("STATE", `${load.vehicleNo} 차량은 아직 상차 중입니다. 상차완료된 차량만 검수할 수 있습니다.`);
+      if (load.status !== "COMPLETED") return fail("STATE", `${load.vehicleNo} 차량은 아직 상차 중입니다. 상차완료된 차량만 입차할 수 있습니다.`);
       const existing = await tx.rcv.findFirst({ where: { loadId: load.id, status: { in: [...ACTIVE_RCV] } } });
       if (existing?.status === "CONFIRMED") return ok("이미 검수 확정된 차량입니다.", { rcvId: existing.id, notice: RCV_DONE_MSG });
-      if (existing) return ok("검수 중인 차량에 함께 들어갑니다.", { rcvId: existing.id });
+      // 차량당 진행 중 입차 1건 — 다시 스캔하면 새 입차가 아니라 그 차량의 검수 화면으로 (v1.9)
+      if (existing) return ok(existing.startedAt ? "검수 중인 차량에 함께 들어갑니다." : "입차한 차량입니다. 검수를 이어서 하세요.", { rcvId: existing.id });
+
+      const now = new Date();
+      const arriving = !load.arrivedAt;
+      if (arriving) {
+        const departing = !load.departedAt;
+        const u = await tx.load.updateMany({
+          where: { id: load.id, status: "COMPLETED", arrivedAt: null },
+          data: {
+            arrivedAt: now, arrivedBy: me.name, arriveUserId: me.id, version: { increment: 1 },
+            ...(departing ? { departedAt: now, departedBy: me.name, departUserId: me.id, departType: "ARRIVAL" as const } : {}),
+          },
+        });
+        if (!u.count) return fail("CONFLICT", "다른 검수자가 같은 차량을 동시에 입차했습니다. 다시 스캔하세요.");
+        if (departing)
+          await tx.loadHistory.create({ data: { loadId: load.id, action: "DEPART", revisionNo: load.revisionNo, actor: me.name, actorId: me.id, at: now, reasonText: DEPART_TYPE_LABEL.ARRIVAL } });
+        await tx.loadHistory.create({ data: { loadId: load.id, action: "ARRIVE", revisionNo: load.revisionNo, actor: me.name, actorId: me.id, at: now } });
+        if (load.asnId) {
+          const asn = await tx.asn.findUniqueOrThrow({ where: { id: load.asnId } });
+          await tx.asn.update({ where: { id: asn.id }, data: { version: { increment: 1 }, updatedBy: me.name } });
+          if (departing)
+            await tx.asnHistory.create({ data: { asnId: asn.id, action: "LOAD_DEPART", version: asn.version + 1, actor: me.name, actorId: me.id, at: now, reasonText: DEPART_TYPE_LABEL.ARRIVAL } });
+          await tx.asnHistory.create({ data: { asnId: asn.id, action: "ARRIVE", version: asn.version + 1, actor: me.name, actorId: me.id, at: now } });
+        }
+      }
 
       const used = await tx.rcv.findMany({ where: { rcvNo: { startsWith: docNoPrefix(RCV_PREFIX, today) } }, select: { rcvNo: true } });
       const rcv = await tx.rcv.create({
@@ -130,13 +189,68 @@ export async function startRcv(
           vehicleNo: load.vehicleNo,
           rcvDate: asDate(today),
           createdBy: me.name,
-          // 기대수량 = 상차완료 확정 수량 (정의서 ⑥)
+          // 기대수량 = 상차완료 확정 수량 (정의서 ⑥). 검수 시작 시각은 첫 입력 때 (D26)
           lines: { create: load.lines.filter((l) => l.loadBaseQty > 0).map((l) => ({ itemId: l.itemId, expectBaseQty: l.loadBaseQty })) },
         },
       });
-      return ok(`검수를 시작합니다 · ${load.vehicleNo}`, { rcvId: rcv.id });
+      return ok(arriving ? `입차했습니다 · ${load.vehicleNo}` : `다시 검수합니다 · ${load.vehicleNo}`, { rcvId: rcv.id, arrived: arriving });
     }),
   );
+}
+
+/* ═════════ 입차 취소 — 첫 입력 전, 사유 필수 (정의서 v1.9 ⑥ · C11) ═════════ */
+
+/**
+ * 잘못 스캔한 차량 등 — 입고검수 전표를 '입차 취소'로 바꾸고(입력이 없어 실적 영향 없음) 입차 기록을 지운다.
+ * 입차 처리(시스템)로 저장된 출차는 되돌리지 않는다(출차는 되돌리기 없음). 입고취소 뒤 재검수 전표면 차량은 센터에 있으므로 입차 기록을 둔다.
+ */
+export async function voidRcv(me: PlanActor, input: { rcvId: number; reasonCode: string; reasonText?: string | null }): Promise<ActionResult> {
+  if (!canInspect(me)) return forbidden();
+  const text = input.reasonText?.trim() ?? "";
+  if (text.length > 500) return fail("VALIDATION", "상세 내용은 500자 이내로 입력하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
+  return guarded(() =>
+    db.$transaction(async (tx) => {
+      const rcv = await lockRcv(tx, input.rcvId);
+      if (!rcv || !inScope(me, rcv)) return notFound();
+      const [inputCount, zeroCount] = await Promise.all([
+        tx.rcvInput.count({ where: { rcvId: rcv.id } }),
+        tx.rcvLine.count({ where: { rcvId: rcv.id, zeroConfirm: true } }),
+      ]);
+      const block = arriveCancelBlock({ status: rcv.status, startedAt: rcv.startedAt, inputCount, zeroCount });
+      if (block) return fail("STATE", block);
+      const reason = input.reasonCode ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: ARRIVE_CANCEL_GROUP, code: input.reasonCode } } }) : null;
+      if (!reason || !reason.isActive) return fail("VALIDATION", "입차 취소 사유를 고르세요.", { reasonCode: "입차 취소 사유를 고르세요." });
+      if (reason.requiresText && !text) return fail("VALIDATION", `"${reason.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`, { reasonText: "상세 내용을 입력하세요." });
+
+      const now = new Date();
+      const u = await tx.rcv.updateMany({
+        where: { id: rcv.id, status: "WORKING", startedAt: null },
+        data: {
+          status: "VOIDED", version: { increment: 1 }, voidedAt: now, voidedBy: me.name, voidUserId: me.id,
+          voidReasonCode: reason.code, voidReasonName: reason.name, voidReasonText: text || null,
+        },
+      });
+      if (!u.count) return fail("STATE", "그사이 검수가 시작되었습니다. 화면을 새로 고치세요.");
+
+      await tx.$queryRaw`SELECT id FROM tb_load_h WHERE id = ${rcv.loadId} FOR UPDATE`;
+      const load = await tx.load.findUniqueOrThrow({ where: { id: rcv.loadId } });
+      const others = await tx.rcv.count({ where: { loadId: load.id, id: { not: rcv.id }, status: { not: "VOIDED" } } });
+      if (!others) await tx.load.update({ where: { id: load.id }, data: { arrivedAt: null, arrivedBy: null, arriveUserId: null, version: { increment: 1 } } });
+      const his = { actor: me.name, actorId: me.id, at: now, reasonCode: reason.code, reasonName: reason.name, reasonText: [`검수 ${rcv.rcvNo}`, text].filter(Boolean).join(" — ") };
+      await tx.loadHistory.create({ data: { loadId: load.id, action: "ARRIVE_CANCEL", revisionNo: load.revisionNo, ...his } });
+      if (load.asnId) {
+        const asn = await tx.asn.findUniqueOrThrow({ where: { id: load.asnId } });
+        await tx.asn.update({ where: { id: asn.id }, data: { version: { increment: 1 }, updatedBy: me.name } });
+        await tx.asnHistory.create({ data: { asnId: asn.id, action: "ARRIVE_CANCEL", version: asn.version + 1, ...his } });
+      }
+      return ok(`입차를 취소했습니다 · ${load.vehicleNo}`);
+    }),
+  );
+}
+
+/** 첫 입력(품목 스캔·0 입력) 때 검수 시작 시각을 한 번만 남긴다 (D26) */
+async function markStarted(tx: Tx, rcv: { id: number; startedAt: Date | null }) {
+  if (!rcv.startedAt) await tx.rcv.updateMany({ where: { id: rcv.id, startedAt: null }, data: { startedAt: new Date() } });
 }
 
 /* ═════════ 스캔 → 품목 ═════════ */
@@ -228,6 +342,7 @@ export async function addRcvInput(me: PlanActor, input: RcvAddInput): Promise<Ac
           ...(preset ? { reasonCode: preset.code, reasonName: preset.name } : zeroReset ? { reasonCode: null, reasonName: null, reasonText: null } : {}),
         },
       });
+      await markStarted(tx, rcv);
       const label = kind === "GOOD" ? "" : kind === "DAMAGED" ? " (훼손 반송)" : " (품목 불일치 반송)";
       return ok(`${r.itemName} +${input.qty.toLocaleString()} ${r.unit}${label}`, { inputId: row.id });
     }),
@@ -312,6 +427,7 @@ export async function setRcvZero(me: PlanActor, input: { rcvId: number; itemId: 
           ...(!input.on && line.reasonCode === RCV_REASON.MISSING ? { reasonCode: null, reasonName: null, reasonText: null } : {}),
         },
       });
+      if (input.on) await markStarted(tx, rcv);
       return ok(input.on ? `${line.item.name} — 0(미도착)으로 확인했습니다.` : `${line.item.name} — 0 확인을 풀었습니다.`);
     }),
   );
@@ -533,7 +649,7 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
 
         const r = await tx.rcv.updateMany({
           where: { id: rcv.id, status: "WORKING" },
-          data: { status: "CONFIRMED", version: { increment: 1 }, confirmedAt: new Date(), confirmedBy: me.name, confirmUserId: me.id },
+          data: { status: "CONFIRMED", version: { increment: 1 }, confirmedAt: new Date(), confirmedBy: me.name, confirmUserId: me.id, ...(rcv.startedAt ? {} : { startedAt: new Date() }) },
         });
         if (!r.count) return fail("STATE", "이미 검수 확정된 차량입니다.");
         return ok(`검수 확정 · ${rcv.rcvNo} — 입고예정 ${touchedPlans.size}건에 자동 배분했습니다.`, { rcvNo: rcv.rcvNo });

@@ -172,6 +172,28 @@ const CODE_GROUPS: {
     ],
   },
   {
+    code: "RCV_CANCEL",
+    name: "입고취소",
+    description: "검수 확정 실적 입고취소(역전표) 시 필수 (정의서 ⑥, 임시안)",
+    confirmed: false,
+    codes: [
+      ["V01", "수량 오입력"],
+      ["V02", "품목 오입력"],
+      ["V03", "화주사·차량 오선택"],
+      ["V99", "기타", true],
+    ],
+  },
+  {
+    code: "ARRIVE_CANCEL",
+    name: "입차 취소",
+    description: "입차 후 첫 입력 전 입차 취소 시 필수 (정의서 v1.9 ⑥·C11, 임시안)",
+    confirmed: false,
+    codes: [
+      ["A01", "차량 오인 스캔"],
+      ["A99", "기타", true],
+    ],
+  },
+  {
     code: "PLAN_REJECT",
     name: "입고예정 반려",
     description: "입고예정 반려 시 필수 (승인 대기 시안 임시값)",

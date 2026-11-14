@@ -2162,6 +2162,17 @@ p.askBody {
   background: var(--st-done-bg);
 }
 
+/* 도착·검수 대기 차량 카드 — 연한 파랑 바탕 + 왼쪽 파란 띠 (v1.9 입차: 입차했고 첫 입력 전) */
+.cardArrived {
+  background: color-mix(in srgb, var(--st-ok-bg) 40%, #fff);
+  border-color: color-mix(in srgb, var(--st-ok-fg) 18%, transparent);
+  border-left: 4px solid #1c7ed6;
+}
+
+.cardArrived:active {
+  background: var(--st-ok-bg);
+}
+
 /* 카드 오른쪽 위 알약 묶음 (2026-11-12 Sol: 상차완료 카드의 [차이 있음]·[출차 전]) */
 .pills {
   display: inline-flex;

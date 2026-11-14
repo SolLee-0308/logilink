@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { LOAD_TYPE_LABEL } from "@/domain/load-rules";
+import { DEPART_TYPE_LABEL, LOAD_TYPE_LABEL } from "@/domain/load-rules";
 import { dday, ddayLabel } from "@/domain/plan-rules";
 import { fmtDateTime } from "@/lib/format";
 import { startOrderedLoad, startUnorderedLoad } from "@/server/loads/actions";
@@ -338,7 +338,7 @@ export function PdaHomeScreen({
                       </span>
                       <span>
                         완료 {fmtDateTime(w.completedAt).slice(11)}
-                        {w.departure && (w.departure.auto ? " · 자동 출차" : ` · 출차 ${fmtDateTime(w.departure.at).slice(11)}`)}
+                        {w.departure && (w.departure.system ? ` · ${DEPART_TYPE_LABEL[w.departure.type]}` : ` · 출차 ${fmtDateTime(w.departure.at).slice(11)}`)}
                       </span>
                     </span>
                     <span className={styles.meta}>
