@@ -98,6 +98,8 @@ export interface ItemRow extends Audit {
   storageTemp: StorageTemp;
   expiryManaged: boolean;
   lotManaged: boolean;
+  /** 입수 — BOX 기준 품목만 저장값 (EA 기준은 uoms의 BOX 환산을 쓴다, innerQtyOf) */
+  innerQty: number | null;
   isActive: boolean;
   uoms: ItemUomRow[];
   barcodes: ItemBarcodeRow[];

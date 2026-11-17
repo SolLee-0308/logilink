@@ -137,3 +137,18 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* 입수 칸 (BOX 기준 품목, 2026-11-17 Sol) — 1 BOX = [  ] EA 한 줄 */
+.innerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: var(--fs-13);
+}
+
+.innerRow .innerInput {
+  width: 96px;
+  flex: none;
+  text-align: right;
+}

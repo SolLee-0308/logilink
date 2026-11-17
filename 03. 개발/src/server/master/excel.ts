@@ -114,6 +114,8 @@ export interface ItemExportRow {
   name: string;
   storageTemp: StorageTemp;
   baseUnit: string;
+  /** 입수 — BOX 기준 품목의 BOX 1개에 든 EA 수 (2026-11-17 Sol) */
+  innerQty: number | null;
   isActive: boolean;
   uoms: { unit: string; qty: number }[];
   barcodes: { unit: string; barcode: string }[];
@@ -127,7 +129,7 @@ export async function buildItemListExport(rows: ItemExportRow[], sheetName: stri
     { header: "품목명", key: "name", width: 28, value: (r) => r.name },
     { header: "보관온도대", key: "storageTemp", width: 10, center: true, value: (r) => STORAGE_TEMP_LABEL[r.storageTemp] },
     { header: "기준단위", key: "baseUnit", width: 9, center: true, value: (r) => r.baseUnit },
-    { header: "BOX입수", key: "boxQty", width: 9, value: (r) => r.uoms.find((u) => u.unit === "BOX" && u.unit !== r.baseUnit)?.qty ?? null },
+    { header: "BOX입수", key: "boxQty", width: 9, value: (r) => (r.baseUnit === "BOX" ? r.innerQty : (r.uoms.find((u) => u.unit === "BOX")?.qty ?? null)) },
     { header: "PLT입수", key: "pltQty", width: 9, value: (r) => r.uoms.find((u) => u.unit === "PLT" && u.unit !== r.baseUnit)?.qty ?? null },
     ...(["EA", "BOX", "PLT"] as const).map((unit) => ({
       header: `${unit}바코드`,

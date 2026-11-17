@@ -199,6 +199,9 @@ model Item {
   expiryManaged Boolean     @default(false) @map("expiry_managed")
   /// 로트 관리 품목이면 입고예정에 로트 입력 필수, 검수 시 실물과 다르면 현장 입력
   lotManaged    Boolean     @default(false) @map("lot_managed")
+  /// 입수 — BOX 1개에 든 EA 수. 기준 단위가 BOX인 품목만 저장(필수, 참고 정보 — 수량 계산에는 쓰지 않음).
+  /// EA 기준 품목의 입수는 단위 환산(BOX=n)이 대신한다 (2026-11-17 Sol)
+  innerQty      Int?        @map("inner_qty")
   isActive      Boolean     @default(true) @map("is_active")
   version       Int         @default(1)
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)

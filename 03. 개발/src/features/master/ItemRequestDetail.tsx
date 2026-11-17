@@ -16,12 +16,14 @@ import {
   SOURCE_LABEL,
   STORAGE_TEMP_LABEL,
   STORAGE_TEMPS,
+  needsInnerQty,
   normalizeAlias,
   type ItemUnit,
   type StorageTemp,
 } from "@/domain/master";
 import { fmtDateTime } from "@/lib/format";
 import { registerItemRequest, rejectItemRequest } from "@/server/master/actions";
+import { BoxBaseConfirm } from "./BoxBaseConfirm";
 import { RejectModal } from "@/features/shared/RejectModal";
 import { ItemRequestForm } from "./ItemRequestForm";
 import { REQ_LIST_KEY, reqListUrl } from "./item-request-list";
@@ -263,6 +265,10 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
   const [name, setName] = useState(row.itemName);
   const [unit, setUnit] = useState<ItemUnit>(row.unit);
   const [barcode, setBarcode] = useState(row.barcode);
+  // 입수 — 단위가 BOX면 3PL이 등록할 때 입력 (BOX 1개에 든 EA 수, 2026-11-17 Sol)
+  const [innerQty, setInnerQty] = useState("");
+  // 단위 BOX로 등록할 때 확인 창 — 요청 단위가 곧 기준 단위가 된다 (2026-11-17 Sol)
+  const [confirmBox, setConfirmBox] = useState(false);
   const [storageTemp, setStorageTemp] = useState<StorageTemp | "">(row.storageTemp ?? "");
   const [expiryManaged, setExpiryManaged] = useState(row.expiryManaged ?? false);
   const [lotManaged, setLotManaged] = useState(row.lotManaged ?? false);
@@ -288,6 +294,11 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
 
   function register(e: React.FormEvent) {
     e.preventDefault();
+    if (unit === "BOX") return setConfirmBox(true);
+    doRegister();
+  }
+
+  function doRegister() {
     act.run(
       async () => {
         const r = await registerItemRequest({
@@ -296,6 +307,7 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
           clientCode: code.trim() || null,
           itemName: name,
           unit,
+          innerQty: needsInnerQty(unit) ? (innerQty === "" ? null : Number(innerQty)) : null,
           barcode,
           storageTemp: storageTemp as StorageTemp,
           expiryManaged,
@@ -315,6 +327,14 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
   // 반려 모달은 폼 밖에 둔다 — 모달 안 제출이 React 트리를 따라 등록 폼으로 올라가지 않게
   return (
     <>
+    <BoxBaseConfirm
+      open={confirmBox}
+      onCancel={() => setConfirmBox(false)}
+      onConfirm={() => {
+        setConfirmBox(false);
+        doRegister();
+      }}
+    />
     <form className={styles.card} aria-label="등록할 품목" noValidate onSubmit={register}>
       <div className={styles.cardHead}>
         <h2>
@@ -361,6 +381,20 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
               ))}
             </Select>
           </FormField>
+          {needsInnerQty(unit) && (
+            <FormField label="입수" htmlFor="r-inner" required hint="BOX 1개에 든 낱개(EA) 수 — 화주사에 확인해 입력합니다." error={act.fieldErrors.innerQty}>
+              <Input
+                id="r-inner"
+                className="mono"
+                inputMode="numeric"
+                value={innerQty}
+                onChange={(e) => setInnerQty(e.target.value.replace(/[^\d]/g, ""))}
+                maxLength={6}
+                autoComplete="off"
+                placeholder="예: 6"
+              />
+            </FormField>
+          )}
           <Full>
             <FormField label="품목명" htmlFor="r-name" required hint={orig(row.itemName, name)} error={act.fieldErrors.itemName}>
               <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} />

@@ -157,6 +157,7 @@ export async function listItems(id?: number, clientId?: number): Promise<ItemRow
     storageTemp: r.storageTemp,
     expiryManaged: r.expiryManaged,
     lotManaged: r.lotManaged,
+    innerQty: r.innerQty,
     isActive: r.isActive,
     uoms: r.uoms.map((u) => ({ unit: u.unit, qty: u.qty })).sort((a, b) => a.qty - b.qty || UNIT_ORDER[a.unit] - UNIT_ORDER[b.unit]),
     barcodes: r.barcodes
