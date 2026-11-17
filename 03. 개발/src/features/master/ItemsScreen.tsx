@@ -4,19 +4,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
-import { LinkButton, CreateButton } from "@/components/ui/Button";
+import { LinkButton, CreateButton, DownloadButton } from "@/components/ui/Button";
+import { itemFilterParams, matchItem } from "@/domain/item-list-filter";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { ClientPicker } from "@/features/plans/ClientFinder";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
 import { ALIAS_SOURCE_LABEL, STORAGE_TEMP_LABEL, STORAGE_TEMPS, type StorageTemp } from "@/domain/master";
-import { includesText } from "@/lib/format";
 import { itemsTitle } from "@/domain/master";
 import { LastChanged } from "./history";
 import { ViewSection } from "./record";
 import { RULES } from "./rules";
-import { ACTIVE_OPTIONS, MasterHeader, matchActive, type ActiveFilter } from "./shared";
+import { ACTIVE_OPTIONS, MasterHeader, type ActiveFilter } from "./shared";
 import type { ClientOption, ItemRow, ItemUomRow } from "./types";
 import recordStyles from "./ClientsScreen.module.css";
 import styles from "./ItemsScreen.module.css";
@@ -117,17 +117,9 @@ export function ItemsScreen({
   const singleClient = clients.length <= 1;
   const title = itemsTitle(canEdit);
 
-  const list = useMemo(
-    () =>
-      rows.filter(
-        (r) =>
-          (!clientId || r.clientId === Number(clientId)) &&
-          (temp === "all" || r.storageTemp === temp) &&
-          matchActive(active, r.isActive) &&
-          includesText([r.code, r.clientCode ?? "", r.name, ...r.barcodes.map((b) => b.barcode), ...r.aliases.map((a) => a.alias)], q),
-      ),
-    [rows, clientId, temp, active, q],
-  );
+  // 엑셀 다운로드와 같은 규칙으로 거른다 (U58)
+  const filter = { client: clientId, temp, active, q };
+  const list = useMemo(() => rows.filter((r) => matchItem(r, { client: clientId, temp, active, q })), [rows, clientId, temp, active, q]);
   // 걸러진 목록에 선택 품목이 없으면 첫 행을 보여 준다
   const activeId = selected !== null && list.some((r) => r.id === selected) ? selected : (list[0]?.id ?? null);
   const current = activeId === null ? null : (rows.find((r) => r.id === activeId) ?? null);
@@ -287,7 +279,16 @@ export function ItemsScreen({
         collapsible
         list={
           <>
-            <ListToolbar total={list.length} />
+            <ListToolbar total={list.length}>
+              {/* 조회 결과만 내려받기 — 3PL은 고른 화주사, 화주사는 자기 품목 (U58, 2026-11-15 Sol) */}
+              <DownloadButton
+                href={`/master/items/export?${itemFilterParams(filter).toString()}`}
+                disabled={needClient || loading || list.length === 0}
+                title={needClient ? "화주사를 먼저 고르세요." : list.length === 0 ? "내려받을 품목이 없습니다." : "지금 조회된 품목을 엑셀로 내려받습니다."}
+              >
+                엑셀 다운로드
+              </DownloadButton>
+            </ListToolbar>
             <DataTable
               caption={`${title} 목록`}
               columns={columns}

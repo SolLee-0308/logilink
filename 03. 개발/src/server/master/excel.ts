@@ -1,5 +1,6 @@
 import "server-only";
 import ExcelJS from "exceljs";
+import { STORAGE_TEMP_LABEL, type StorageTemp } from "@/domain/master";
 import { BULK_MAX_ROWS, columnsOf, isExampleRow, mapColumns, missingHeaderMessage, type BulkColumn, type BulkKind, type RawRow } from "@/domain/item-bulk";
 
 /**
@@ -100,6 +101,64 @@ export async function buildSheetTemplate(spec: SheetSpec): Promise<Buffer> {
   guide.addRow({ h: "공통", n: `첫 번째 시트의 2행부터 입력합니다. 예시 행은 지우거나 덮어쓰세요. 한 번에 최대 ${spec.maxRows.toLocaleString()}행까지 올릴 수 있습니다.` });
   for (const n of spec.guide) guide.addRow({ h: "", n });
 
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+/**
+ * 품목 목록 엑셀 다운로드 (U58, 2026-11-15 Sol) — 화면 조회조건에 걸린 품목만, 내려받기 전용(다시 올리기 없음)
+ * 열: 품목코드 · 화주사 품목코드 · 품목명 · 보관온도대 · 단위별 입수(기준단위·BOX·PLT) · 단위별 바코드 · 별칭 · 사용여부
+ */
+export interface ItemExportRow {
+  code: string;
+  clientCode: string | null;
+  name: string;
+  storageTemp: StorageTemp;
+  baseUnit: string;
+  isActive: boolean;
+  uoms: { unit: string; qty: number }[];
+  barcodes: { unit: string; barcode: string }[];
+  aliases: { alias: string }[];
+}
+
+export async function buildItemListExport(rows: ItemExportRow[], sheetName: string): Promise<Buffer> {
+  const cols: { header: string; key: string; width: number; text?: boolean; center?: boolean; value: (r: ItemExportRow) => string | number | null }[] = [
+    { header: "품목코드", key: "code", width: 14, text: true, center: true, value: (r) => r.code },
+    { header: "화주사 품목코드", key: "clientCode", width: 16, text: true, value: (r) => r.clientCode ?? "" },
+    { header: "품목명", key: "name", width: 28, value: (r) => r.name },
+    { header: "보관온도대", key: "storageTemp", width: 10, center: true, value: (r) => STORAGE_TEMP_LABEL[r.storageTemp] },
+    { header: "기준단위", key: "baseUnit", width: 9, center: true, value: (r) => r.baseUnit },
+    { header: "BOX입수", key: "boxQty", width: 9, value: (r) => r.uoms.find((u) => u.unit === "BOX" && u.unit !== r.baseUnit)?.qty ?? null },
+    { header: "PLT입수", key: "pltQty", width: 9, value: (r) => r.uoms.find((u) => u.unit === "PLT" && u.unit !== r.baseUnit)?.qty ?? null },
+    ...(["EA", "BOX", "PLT"] as const).map((unit) => ({
+      header: `${unit}바코드`,
+      key: `${unit.toLowerCase()}Barcode`,
+      width: 18,
+      text: true,
+      value: (r: ItemExportRow) => r.barcodes.filter((b) => b.unit === unit).map((b) => b.barcode).join(", "),
+    })),
+    { header: "별칭", key: "aliases", width: 28, value: (r) => r.aliases.map((a) => a.alias).join(", ") },
+    { header: "사용여부", key: "isActive", width: 9, center: true, value: (r) => (r.isActive ? "사용" : "사용 안 함") },
+  ];
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "LogiLink";
+  const ws = wb.addWorksheet(sheetName.slice(0, 31), { views: [{ state: "frozen", ySplit: 1 }] });
+  ws.columns = cols.map((c) => ({ header: c.header, key: c.key, width: fitWidth(c.width, c.header) }));
+  // 코드·바코드는 앞자리 0이 사라지거나 지수로 바뀌지 않게 텍스트 서식
+  cols.forEach((c, i) => {
+    const col = ws.getColumn(i + 1);
+    if (c.text) col.numFmt = "@";
+    if (c.center) col.alignment = { horizontal: "center" };
+  });
+  const head = ws.getRow(1);
+  head.height = 22;
+  head.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FF18181B" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE4E4E7" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" }; // 열 제목은 항상 가운데
+  });
+  for (const r of rows) ws.addRow(Object.fromEntries(cols.map((c) => [c.key, c.value(r)])));
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cols.length } };
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 

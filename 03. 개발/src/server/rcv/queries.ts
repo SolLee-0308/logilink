@@ -10,7 +10,7 @@ import { can } from "@/domain/permissions";
 import type { ItemUnit } from "@/domain/master";
 import { departureOf, qtyInUnit } from "@/domain/load-rules";
 import { lineDiff, needsReason, rcvLineState } from "@/domain/rcv-rules";
-import { todayKst } from "@/lib/format";
+import { DEFAULT_BUSINESS_DAY_START, businessDateOf, businessDayRange } from "@/domain/business-day";
 import type { PdaRcvDashboard, PdaRcvHistory, PdaRcvHome, PdaRcvRow, RcvLineView, RcvView } from "@/features/rcv/types";
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
@@ -23,6 +23,16 @@ export const kstDay = (s: string) => {
 };
 
 export const canInspect = (me: PlanActor) => can(me.roles, "inspection", "edit");
+
+/**
+ * 검수자의 "오늘" = 소속 센터 업무일 (2026-11-17 Sol: 웹 대시보드와 같은 기준).
+ * 업무일 시작(기본 06:00) 전 새벽 확정은 전날 업무일로 센다. 센터가 없는 계정은 기본 시작 시각.
+ */
+async function rcvDayStart(me: Pick<PlanActor, "centerId">): Promise<string> {
+  if (!me.centerId) return DEFAULT_BUSINESS_DAY_START;
+  const c = await db.center.findUnique({ where: { id: me.centerId }, select: { businessDayStart: true } });
+  return c?.businessDayStart ?? DEFAULT_BUSINESS_DAY_START;
+}
 
 /** 검수자 범위 — 소속 센터 차량만, 센터가 없는 계정은 전체 (U19와 같은 기준) */
 export const rcvCenterScope = (me: Pick<PlanActor, "centerId">): { centerId?: number } => (me.centerId ? { centerId: me.centerId } : {});
@@ -217,7 +227,8 @@ const rcvRow = (r: Prisma.RcvGetPayload<{ include: typeof ROW_INCLUDE }>): PdaRc
  */
 export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHome | null> {
   if (!canInspect(me)) return null;
-  const today = todayKst();
+  const start = await rcvDayStart(me);
+  const today = businessDateOf(new Date(), start);
   const day = date && date <= today ? date : today;
   const scope = rcvCenterScope(me);
   const [loads, working, done] = await Promise.all([
@@ -228,7 +239,7 @@ export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHo
       include: { client: { select: { name: true } }, center: { select: { name: true } }, loadOrder: { select: { orderNo: true } }, _count: { select: { lines: true } } },
     }),
     db.rcv.findMany({ where: { ...scope, status: "WORKING" }, orderBy: { id: "desc" }, include: ROW_INCLUDE }),
-    db.rcv.findMany({ where: { ...scope, status: "CONFIRMED", confirmedAt: kstDay(day) }, orderBy: [{ confirmedAt: "desc" }, { id: "desc" }], include: ROW_INCLUDE }),
+    db.rcv.findMany({ where: { ...scope, status: "CONFIRMED", confirmedAt: businessDayRange(day, start) }, orderBy: [{ confirmedAt: "desc" }, { id: "desc" }], include: ROW_INCLUDE }),
   ]);
   const loadRow = (l: (typeof loads)[number]): PdaRcvRow => ({
       rcvId: null,
@@ -263,35 +274,36 @@ export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHo
   };
 }
 
-/** 검수 내역 — 그 날짜(확정 시각, KST)에 확정한 차량, 최근이 앞 */
+/** 검수 내역 — 그 업무일(확정 시각, 센터 업무일 기준)에 확정한 차량, 최근이 앞 */
 export async function pdaRcvHistory(me: PlanActor, date: string): Promise<PdaRcvHistory | null> {
   if (!canInspect(me)) return null;
+  const start = await rcvDayStart(me);
   const rows = await db.rcv.findMany({
-    where: { ...rcvCenterScope(me), status: "CONFIRMED", confirmedAt: kstDay(date) },
+    where: { ...rcvCenterScope(me), status: "CONFIRMED", confirmedAt: businessDayRange(date, start) },
     orderBy: [{ confirmedAt: "desc" }, { id: "desc" }],
     include: ROW_INCLUDE,
   });
-  return { date, today: todayKst(), rows: rows.map(rcvRow) };
+  return { date, today: businessDateOf(new Date(), start), rows: rows.map(rcvRow) };
 }
 
-/** 입고검수자 대시보드 — 오늘 검수 대기·검수 중·확정·이상 있음, 내 입력 건수 (임시안 U45-⑦) */
+/**
+ * 입고검수자 대시보드 (임시안 U45-⑦, 2026-11-17 Sol 재구성) — 센터 업무일 기준.
+ * 진행률 = 오늘 도착한 차량(도착·검수 대기 + 검수 중 + 확정) 중 확정. 입차 전(오는 중)은 보조 글로만.
+ */
 export async function pdaRcvDashboard(me: PlanActor): Promise<PdaRcvDashboard | null> {
   const home = await pdaRcvHome(me);
   if (!home) return null;
-  const [done, myInputs] = await Promise.all([
-    db.rcv.findMany({ where: { ...rcvCenterScope(me), status: "CONFIRMED", confirmedAt: kstDay(home.today) }, orderBy: { confirmedAt: "desc" }, include: ROW_INCLUDE }),
-    db.rcvInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: kstDay(home.today).gte } } }),
-  ]);
-  const rows = done.map(rcvRow);
+  const start = await rcvDayStart(me);
+  const myInputs = await db.rcvInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: businessDayRange(home.today, start).gte } } });
   return {
     today: home.today,
     waiting: home.waiting.length,
     arrived: home.arrived.length,
     working: home.working.length,
-    done: rows.length,
-    issueDone: rows.filter((r) => r.issueCount > 0).length,
+    done: home.done.length,
+    issueDone: home.done.filter((r) => r.issueCount > 0).length,
     myInputs,
-    recent: rows.slice(0, 3),
+    recent: home.done.slice(0, 3),
   };
 }
 

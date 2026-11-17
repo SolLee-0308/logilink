@@ -2323,3 +2323,31 @@ p.askBody {
   font-size: var(--fs-12);
   font-weight: 600;
 }
+
+/* 상차담당 대시보드 '출차 전' 줄 (2026-11-17 Sol) — 상차완료했고 아직 출발 안 한 차량. 승인대기 노랑 톤 */
+.departStrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #e6c860;
+  border-radius: var(--r-group);
+  background: var(--st-wait-bg);
+  color: var(--st-wait-fg);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+
+.departStrip b {
+  font-weight: 700;
+}
+
+.departStrip .departNote {
+  font-size: var(--fs-12);
+}
+
+.departStrip .departGo {
+  margin-left: auto;
+  display: inline-flex;
+}

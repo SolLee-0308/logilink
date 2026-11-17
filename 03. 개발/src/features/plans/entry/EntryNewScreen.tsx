@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ModeSwitch } from "@/components/ui/ModeSwitch";
 import { useToast } from "@/components/ui/Toast";
@@ -95,6 +94,8 @@ function DropZone({
   title,
   help,
   fileName,
+  moreText = "다른 파일을 끌어다 놓거나",
+  moreLabel = "파일 다시 고르기",
   invalid,
   onFiles,
 }: {
@@ -106,6 +107,10 @@ function DropZone({
   help: string;
   /** 고른 파일 이름 — 있으면 연보라 바탕에 이름을 보여 준다 (품목 등록 요청 엑셀과 같은 모양) */
   fileName?: string;
+  /** 고른 뒤 안내 — 기본은 "다른 파일을 끌어다 놓거나 [파일 다시 고르기]" (이미지는 추가 방식이라 바꿔 쓴다) */
+  moreText?: string;
+  /** 고른 뒤 링크 글자 — 없으면 링크를 숨긴다 */
+  moreLabel?: string;
   invalid?: boolean;
   onFiles: (files: File[]) => void;
 }) {
@@ -161,10 +166,15 @@ function DropZone({
         <>
           <strong className={styles.dropName}>{fileName}</strong>
           <span className="muted">
-            다른 파일을 끌어다 놓거나{" "}
-            <label htmlFor={id} className={styles.pick}>
-              파일 다시 고르기
-            </label>
+            {moreText}
+            {moreLabel && (
+              <>
+                {" "}
+                <label htmlFor={id} className={styles.pick}>
+                  {moreLabel}
+                </label>
+              </>
+            )}
           </span>
         </>
       ) : (
@@ -415,12 +425,31 @@ function AiTab({ options, onSaved, onCancel }: { options: EntryOptions; onSaved:
 
   return (
     <div className={styles.body}>
-      <Step
+      {/* 엑셀 업로드 탭과 같은 단계 카드: 번호 상태 색, 고른 뒤 연보라 영역, [판독]은 카드 아래 (2026-11-15 Sol) */}
+      <BulkStep
         no={1}
         title="이미지 올리기"
-        description={`카카오톡·이메일로 받은 거래명세서·발주서·메시지 캡처를 올립니다. 한 입고예정에 해당하는 이미지만, 최대 ${AI_MAX_IMAGES}장.`}
+        state="current"
+        description={`카카오톡·이메일로 받은 거래명세서·발주서·메시지 캡처를 올립니다. 한 입고예정에 해당하는 이미지만, 최대 ${AI_MAX_IMAGES}장 · 판독만으로는 저장되지 않습니다`}
+        footer={
+          <Button variant="primary" onClick={read} disabled={busy || !files.length}>
+            {busy ? "판독 중… (최대 1분)" : files.length ? `이미지 ${files.length.toLocaleString()}장 판독` : "이미지 판독"}
+          </Button>
+        }
       >
-        <DropZone id="pe-images" accept="image/jpeg,image/png,image/webp,image/gif" multiple busy={busy} title="이미지를 이 영역에 끌어다 놓으세요" help={`JPG·PNG·WEBP, 최대 ${AI_MAX_IMAGES}장`} onFiles={onFiles} />
+        <DropZone
+          id="pe-images"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          multiple
+          busy={busy}
+          title="이미지를 이 영역에 끌어다 놓으세요"
+          help={`JPG·PNG·WEBP, 최대 ${AI_MAX_IMAGES}장`}
+          fileName={files.length ? `이미지 ${files.length.toLocaleString()}장 / 최대 ${AI_MAX_IMAGES}장` : undefined}
+          moreLabel={files.length < AI_MAX_IMAGES ? "이미지 추가" : undefined}
+          moreText={files.length < AI_MAX_IMAGES ? "이미지를 더 끌어다 놓거나" : `최대 ${AI_MAX_IMAGES}장을 모두 올렸습니다. 바꾸려면 아래에서 이미지를 빼세요`}
+          invalid={!!error}
+          onFiles={onFiles}
+        />
         {files.length > 0 && (
           <ul className={styles.thumbs} aria-label="올린 이미지">
             {files.map((f, i) => (
@@ -449,14 +478,10 @@ function AiTab({ options, onSaved, onCancel }: { options: EntryOptions; onSaved:
             {error}
           </p>
         )}
-      </Step>
-      <Step no={2} title="판독 후 확인" description="AI가 품목과 수량을 읽어 편집 화면에 채웁니다. 원본 이미지와 대조해 확인 필요 줄을 고친 뒤 저장합니다.">
-        <div>
-          <Button variant="primary" onClick={read} disabled={busy || !files.length}>
-            {busy ? "판독 중… (최대 1분)" : `이미지 ${files.length.toLocaleString()}장 판독`}
-          </Button>
-        </div>
-      </Step>
+      </BulkStep>
+      <BulkStep no={2} title="편집 화면에서 확인 후 저장" state="todo" description="센터·입고예정일을 고르고 원본 이미지와 대조해 확인 필요 줄을 고친 뒤 저장합니다">
+        <p className={styles.placeholder}>이미지를 올리고 [판독]을 누르면 AI가 품목과 수량을 읽어 마스터와 맞춘 뒤 편집 화면에 채웁니다.</p>
+      </BulkStep>
     </div>
   );
 }
@@ -490,14 +515,6 @@ function SourceImages({ images }: { images: { name: string; url: string }[] }) {
         </div>
       )}
     </section>
-  );
-}
-
-function Step({ no, title, description, children }: { no: number; title: string; description: string; children: React.ReactNode }) {
-  return (
-    <Card step={no} title={title} description={description} label={`${no}단계 ${title}`}>
-      {children}
-    </Card>
   );
 }
 

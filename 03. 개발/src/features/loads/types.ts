@@ -146,6 +146,8 @@ export interface PdaLoadDashboard {
   done: number;
   unorderedDone: number;
   diffDone: number;
+  /** 상차완료했고 아직 출차·입차 기록이 없는 차량 — 날짜 무관 (2026-11-17 Sol, 저녁 상차 → 다음 날 출발 포함) */
+  notDeparted: number;
   myInputs: number;
   recent: PdaWorkingRow[];
 }

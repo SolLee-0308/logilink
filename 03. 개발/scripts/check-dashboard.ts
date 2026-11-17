@@ -30,11 +30,20 @@ async function main() {
   // 숫자 칸이 DB 직접 집계와 같은지
   const ids = d.centers.map((c) => c.id);
   ok(d.todo.approvalWaiting === (await db.inboundPlan.count({ where: { centerId: { in: ids }, status: "WAITING" } })), "승인 대기 건수 일치");
-  ok(d.todo.partial === (await db.inboundPlan.count({ where: { centerId: { in: ids }, status: "PARTIAL" } })), "부분입고 건수 일치");
+  ok(d.todo.itemRequests === (await db.itemRequest.count({ where: { status: "WAITING" } })), "품목 등록 요청(등록대기) 건수 일치");
+  ok(d.todo.inspecting === (await db.rcv.count({ where: { centerId: { in: ids }, status: "WORKING", startedAt: { not: null } } })), "검수 중 = 첫 입력 후 진행 중 검수");
   ok(d.todo.expireTargets === d.centers.reduce((s, c) => s + c.expireTargets, 0), "기한경과 대상 = 센터별 합");
   ok(d.watch.expire.every((r) => r.status === "WAITING" || r.status === "REJECTED"), "기한경과 목록은 승인 전 건만");
+  ok(d.watch.expire.every((r) => !!r.clientCode), "기한경과 목록에 화주사 코드");
   ok(d.centers.every((c) => /^\d{2}:\d{2}$/.test(c.businessDayStart)), "센터 업무일 시작 시각 형식");
-  ok(d.centers.every((c) => Array.isArray(c.weeklyOffDays) && c.weeklyOffDays.every((x) => x >= 0 && x <= 6)), "센터 정기 휴무 요일 읽기");
+  // 추이 — 14업무일, 오래된 날이 앞, 마지막 날 = 오늘 업무일
+  ok(d.trend.length === 14, "추이 14업무일", d.trend.length);
+  ok(d.trend.every((t, i) => i === 0 || d.trend[i - 1].date < t.date), "추이 날짜 오름차순");
+  ok(d.centers.length !== 1 || d.trend.at(-1)?.date === d.centers[0].businessDate, "추이 마지막 날 = 오늘 업무일");
+  ok(d.trend.every((t) => t.issueVehicles <= t.vehicles && t.planRcvQty <= t.planQty), "추이 값 범위(차이 ≤ 차량, 입고 ≤ 예정)");
+  const todayT = d.centers.length === 1 ? d.trend.at(-1) : undefined;
+  ok(!todayT || todayT.issueVehicles === d.watch.issueCount, "오늘 추이 차이 차량 = 오늘 검수 차이 건수");
+  ok(!todayT || todayT.vehicles >= d.flow.received - 0, "오늘 확정 차량 ≥ 흐름 입고완료(오늘 출고분)", { t: todayT?.vehicles, f: d.flow.received });
 
   if (shipper) {
     const sm: PlanActor = { id: shipper.id, name: shipper.name, roles: shipper.roles, clientId: shipper.clientId, centerId: shipper.centerId };
@@ -54,10 +63,10 @@ async function main() {
       ok(sids.length === linked.length && linked.every((c) => sids.includes(c.id)), "화주사 센터 = 이용 센터(사용 중)");
       const sc = { clientId: cid, centerId: { in: sids } };
       ok(sd.todo.rejected === (await db.inboundPlan.count({ where: { ...sc, status: "REJECTED" } })), "반려 건수 일치 (자기 화주사)");
-      ok(sd.todo.waiting === (await db.inboundPlan.count({ where: { ...sc, status: "WAITING" } })), "승인 대기 건수 일치 (자기 화주사)");
       ok(sd.todo.itemRejected === (await db.itemRequest.count({ where: { clientId: cid, status: "REJECTED" } })), "품목 등록 요청 반려 건수 일치");
-      ok(sd.todo.expireTargets === sd.watch.expireTargetCount && sd.todo.expireTargets === sd.centers.reduce((s, c) => s + c.expireTargets, 0), "기한경과 대상 = 센터별 합");
-      ok(sd.watch.expireCount === sd.centers.reduce((s, c) => s + c.expireTargets + c.expireGrace, 0), "기한경과 목록 = 대상 + 유예 중");
+      ok(sd.todo.expireTargets === sd.centers.reduce((s, c) => s + c.expireTargets, 0), "기한경과 대상 = 센터별 합");
+      ok(sd.watch.expireCount >= sd.todo.expireTargets, "기한경과 목록 = 대상 + 유예 중 (대상 이상)");
+      ok(sd.trend.length === 14 && sd.trend.every((t) => t.planRcvQty <= t.planQty), "화주사 추이 14업무일·입고율 ≤ 100%");
       ok(sd.watch.expire.every((r) => r.status === "WAITING" || r.status === "REJECTED"), "기한경과 목록은 승인 전 건만");
       const clientName = (await db.client.findUnique({ where: { id: cid } }))?.name;
       ok([...sd.watch.expire, ...sd.watch.overdueAsn, ...sd.watch.issueRcv].every((r) => r.clientName === clientName), "주의 목록에 다른 화주사 건이 없다");

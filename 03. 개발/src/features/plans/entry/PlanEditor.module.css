@@ -107,6 +107,12 @@
   background: color-mix(in srgb, var(--st-wait-bg, #fff7e0) 45%, transparent);
 }
 
+/* 확인 필요(값은 있지만 틀렸을 수 있음) — 빨강 계열, 1줄이라도 있으면 저장 불가 (2026-11-15 Sol) */
+.flaggedCheck td,
+.flaggedCheck + .errRow td {
+  background: color-mix(in srgb, var(--st-rej-bg, #fde7e7) 70%, transparent);
+}
+
 .req {
   color: var(--st-rej-fg);
 }
@@ -156,13 +162,24 @@
   font-size: var(--fs-12);
 }
 
+/* 원본 글(엑셀·판독) 줄 — 높이를 고정해 두고, 다른 칸은 같은 만큼 내려 입력칸 시작점을 맞춘다 (2026-11-15 Sol) */
 .origin {
   display: flex;
   align-items: center;
   gap: 6px;
+  height: 22px;
   margin-bottom: 6px;
   min-width: 0;
+  overflow: hidden;
   font-size: var(--fs-12);
+}
+
+.hasOrigin td:not(.cItem) {
+  padding-top: calc(10px + 28px);
+}
+
+.hasOrigin .cNo {
+  padding-top: calc(18px + 28px) !important;
 }
 
 .originLabel {
@@ -260,6 +277,24 @@
   font-size: var(--fs-12);
 }
 
+/* 중복 줄 [한 줄로 합치기] — 오류 문장 오른쪽 (2026-11-15 Sol) */
+.mergeBtn {
+  float: right;
+  margin-left: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--st-rej-fg);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--st-rej-fg);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mergeBtn:hover {
+  background: var(--st-rej-bg);
+}
+
 .emptyRow {
   padding: 20px;
   text-align: center;
@@ -350,6 +385,12 @@
 
 .itemBtnInvalid {
   border-color: var(--st-rej-fg);
+}
+
+/* 품목 미매칭 — 칸 안 안내를 빨간 글씨로 (2026-11-15 Sol) */
+.itemBtnEmpty.itemBtnMissing .itemBtnText {
+  color: var(--st-rej-fg);
+  font-weight: 500;
 }
 
 .itemBtnText {

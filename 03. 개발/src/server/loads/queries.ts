@@ -249,8 +249,12 @@ export async function pdaLoadDashboard(me: PlanActor): Promise<PdaLoadDashboard 
   const home = await pdaHome(me);
   if (!home) return null;
   const start = new Date(`${home.today}T00:00:00+09:00`);
-  const myInputs = await db.loadInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: start } } });
+  const [myInputs, notDeparted] = await Promise.all([
+    db.loadInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: start } } }),
+    db.load.count({ where: { clientId: me.clientId!, status: "COMPLETED", departedAt: null, arrivedAt: null } }),
+  ]);
   return {
+    notDeparted,
     today: home.today,
     todo: home.orders.filter((o) => !o.loadId).length,
     working: home.working.length,
