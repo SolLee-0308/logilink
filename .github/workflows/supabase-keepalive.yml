@@ -37,5 +37,11 @@ jobs:
           fi
           # Prisma 전용 주소 옵션(?pgbouncer=true 등)은 psql이 읽지 못하므로 뗀다
           URL="${DB_URL%%\?*}"
+          # 비밀번호에 @가 그대로 있으면 psql이 주소를 잘못 읽으므로, 마지막 @ 앞(계정·비밀번호)의 @를 %40으로 바꾼다
+          SCHEME="${URL%%://*}://"
+          REST="${URL#*://}"
+          CREDS="${REST%@*}"
+          HOST="${REST##*@}"
+          URL="${SCHEME}${CREDS//@/%40}@${HOST}"
           PGSSLMODE=require PGCONNECT_TIMEOUT=20 psql "$URL" -v ON_ERROR_STOP=1 -qtAc \
             "set default_transaction_read_only = on; select 'ok ' || now()::text;"
