@@ -1,0 +1,41 @@
+# Supabase 무료 플랜 일시 정지 방지 — 사흘마다 운영·시연 DB에 간단한 조회(select 1)를 보낸다.
+# 데이터는 읽기만 하고 바꾸지 않는다.
+# 필요한 저장소 Secrets(Settings → Secrets and variables → Actions):
+#   SUPABASE_PROD_DB_URL  = 03. 개발/.env 의 DIRECT_URL 값
+#   SUPABASE_DEMO_DB_URL  = 03. 개발/.env.demo 의 DIRECT_URL 값
+# 수동 실행: Actions 탭 → "Supabase keep-alive" → Run workflow
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "0 0 */3 * *" # 사흘마다 09:00 KST (UTC 00:00)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: 운영
+            secret: SUPABASE_PROD_DB_URL
+          - target: 시연
+            secret: SUPABASE_DEMO_DB_URL
+    steps:
+      - name: ${{ matrix.target }} DB 조회
+        env:
+          DB_URL: ${{ secrets[matrix.secret] }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::error::${{ matrix.secret }} Secret이 등록되지 않았습니다."
+            exit 1
+          fi
+          # Prisma 전용 주소 옵션(?pgbouncer=true 등)은 psql이 읽지 못하므로 뗀다
+          URL="${DB_URL%%\?*}"
+          PGSSLMODE=require PGCONNECT_TIMEOUT=20 psql "$URL" -v ON_ERROR_STOP=1 -qtAc \
+            "set default_transaction_read_only = on; select 'ok ' || now()::text;"
