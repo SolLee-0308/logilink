@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { DEPART_TYPE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_TYPE_LABEL, DIFF_STATES, LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
 import { RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
 import { fmtDateTime } from "@/lib/format";
 import {
@@ -263,6 +263,8 @@ export function PdaInspectScreen({
         )}
       </span>
       {/* 단계 타임라인은 뺐다 — 상태 줄에 시작·입차 시각을 함께 보인다 (2026-11-14 Sol) */}
+      {/* 상차 차이 사유 참고 (정의서 v2.0 ⑥) — 상차 단계에서 ASN과 다르게 실은 품목과 원인 */}
+      <LoadDiffSummary view={view} />
     </section>
   );
 
@@ -310,6 +312,8 @@ export function PdaInspectScreen({
               ["화주사", view.clientName],
               ["상차확인서", <span key="l" className="mono">{view.load.loadNo}</span>],
               ["확정", `${fmtDateTime(view.confirmedAt)} · ${view.confirmedBy ?? ""}`],
+              // 상차 차이 사유 참고 (정의서 v2.0 ⑥)
+              ...(view.load.diffs.length || view.load.diffNote ? ([["상차 차이", <LoadDiffSummary key="ld" view={view} />]] as [string, React.ReactNode][]) : []),
             ]}
           />
           <button type="button" className={styles.blackPill} onClick={() => router.push(homeHref)}>
@@ -877,6 +881,13 @@ function RcvLineItem({
               {l.itemCode}
               {byWorker.length > 0 && ` · ${byWorker.map(([n, q]) => `${n} ${q === null ? "—" : f(l, q)}`).join(" · ")}`}
             </span>
+            {/* 상차 차이 사유 참고 (정의서 v2.0 ⑥) — 검수 기준(상차 수량)과 별개로, 상차 때 ASN과 달랐던 원인 */}
+            {l.loadDiff && (
+              <span className={styles.loadRef}>
+                상차: {LINE_STATE_LABEL[l.loadDiff.state]} · {l.loadDiff.reasonName}
+                {l.loadDiff.orderText ? ` (ASN ${l.loadDiff.orderText})` : ""}
+              </span>
+            )}
           </span>
           <span className={styles.lineQty}>
             <b className="mono">{qtyText}</b>
@@ -1000,5 +1011,44 @@ function ReasonRow({ line: l, reasons }: { line: RcvLineView; reasons: ReasonOpt
       </span>
       <span className={styles.dim}>사유: {reasonLabel(l, reasons) ?? "-"} (자동)</span>
     </li>
+  );
+}
+
+/**
+ * 상차 차이 사유 — 참고 표시 (정의서 v2.0 ⑥, 2026-11-19 Sol). 검수 기준은 상차 수량이라 ASN 대비 차이는 검수에 드러나지 않으므로
+ * 상차담당이 남긴 원인을 보여 준다. 상차완료 화면과 같은 모양(B안): 상태별 건수 + [상차 사유 보기].
+ */
+function LoadDiffSummary({ view }: { view: RcvView }) {
+  const diffs = view.load.diffs;
+  if (!diffs.length) return view.load.diffNote ? <span className={styles.loadRef}>상차 차이 · {view.load.diffNote}</span> : null;
+  const counts = DIFF_STATES.map((s) => [s, diffs.filter((d) => d.state === s).length] as const).filter(([, n]) => n > 0);
+  return (
+    <details className={styles.reasonFold}>
+      <summary>
+        <span className={styles.loadRef}>상차 차이</span>
+        <span className={styles.reasonCounts}>
+          {counts.map(([s, n]) => (
+            <span key={s} className={`${styles.diffState} ${styles[`ds_${s}`]}`}>
+              {LINE_STATE_LABEL[s]} {n.toLocaleString()}
+            </span>
+          ))}
+        </span>
+        <span className={styles.reasonToggle}>상차 사유 보기</span>
+      </summary>
+      <ul className={styles.reasonList}>
+        {diffs.map((d) => (
+          <li key={d.itemId}>
+            <span className={`${styles.dim} mono`}>{d.itemCode}</span> {d.itemName}{" "}
+            <span className={`${styles.diffState} ${styles[`ds_${d.state}`]}`}>{LINE_STATE_LABEL[d.state]}</span>{" "}
+            <span className={`${styles.dim} mono`}>
+              {d.loadText}
+              {d.orderText ? ` / ASN ${d.orderText}` : ""}
+            </span>{" "}
+            · {d.reasonName}
+            {d.reasonText ? ` — ${d.reasonText}` : ""}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

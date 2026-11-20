@@ -17,6 +17,13 @@ export interface LoadLineView {
   orderBase: number;
   loadBase: number;
   state: LineState;
+  /**
+   * 품목별 차이 사유 (정의서 v2.0 D28) — 상차완료 때 저장. 재개 중에는 직전 완료 때 사유가 남아 있어
+   * 재완료 화면이 지금 상태에도 쓸 수 있는 코드면 미리 채운다
+   */
+  diffReasonCode: string | null;
+  diffReasonName: string | null;
+  diffReasonText: string | null;
 }
 
 /** 상차 입력 행 — 입력 1건 = 추가로 실은 수량 */
@@ -84,8 +91,10 @@ export interface LoadView {
   createdBy: string;
   completedAt: string | null;
   completedBy: string | null;
-  diffReasonName: string | null;
-  diffReasonText: string | null;
+  /** 차량 사유 1개 — v2.0 이전에 상차완료한 차량만 (11장: 품목별로 나눠 옮기지 않음). v2.0부터는 lines[].diffReason* */
+  legacyDiffReason: { name: string; text: string | null } | null;
+  /** 상차완료 차량의 사유가 있는 품목 수 (v2.0) */
+  diffLineCount: number;
 }
 
 /** 상차확인서 인쇄 — 발송인(화주사 법인)·수신(센터) */
@@ -128,7 +137,10 @@ export interface PdaWorkingRow {
   /** 상차완료한 차량만 */
   completedAt: string | null;
   completedBy: string | null;
-  diffReasonName: string | null;
+  /** 차이 사유가 있는 품목 수 (v2.0 품목별, v2.0 이전 차량 사유는 1로 센다) */
+  diffCount: number;
+  /** 차이 사유 이름 — 겹치지 않게 (v2.0 이전 차량은 차량 사유 1개) */
+  diffReasonNames: string[];
 }
 
 /** PDA 상차내역 — 날짜별 상차완료 차량 (2026-11-05 PDA 메뉴 확정) */

@@ -67,6 +67,81 @@ export function hasLoadDiff(ordered: boolean, lines: { orderBase: number; loadBa
   return lines.some((l) => l.orderBase !== l.loadBase);
 }
 
+/* ───────── 품목별 차이 사유 (정의서 v2.0 ④·C6·D28, 2026-11-19 Sol A안) ───────── */
+
+/** 사유를 받는 품목 상태 — 일치는 받지 않는다 */
+export const DIFF_STATES = ["short", "over", "extra"] as const;
+export type DiffState = (typeof DIFF_STATES)[number];
+
+/** 사유를 받는 품목인지 — 지시도 상차도 0인 줄(입력을 모두 취소한 지시 외 품목)은 화면에도 없으므로 뺀다 */
+export function lineDiffState(orderBase: number, loadBase: number): DiffState | null {
+  if (orderBase === 0 && loadBase === 0) return null;
+  const s = lineState(orderBase, loadBase);
+  return s === "match" ? null : s;
+}
+
+/** 이 코드를 이 품목 상태에 쓸 수 있는지 (공통코드 적용 상태, 비어 있으면 드롭다운에 안 보임 — L04 무지시 전용) */
+export const codeFits = (appliesTo: readonly string[], state: DiffState) => appliesTo.includes(state);
+
+export interface DiffCode {
+  code: string;
+  name: string;
+  requiresText: boolean;
+  appliesTo: string[];
+}
+
+export interface LineReasonPick {
+  itemId: number;
+  code: string;
+  text?: string | null;
+}
+
+/**
+ * 지시 상차 상차완료 때 품목별 사유 확인 — 차이 품목마다 사유 1개, 품목 상태에 맞는 코드만, 기타는 텍스트 필수.
+ * 차이 없는 품목에 온 사유는 무시한다. 오류는 품목별로 돌려준다(itemId → 문구).
+ */
+export function checkLineReasons(
+  lines: { itemId: number; itemLabel: string; orderBase: number; loadBase: number }[],
+  picks: LineReasonPick[],
+  codes: DiffCode[],
+): { ok: true; reasons: Map<number, { code: string; name: string; text: string | null }> } | { ok: false; errors: Map<number, string> } {
+  const byItem = new Map(picks.map((p) => [p.itemId, p]));
+  const errors = new Map<number, string>();
+  const reasons = new Map<number, { code: string; name: string; text: string | null }>();
+  for (const l of lines) {
+    const state = lineDiffState(l.orderBase, l.loadBase);
+    if (!state) continue;
+    const pick = byItem.get(l.itemId);
+    const code = pick?.code ? codes.find((c) => c.code === pick.code) : undefined;
+    if (!code) {
+      errors.set(l.itemId, `${l.itemLabel}: ${LINE_STATE_LABEL[state]} 사유를 고르세요.`);
+      continue;
+    }
+    if (!codeFits(code.appliesTo, state)) {
+      errors.set(l.itemId, `${l.itemLabel}: "${code.name}"은(는) ${LINE_STATE_LABEL[state]} 품목에 쓸 수 없는 사유입니다.`);
+      continue;
+    }
+    const text = pick?.text?.trim() ?? "";
+    if (text.length > 500) {
+      errors.set(l.itemId, `${l.itemLabel}: 상세 내용은 500자 이내로 입력하세요.`);
+      continue;
+    }
+    if (code.requiresText && !text) {
+      errors.set(l.itemId, `${l.itemLabel}: "${code.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`);
+      continue;
+    }
+    reasons.set(l.itemId, { code: code.code, name: code.name, text: text || null });
+  }
+  return errors.size ? { ok: false, errors } : { ok: true, reasons };
+}
+
+/** 상차·ASN 이력 한 줄 요약 — "차이 2품목" + "HF-1001 부족: 재고 부족(결품) / …" (500자 이내) */
+export function lineReasonSummary(items: { label: string; state: DiffState; name: string; text: string | null }[]) {
+  const name = `품목별 사유 · 차이 ${items.length.toLocaleString()}품목`;
+  const text = items.map((i) => `${i.label} ${LINE_STATE_LABEL[i.state]}: ${i.name}${i.text ? `(${i.text})` : ""}`).join(" / ");
+  return { name, text: text.length > 500 ? `${text.slice(0, 497)}…` : text || null };
+}
+
 /**
  * 기준 단위 수량을 보기 쉬운 단위로 — 예: 기준 EA 125개, BOX = 12EA → "10 BOX 5 EA".
  * factor가 1이거나 단위가 기준 단위면 그대로.

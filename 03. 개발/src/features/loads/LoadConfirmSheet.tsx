@@ -162,7 +162,21 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
                   <b>{qtyInUnit(l.loadBase, l.showUnit, l.showFactor, l.baseUnit)}</b>
                   {l.showUnit !== l.baseUnit && <span className={styles.dim}> ({l.loadBase.toLocaleString()} {l.baseUnit})</span>}
                 </td>
-                {ordered && <td>{LINE_STATE_LABEL[l.state]}</td>}
+                {/* 비교 + 품목별 차이 사유 (정의서 v2.0 D28) */}
+                {ordered && (
+                  <td>
+                    {LINE_STATE_LABEL[l.state]}
+                    {l.diffReasonName && (
+                      <>
+                        <br />
+                        <span className={styles.dim}>
+                          {l.diffReasonName}
+                          {l.diffReasonText ? ` — ${l.diffReasonText}` : ""}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                )}
                 <td className={styles.write} />
               </tr>
             ))}
@@ -175,10 +189,17 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
           </tfoot>
         </table>
 
-        {d.diffReasonName && (
+        {/* 무지시 상차는 비교 열이 없어 한 줄로 — 모든 품목 "예정 외 차량"(시스템 지정, v2.0) */}
+        {!ordered && d.diffLineCount > 0 && (
           <p className={styles.memo}>
-            <b>차이 사유</b> {d.diffReasonName}
-            {d.diffReasonText ? ` — ${d.diffReasonText}` : ""}
+            <b>차이 사유</b> {[...new Set(d.lines.map((l) => l.diffReasonName).filter(Boolean))].join(", ")} (모든 품목)
+          </p>
+        )}
+        {/* v2.0 이전에 상차완료한 차량 — 차량 사유 1개 */}
+        {d.diffLineCount === 0 && d.legacyDiffReason && (
+          <p className={styles.memo}>
+            <b>차이 사유</b> {d.legacyDiffReason.name}
+            {d.legacyDiffReason.text ? ` — ${d.legacyDiffReason.text}` : ""}
           </p>
         )}
 

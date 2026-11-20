@@ -177,6 +177,8 @@ export interface CodeOption {
   code: string;
   name: string;
   requiresText: boolean;
+  /** 적용 상태 — 상차 차이 사유만 씀 (short·over·extra, v2.0 D28) */
+  appliesTo: string[];
 }
 
 export interface CodeGroupRow {
@@ -193,6 +195,8 @@ export interface CommonCodeRow extends Audit {
   name: string;
   sortOrder: number;
   requiresText: boolean;
+  /** 적용 상태 — 상차 차이 사유만 (short·over·extra, v2.0 D28) */
+  appliesTo: string[];
   isActive: boolean;
   history: ChangeEntry[];
 }

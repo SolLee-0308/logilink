@@ -229,16 +229,15 @@ export function ItemsScreen({
     { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
-  const clientQuery = clientId ? `?client=${clientId}` : "";
-
   return (
     <>
       <MasterHeader
         title={title}
         count={rows.length}
         rules={RULES.items}
-        // 단건·엑셀 일괄 등록은 등록 화면의 '입력 방법' 스위치에서 고른다
-        actions={canEdit ? <CreateButton href={`/master/items/new${clientQuery}`}>등록</CreateButton> : undefined}
+        // 단건·엑셀 일괄 등록은 등록 화면의 '입력 방법' 스위치에서 고른다.
+        // 목록에서 거른 화주사는 넘기지 않는다 — 다른 화주사 품목을 잘못 등록하지 않게 등록 화면에서 매번 고른다 (2026-11-20 Sol)
+        actions={canEdit ? <CreateButton href="/master/items/new">등록</CreateButton> : undefined}
       />
       <FilterBar>
         {!singleClient && (

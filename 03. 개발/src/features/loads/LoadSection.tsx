@@ -46,6 +46,23 @@ export function LoadLinesTable({ load }: { load: LoadView }) {
           { key: "state", header: "비교", align: "center" as const, render: (l: LoadLineView) => <Badge tone={STATE_TONE[l.state]}>{LINE_STATE_LABEL[l.state]}</Badge> },
         ]
       : []),
+    // 품목별 차이 사유 (정의서 v2.0 D28) — 상차완료 차량만. 재개 중에는 직전 사유가 남아 있어도 보이지 않는다
+    ...(load.status === "COMPLETED" && load.diffLineCount > 0
+      ? [
+          {
+            key: "reason",
+            header: "차이 사유",
+            wrap: true,
+            render: (l: LoadLineView) =>
+              l.diffReasonName ? (
+                <span>
+                  {l.diffReasonName}
+                  {l.diffReasonText ? <span className="muted"> — {l.diffReasonText}</span> : null}
+                </span>
+              ) : null,
+          },
+        ]
+      : []),
   ];
   return <DataTable caption="상차 품목" columns={columns} rows={load.lines} rowKey={(l) => String(l.itemId)} compact empty="아직 실은 품목이 없습니다." />;
 }
@@ -97,10 +114,15 @@ export function LoadSection({ load }: { load: LoadView }) {
             ],
             [
               "차이 사유",
-              load.diffReasonName ? (
+              // 품목별(v2.0) — 사유는 아래 품목 표. v2.0 이전 차량은 차량 사유 1개
+              done && load.diffLineCount > 0 ? (
                 <span key="r">
-                  {load.diffReasonName}
-                  {load.diffReasonText ? ` — "${load.diffReasonText}"` : ""}
+                  차이 {load.diffLineCount.toLocaleString()}품목 <span className="muted">· 품목별 사유는 아래 표</span>
+                </span>
+              ) : done && load.legacyDiffReason ? (
+                <span key="r">
+                  {load.legacyDiffReason.name}
+                  {load.legacyDiffReason.text ? ` — "${load.legacyDiffReason.text}"` : ""} <span className="muted">(차량 사유, v2.0 이전)</span>
                 </span>
               ) : done ? (
                 "차이 없음"

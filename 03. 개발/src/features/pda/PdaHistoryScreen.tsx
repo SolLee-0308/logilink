@@ -51,7 +51,7 @@ export function PdaHistoryScreen({ history }: { history: PdaHistory }) {
                 <Link href={`/pda/load/${w.loadId}?from=${date}`} className={styles.card}>
                   <span className={styles.cardTop}>
                     <b className={`mono ${styles.cardId}`}>{w.vehicleNo}</b>
-                    {w.diffReasonName ? <Pill tone="amber">차이 있음</Pill> : <Pill tone="green">상차완료</Pill>}
+                    {w.diffCount > 0 || w.diffReasonNames.length > 0 ? <Pill tone="amber">{w.diffCount > 0 ? `차이 ${w.diffCount.toLocaleString()}품목` : "차이 있음"}</Pill> : <Pill tone="green">상차완료</Pill>}
                   </span>
                   <span className={styles.meta}>
                     <span className="mono">{w.loadNo}</span>
@@ -65,7 +65,7 @@ export function PdaHistoryScreen({ history }: { history: PdaHistory }) {
                       {w.completedBy} · 입력 {w.inputCount.toLocaleString()}건
                     </span>
                   </span>
-                  {w.diffReasonName && <span className={styles.metaWarn}>차이 사유: {w.diffReasonName}</span>}
+                  {w.diffReasonNames.length > 0 && <span className={styles.metaWarn}>차이 사유: {w.diffReasonNames.join(", ")}</span>}
                 </Link>
               </li>
             ))}

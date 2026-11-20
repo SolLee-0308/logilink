@@ -190,7 +190,7 @@ export async function listCodeOptions(groupCode: string): Promise<CodeOption[]> 
   return db.commonCode.findMany({
     where: { groupCode, isActive: true },
     orderBy: { sortOrder: "asc" },
-    select: { code: true, name: true, requiresText: true },
+    select: { code: true, name: true, requiresText: true, appliesTo: true },
   });
 }
 
@@ -308,6 +308,7 @@ export async function listCommonCodes(id?: number): Promise<CommonCodeRow[]> {
     name: r.name,
     sortOrder: r.sortOrder,
     requiresText: r.requiresText,
+    appliesTo: r.appliesTo,
     isActive: r.isActive,
     ...audit(r),
     history: hist.get(String(r.id)) ?? [],

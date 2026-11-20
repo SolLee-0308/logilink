@@ -11,6 +11,8 @@ import { fail, type ActionResult } from "@/server/action-result";
 import { BARCODE_PATTERN, ITEM_REQ_REJECT_GROUP, ITEM_UNITS, ROLE_META, STORAGE_TEMPS, USER_ROLES, innerQtyError, isManagerCandidate, needsInnerQty, normalizeAlias, sortRoles } from "@/domain/master";
 import type { Prisma } from "@/generated/prisma/client";
 import type { UserRole } from "@/domain/master";
+import { LOAD_DIFF_GROUP } from "@/domain/master";
+import { DIFF_STATES } from "@/domain/load-rules";
 import { CLIENT_PREFIX_PATTERN, PREFIX_EXHAUSTED_MSG, composeClientCode, nextClientSerial } from "@/domain/client-code";
 import { ITEM_SERIAL_MAX, cleanClientCode, composeItemCode, nextItemSerial } from "@/domain/item-code";
 import { deactivateBlock, removeCenterBlock } from "@/domain/unclosed";
@@ -937,13 +939,15 @@ const codeSchema = z.object({
   name: trimmed(100, "코드명"),
   sortOrder: z.number({ error: "순서를 숫자로 입력하세요." }).int("순서는 정수로 입력하세요.").min(0, "순서는 0 이상으로 입력하세요.").max(9999, "순서는 9999 이하로 입력하세요."),
   requiresText: z.boolean(),
+  /** 적용 상태 — 상차 차이 사유(LOAD_DIFF)만 (v2.0 D28). 다른 그룹은 비운다 */
+  appliesTo: z.array(z.enum(DIFF_STATES)).default([]),
   isActive: z.boolean(),
 });
 
 export async function saveCommonCode(input: z.input<typeof codeSchema>): Promise<ActionResult<{ id: number }>> {
   const p = codeSchema.safeParse(input);
   if (!p.success) return invalid(p.error);
-  const v = p.data;
+  const v = { ...p.data, appliesTo: p.data.groupCode === LOAD_DIFF_GROUP ? DIFF_STATES.filter((s) => p.data.appliesTo.includes(s)) : [] };
   const me = await getActor();
   const actor = me.name;
 
@@ -955,21 +959,21 @@ export async function saveCommonCode(input: z.input<typeof codeSchema>): Promise
         if (await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: v.groupCode, code: v.code } } }))
           return fail("VALIDATION", "입력 내용을 확인하세요.", { code: "이 그룹에 이미 있는 코드입니다." });
         const row = await tx.commonCode.create({
-          data: { groupCode: v.groupCode, code: v.code, name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, isActive: v.isActive, createdBy: actor, updatedBy: actor },
+          data: { groupCode: v.groupCode, code: v.code, name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, appliesTo: v.appliesTo, isActive: v.isActive, createdBy: actor, updatedBy: actor },
         });
         await log(tx, "tb_common_code", String(row.id), "CREATE", actor, null, {
-          groupCode: row.groupCode, code: row.code, name: row.name, sortOrder: row.sortOrder, requiresText: row.requiresText, isActive: row.isActive,
+          groupCode: row.groupCode, code: row.code, name: row.name, sortOrder: row.sortOrder, requiresText: row.requiresText, appliesTo: row.appliesTo, isActive: row.isActive,
         });
         return done(`코드 ${row.code} ${row.name}을(를) 등록했습니다.`, { id: row.id });
       }
       const cur = await tx.commonCode.findUnique({ where: { id: v.id } });
       if (!cur) return fail("NOT_FOUND", "코드를 찾을 수 없습니다.");
       if (cur.version !== v.version) return conflict();
-      const d = diff(cur, { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, isActive: v.isActive });
+      const d = diff(cur, { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, appliesTo: v.appliesTo, isActive: v.isActive });
       if (!d) return done("바뀐 내용이 없습니다.", { id: cur.id });
       const r = await tx.commonCode.updateMany({
         where: { id: v.id, version: v.version },
-        data: { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, isActive: v.isActive, updatedBy: actor, version: { increment: 1 } },
+        data: { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, appliesTo: v.appliesTo, isActive: v.isActive, updatedBy: actor, version: { increment: 1 } },
       });
       if (r.count === 0) return conflict();
       await log(tx, "tb_common_code", String(cur.id), "UPDATE", actor, d.b, d.a);

@@ -118,20 +118,23 @@ const CODE_GROUPS: {
   name: string;
   description: string;
   confirmed: boolean;
-  codes: [code: string, name: string, requiresText?: boolean][];
+  codes: [code: string, name: string, requiresText?: boolean, appliesTo?: string[]][];
 }[] = [
   {
     code: "LOAD_DIFF",
     name: "상차 차이",
-    description: "상차완료 시 ASN 대비 차이가 있으면 필수 선택 (정의서 ④, C6)",
+    description: "상차완료 시 ASN 대비 차이가 있는 품목마다 필수 선택, 품목 상태(부족·초과·지시 외)에 맞는 코드만 보임 (정의서 v2.0 ④, C6·D28)",
     confirmed: true,
+    // 4번째 값 = 적용 상태 (v2.0 D28). L04는 무지시 상차 전용(시스템 지정)이라 비움
     codes: [
-      ["L01", "재고 부족(결품)"],
-      ["L02", "차량 적재 공간 부족"],
-      ["L03", "타 차량 이관"],
-      ["L04", "예정 외 차량(무지시)"],
-      ["L05", "상차 중 파손 발견"],
-      ["L99", "기타", true],
+      ["L01", "재고 부족(결품)", false, ["short"]],
+      ["L02", "차량 적재 공간 부족", false, ["short"]],
+      ["L03", "타 차량 이관", false, ["short", "over", "extra"]],
+      ["L04", "예정 외 차량(무지시)", false, []],
+      ["L05", "상차 중 파손 발견", false, ["short"]],
+      ["L06", "화주사 추가 출고 요청", false, ["over", "extra"]],
+      ["L07", "ASN 수량·품목 입력 오류", false, ["short", "over", "extra"]],
+      ["L99", "기타", true, ["short", "over", "extra"]],
     ],
   },
   {
@@ -413,11 +416,12 @@ async function main() {
       data: { code: g.code, name: g.name, description: g.description, confirmed: g.confirmed, sortOrder: gi + 1 },
     });
     await db.commonCode.createManyAndReturn({
-      data: g.codes.map(([code, name, requiresText], i) => ({
+      data: g.codes.map(([code, name, requiresText, appliesTo], i) => ({
         groupCode: g.code,
         code,
         name,
         requiresText: !!requiresText,
+        appliesTo: appliesTo ?? [],
         sortOrder: (i + 1) * 10,
         createdBy: SYS,
         updatedBy: SYS,

@@ -1,9 +1,24 @@
 import type { Departure } from "@/domain/load-rules";
 import type { ItemUnit } from "@/domain/master";
-import type { LoadType } from "@/domain/load-rules";
+import type { DiffState, LoadType } from "@/domain/load-rules";
 import type { RcvAllocKind, RcvKind, RcvLineState, RcvStatus } from "@/domain/rcv-rules";
 
 /** 검수 품목 라인 (기준 단위). 보여 줄 때는 showUnit으로 묶어 표시한다 */
+/** 상차 단계의 ASN 대비 차이와 사유 (검수 화면 참고 표시, 정의서 v2.0 ⑥) */
+export interface RcvLoadDiff {
+  itemId: number;
+  /** 화주사 품목코드가 있으면 그 코드 */
+  itemCode: string;
+  itemName: string;
+  state: DiffState;
+  /** 상차 수량 (보여 줄 단위로 쓴 글자) */
+  loadText: string;
+  /** ASN 지시 수량 — 지시 외 품목은 null */
+  orderText: string | null;
+  reasonName: string;
+  reasonText: string | null;
+}
+
 export interface RcvLineView {
   itemId: number;
   itemCode: string;
@@ -35,6 +50,8 @@ export interface RcvLineView {
   imageIds: number[];
   /** 이 품목을 입력한 검수자 이름 */
   workers: string[];
+  /** 이 품목의 상차 차이 사유 (참고, 지시 상차만) — 없으면 null */
+  loadDiff: RcvLoadDiff | null;
 }
 
 export interface RcvInputView {
@@ -88,7 +105,19 @@ export interface RcvView {
   clientName: string;
   centerName: string;
   vehicleNo: string;
-  load: { id: number; loadNo: string; type: LoadType; completedAt: string | null; asnNo: string | null; orderNo: string | null; driverName: string | null };
+  load: {
+    id: number;
+    loadNo: string;
+    type: LoadType;
+    completedAt: string | null;
+    asnNo: string | null;
+    orderNo: string | null;
+    driverName: string | null;
+    /** 상차 차이 사유 — 지시 상차의 품목별 (참고 표시, 정의서 v2.0 ⑥). 상차하지 않은(0) 품목도 들어 있다 */
+    diffs: RcvLoadDiff[];
+    /** 한 줄 사유 — 무지시 상차("예정 외 차량 · 모든 품목") 또는 v2.0 이전 차량 사유. 없으면 null */
+    diffNote: string | null;
+  };
   lines: RcvLineView[];
   inputs: RcvInputView[];
   workers: RcvWorker[];
