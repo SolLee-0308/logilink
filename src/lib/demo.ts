@@ -8,10 +8,10 @@ import { isShipperRole } from "@/domain/permissions";
 export const isDemoSite = () => process.env.DEMO_SITE === "1" || process.env.VERCEL === "1";
 
 /**
- * 대시보드를 열 수 있는지 (2026-11-13 Sol: 시연 링크에서는 대시보드를 막고 "준비 중입니다."를 보여 준다).
- * 대시보드 작업은 모든 메뉴가 나온 뒤에 하기로 했다 — 그때 이 값을 true로 돌린다.
+ * 대시보드를 열 수 있는지 (2026-11-13 Sol: 시연 링크에서는 대시보드를 막고 "준비 중입니다."를 보여 줬다).
+ * 2026-11-20 Sol: 시연 사이트에도 대시보드를 연다 — 다시 막으려면 `() => !isDemoSite()`로 돌린다.
  */
-export const dashboardReady = () => !isDemoSite();
+export const dashboardReady = () => true;
 
 /** 대시보드를 못 열 때 웹 로그인 후 첫 화면 — 화주사: 입고예정 등록 / 3PL: 승인 대기 */
 export const webWorkHome = (roles: readonly UserRole[]) => (isShipperRole(roles) ? "/plans/entry" : "/plans/approval");
