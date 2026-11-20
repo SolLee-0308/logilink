@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/Badges";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { LINE_STATE_LABEL, LOAD_STATUS_META, LOAD_TYPE_LABEL, qtyInUnit, type LineState } from "@/domain/load-rules";
+import { LINE_STATE_LABEL, LOAD_STATUS_META, LOAD_TYPE_LABEL, departureLabel, qtyInUnit, type LineState } from "@/domain/load-rules";
 import type { StatusTone } from "@/domain/plan-status";
 import { fmtDateTime, fmtShortDateTime } from "@/lib/format";
 import { ViewSection } from "@/features/master/record";
@@ -18,7 +18,7 @@ export function LoadLinesTable({ load }: { load: LoadView }) {
   const ordered = load.type === "ORDERED";
   const f = (l: LoadLineView, n: number) => qtyInUnit(n, l.showUnit, l.showFactor, l.baseUnit);
   const columns: Column<LoadLineView>[] = [
-    { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
+    { key: "code", header: "품목코드", align: "center", render: (l) => <span className="mono">{l.itemCode}</span> },
     { key: "name", header: "품목명", wrap: true, render: (l) => l.itemName },
     ...(ordered ? [{ key: "order", header: "지시", align: "right" as const, render: (l: LoadLineView) => <span className="mono">{l.orderBase ? f(l, l.orderBase) : "–"}</span> }] : []),
     {
@@ -43,7 +43,24 @@ export function LoadLinesTable({ load }: { load: LoadView }) {
               return d === 0 ? <span className="muted">0</span> : <span className={`mono ${d < 0 ? styles.minus : styles.plus}`}>{d > 0 ? "+" : "−"}{qtyInUnit(Math.abs(d), l.showUnit, l.showFactor, l.baseUnit)}</span>;
             },
           },
-          { key: "state", header: "비교", render: (l: LoadLineView) => <Badge tone={STATE_TONE[l.state]}>{LINE_STATE_LABEL[l.state]}</Badge> },
+          { key: "state", header: "비교", align: "center" as const, render: (l: LoadLineView) => <Badge tone={STATE_TONE[l.state]}>{LINE_STATE_LABEL[l.state]}</Badge> },
+        ]
+      : []),
+    // 품목별 차이 사유 (정의서 v2.0 D28) — 상차완료 차량만. 재개 중에는 직전 사유가 남아 있어도 보이지 않는다
+    ...(load.status === "COMPLETED" && load.diffLineCount > 0
+      ? [
+          {
+            key: "reason",
+            header: "차이 사유",
+            wrap: true,
+            render: (l: LoadLineView) =>
+              l.diffReasonName ? (
+                <span>
+                  {l.diffReasonName}
+                  {l.diffReasonText ? <span className="muted"> — {l.diffReasonText}</span> : null}
+                </span>
+              ) : null,
+          },
         ]
       : []),
   ];
@@ -71,6 +88,7 @@ export function LoadSection({ load }: { load: LoadView }) {
       }
     >
       <div className={styles.info}>
+        {/* 왼쪽: 상태·확인서·작업자·차이 사유 / 오른쪽: 시각(상차 시작·재개·완료·출차·입차) (2026-11-14 Sol) */}
         <ViewSection
           items={[
             ["상차 상태", <Badge key="s" tone={meta.tone}>{meta.label}</Badge>],
@@ -81,6 +99,40 @@ export function LoadSection({ load }: { load: LoadView }) {
                 {load.revisionNo > 1 && <b> · {load.revisionNo}차</b>}
               </span>,
             ],
+            [
+              "작업자",
+              load.workers.length ? (
+                <span key="w">
+                  {load.workers.map((w, i) => (
+                    <span key={w.workerId}>
+                      {i > 0 && ", "}
+                      {w.name} <span className="muted mono">{w.count.toLocaleString()}건 · {fmtShortDateTime(w.lastAt)}</span>
+                    </span>
+                  ))}
+                </span>
+              ) : null,
+            ],
+            [
+              "차이 사유",
+              // 품목별(v2.0) — 사유는 아래 품목 표. v2.0 이전 차량은 차량 사유 1개
+              done && load.diffLineCount > 0 ? (
+                <span key="r">
+                  차이 {load.diffLineCount.toLocaleString()}품목 <span className="muted">· 품목별 사유는 아래 표</span>
+                </span>
+              ) : done && load.legacyDiffReason ? (
+                <span key="r">
+                  {load.legacyDiffReason.name}
+                  {load.legacyDiffReason.text ? ` — "${load.legacyDiffReason.text}"` : ""} <span className="muted">(차량 사유, v2.0 이전)</span>
+                </span>
+              ) : done ? (
+                "차이 없음"
+              ) : null,
+            ],
+          ]}
+        />
+        <ViewSection
+          items={[
+            ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
             // 상차 재개 (정의서 v1.5 D20) — 이전 차수로 인쇄한 확인서는 무효
             ...(load.lastReopen
               ? ([
@@ -90,47 +142,11 @@ export function LoadSection({ load }: { load: LoadView }) {
                   ],
                 ] as [string, React.ReactNode][])
               : []),
-            ["상차 시작", `${fmtDateTime(load.createdAt)} · ${load.createdBy}`],
             ["상차완료", done ? `${fmtDateTime(load.completedAt)} · ${load.completedBy}` : null],
-            // 출차 (2026-11-12 Sol) — PDA [출차], 안 누르면 상차완료한 업무일이 지나 자동 출차
-            [
-              "출차",
-              !done
-                ? null
-                : load.departure
-                  ? load.departure.auto
-                    ? `자동 출차(업무일 마감) · ${fmtDateTime(load.departure.at)}`
-                    : `${fmtDateTime(load.departure.at)} · ${load.departure.by ?? "-"}`
-                  : "출차 전",
-            ],
-          ]}
-        />
-        <ViewSection
-          items={[
-            [
-              "작업자",
-              load.workers.length ? (
-                <span key="w">
-                  {load.workers.map((w, i) => (
-                    <span key={w.workerId}>
-                      {i > 0 && ", "}
-                      {w.name} <span className="muted mono">{w.count}건 · {fmtShortDateTime(w.lastAt)}</span>
-                    </span>
-                  ))}
-                </span>
-              ) : null,
-            ],
-            [
-              "차이 사유",
-              load.diffReasonName ? (
-                <span key="r">
-                  {load.diffReasonName}
-                  {load.diffReasonText ? ` — "${load.diffReasonText}"` : ""}
-                </span>
-              ) : done ? (
-                "차이 없음"
-              ) : null,
-            ],
+            // 출차 (v1.9) — 저장값. 사람이 누른 출차는 처리자, 시스템 처리는 "입차 처리(시스템)"·"일마감 처리(시스템)"
+            ["출차", !done ? null : load.departure ? `${fmtDateTime(load.departure.at)} · ${departureLabel(load.departure)}` : "출차 전"],
+            // 입차 (v1.9) — 3PL 입고검수자가 PDA로 기록
+            ["입차", !done ? null : load.arrival ? `${fmtDateTime(load.arrival.at)} · ${load.arrival.by ?? "-"}` : "입차 전"],
           ]}
         />
       </div>

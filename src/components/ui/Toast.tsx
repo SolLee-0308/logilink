@@ -6,7 +6,7 @@ import styles from "./Toast.module.css";
 export type ToastTone = "default" | "error";
 
 interface ToastValue {
-  /** 처리 결과를 화면 아래에 잠깐 알린다. 저장 실패 등은 tone: "error" — 붉은색으로 더 오래 (2026-11-07 Sol 확정) */
+  /** 처리 결과·오류를 화면 위에 잠깐 띄워 알린다(2026-11-14 Sol, 화면 안 오류 상자 대신). 저장 실패 등은 tone: "error" — 붉은색으로 더 오래 (2026-11-07 Sol 확정) */
   show: (message: string, opts?: { tone?: ToastTone }) => void;
 }
 

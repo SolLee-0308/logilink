@@ -197,9 +197,9 @@ export function ClientFinderModal({
                   }
                 }}
               >
-                <td className="mono">{c.code}</td>
+                <td className="mono cell-center">{c.code}</td>
                 <td>{c.name}</td>
-                <td className="mono">{c.bizNo || "-"}</td>
+                <td className="mono cell-center">{c.bizNo || "-"}</td>
                 <td className={c.isActive ? undefined : styles.off}>{c.isActive ? "사용" : "사용 안 함"}</td>
               </tr>
             ))}

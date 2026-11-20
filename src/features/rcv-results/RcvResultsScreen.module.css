@@ -33,3 +33,39 @@
   font-size: var(--fs-12);
   color: var(--soft);
 }
+
+/* 기간 옆 빠른 선택 — ASN·상차 현황과 같은 모양 (2026-11-14 Sol) */
+.quick {
+  display: inline-flex;
+  gap: 4px;
+  background: #f0f0f3;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 3px;
+}
+
+.quick button {
+  border: 0;
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: var(--r-chip);
+  font-size: var(--fs-13);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.quick button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.quick button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.quick button[aria-pressed="true"] {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(22, 22, 22, 0.12), 0 0 0 1px rgba(22, 22, 22, 0.04);
+}

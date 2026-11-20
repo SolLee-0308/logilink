@@ -1,3 +1,5 @@
+import { qtyInUnit } from "@/domain/load-rules";
+import type { ItemUnit } from "@/domain/master";
 import styles from "./Pda.module.css";
 
 /*
@@ -127,4 +129,35 @@ export type PillTone = "blue" | "amber" | "green" | "red" | "gray";
 
 export function Pill({ tone, children }: { tone: PillTone; children: React.ReactNode }) {
   return <span className={`${styles.pill} ${styles[`pill_${tone}`]}`}>{children}</span>;
+}
+
+/** 수량 글 "10 BOX 3 EA" → 숫자는 그대로, 단위는 작게 (2026-11-14 Sol, 상차·입고검수 스캔 영역) */
+export function QtyParts({ text, sign = "", tone }: { text: string; sign?: string; tone?: "minus" | "plus" }) {
+  const parts = text.split(" ");
+  return (
+    <span className={`${styles.qtyParts} ${tone === "minus" ? styles.remainMinus : tone === "plus" ? styles.remainPlus : ""}`}>
+      {parts.map((p, i) =>
+        i % 2 === 0 ? (
+          <span key={i} className="mono">
+            {i === 0 ? sign : ""}
+            {p}
+          </span>
+        ) : (
+          <span key={i} className={styles.qtyUnit}>
+            {p}
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
+
+/**
+ * 남은 수량 = 한 수량 − 기준 수량(지시·상차) — 덜 했으면 −(보라), 넘었으면 +(붉은색), 0은 기본색.
+ * 기준 수량이 없으면(지시 외 품목) "–" (2026-11-14 Sol)
+ */
+export function RemainQty({ target, done, unit, factor, baseUnit }: { target: number; done: number; unit: ItemUnit; factor: number; baseUnit: ItemUnit }) {
+  if (!target) return <span className="muted">–</span>;
+  const d = done - target;
+  return <QtyParts text={qtyInUnit(Math.abs(d), unit, factor, baseUnit)} sign={d < 0 ? "−" : d > 0 ? "+" : ""} tone={d < 0 ? "minus" : d > 0 ? "plus" : undefined} />;
 }

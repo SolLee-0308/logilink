@@ -8,10 +8,9 @@ import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { Input, Select } from "@/components/ui/Form";
 import { NoteBox } from "@/components/ui/NoteBox";
-import { ListToolbar } from "@/components/ui/SplitView";
-import { Tabs } from "@/components/ui/Tabs";
+import { Tabs, TabTotal } from "@/components/ui/Tabs";
 import { dday, ddayLabel } from "@/domain/plan-rules";
-import { fmtShortDateTime, includesText } from "@/lib/format";
+import { fmtDateTime, includesText } from "@/lib/format";
 import { MasterHeader } from "@/features/master/shared";
 import { inRange } from "@/features/plans/approval-list";
 import { DateRangeField } from "@/features/plans/PlanSearchFields";
@@ -91,6 +90,7 @@ export function AsnListScreen({
     {
       key: "no",
       header: "ASN번호",
+      align: "center",
       render: (r) =>
         r.kind === "load" ? (
           <>
@@ -111,6 +111,7 @@ export function AsnListScreen({
     {
       key: "date",
       header: "출고일",
+      align: "center",
       render: (r) => {
         const n = dday(r.shipDate, today);
         return (
@@ -124,6 +125,7 @@ export function AsnListScreen({
     {
       key: "vehicle",
       header: "차량",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{r.vehicleNo}</span>
@@ -152,7 +154,7 @@ export function AsnListScreen({
       wrap: true,
       render: (r) => (
         <>
-          {r.lineCount}줄
+          {r.lineCount.toLocaleString()}품목
           <CellSub mono>{r.kind === "load" ? `상차 ${qtyText(r.qtyByUnit) || "0"}` : qtyText(r.qtyByUnit)}</CellSub>
         </>
       ),
@@ -160,17 +162,26 @@ export function AsnListScreen({
     {
       key: "at",
       header: tab === "done" ? "입고완료" : tab === "canceled" ? "취소" : "등록",
-      render: (r) =>
-        tab === "done" || tab === "canceled" ? (
-          <span className="mono">{fmtShortDateTime(r.closedAt)}</span>
-        ) : (
-          <>
-            <span className="mono">{fmtShortDateTime(r.createdAt)}</span>
-            <CellSub>{r.kind === "load" ? `${r.createdBy} · 상차 시작` : r.createdBy}</CellSub>
-          </>
-        ),
+      align: "center",
+      // 1줄 YYYY-MM-DD, 2줄 이름(왼쪽)·시각(오른쪽) — 입고예정 등록 '최종 저장'과 같은 형식 (2026-11-14 Sol). 입고완료·취소 탭은 시각만
+      render: (r) => {
+        const closed = tab === "done" || tab === "canceled";
+        const at = fmtDateTime(closed ? r.closedAt : r.createdAt);
+        if (!at) return <span className="muted">–</span>;
+        return (
+          <span className={styles.stamp}>
+            <span className="mono">{at.slice(0, 10)}</span>
+            <CellSub>
+              <span className={styles.stampSub}>
+                <span>{closed ? "" : r.kind === "load" ? `${r.createdBy} · 상차 시작` : r.createdBy}</span>
+                <span className="mono">{at.slice(11, 16)}</span>
+              </span>
+            </CellSub>
+          </span>
+        );
+      },
     },
-    { key: "status", header: "상태", render: (r) => <AsnStatusBadge status={r.status} /> },
+    { key: "status", header: "상태", align: "center", render: (r) => <AsnStatusBadge status={r.status} /> },
   ];
 
   return (
@@ -182,18 +193,6 @@ export function AsnListScreen({
         crumbs={["입고 계획", "ASN 등록"]}
         actions={<CreateButton href="/plans/asn/new">ASN 등록</CreateButton>}
       />
-      {undistributed > 0 && (
-        <NoteBox
-          tone="info"
-          action={
-            <LinkButton size="sm" href="/plans/asn/new">
-              차량에 담기
-            </LinkButton>
-          }
-        >
-          ASN에 아직 다 담지 않은 승인 입고예정이 <strong>{undistributed}건</strong> 있습니다. ASN에 담은 품목·수량만 상차하고 입고할 수 있습니다.
-        </NoteBox>
-      )}
       {(centers.length > 1 || rows.length > 0) && (
         <FilterBar>
           {centers.length > 1 && (
@@ -218,9 +217,22 @@ export function AsnListScreen({
           </FilterField>
         </FilterBar>
       )}
-      <Tabs label="ASN 상태" value={tab} onChange={setTab} panelId="asn-list" items={ASN_TABS.map((k) => ({ key: k, label: TAB_LABEL[k], count: counts[k] }))} />
+      <Tabs label="ASN 상태" value={tab} onChange={setTab} panelId="asn-list" items={ASN_TABS.map((k) => ({ key: k, label: TAB_LABEL[k], count: counts[k] }))} aside={<TabTotal total={list.length} />} />
       <div id="asn-list" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        <ListToolbar total={list.length} />
+        {undistributed > 0 && (
+          <div className={styles.note}>
+            <NoteBox
+              tone="info"
+              action={
+                <LinkButton size="sm" href="/plans/asn/new">
+                  차량에 담기
+                </LinkButton>
+              }
+            >
+              ASN에 아직 다 담지 않은 승인 입고예정이 <strong>{undistributed}건</strong> 있습니다. ASN에 담은 품목·수량만 상차하고 입고할 수 있습니다.
+            </NoteBox>
+          </div>
+        )}
         <DataTable
           caption="ASN 목록"
           columns={columns}

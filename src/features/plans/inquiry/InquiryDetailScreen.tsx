@@ -10,7 +10,7 @@ import { NoteBox } from "@/components/ui/NoteBox";
 import { Timeline, type TimelineEntry } from "@/components/ui/Timeline";
 import { dday, ddayLabel } from "@/domain/plan-rules";
 import { qtyInUnit } from "@/domain/load-rules";
-import { daysBetween, elapsedDays, isOverdue, progressPct } from "@/domain/inquiry-rules";
+import { daysBetween, elapsedDays, isOverdue, progressPct, WAIT_STAGE_LABEL } from "@/domain/inquiry-rules";
 import { PLAN_ACTION_LABEL, PLAN_INPUT_METHOD_LABEL } from "@/domain/plan-status";
 import { fmtDateTime, fmtShortDateTime } from "@/lib/format";
 import { cancelApprovedPlan } from "@/server/plans/actions";
@@ -62,14 +62,16 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
   const showCancel = d.canCancel && d.status === "APPROVED";
 
   const lineColumns: Column<PlanLineView>[] = [
-    { key: "no", header: "#", align: "right", render: (l) => <span className="mono">{l.lineNo}</span> },
-    { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
+    { key: "no", header: "#", align: "center", width: 36, render: (l) => <span className="mono">{l.lineNo}</span> },
+    { key: "code", header: "품목코드", align: "center", render: (l) => <span className="mono">{l.itemCode}</span> },
     { key: "name", header: "품목명", wrap: true, render: (l) => l.itemName },
-    { key: "exp", header: "소비기한·로트", render: (l) => (l.expiryDate || l.lotNo ? <span className="mono">{[l.expiryDate, l.lotNo].filter(Boolean).join(" · ")}</span> : <span className="muted">–</span>) },
+    // 소비기한·로트 열 나눔 (2026-11-14 Sol) — 소비기한은 가운데, 로트는 왼쪽
+    { key: "exp", header: "소비기한", align: "center", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">–</span>) },
+    { key: "lot", header: "로트", render: (l) => (l.lotNo ? <span className="mono">{l.lotNo}</span> : <span className="muted">–</span>) },
     { key: "qty", header: "승인", align: "right", render: (l) => <span className="mono">{qf(l, l.baseQty)}</span> },
     {
       key: "incoming",
-      header: "오는 중",
+      header: "검수 전",
       align: "right",
       render: (l) => (d.incoming[l.lineNo] ? <b className={`${styles.incoming} mono`}>{qf(l, d.incoming[l.lineNo])}</b> : <span className="muted">–</span>),
     },
@@ -81,18 +83,20 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
   ];
 
   const vehicleColumns: Column<Vehicle>[] = [
-    { key: "date", header: "출고일", render: (v) => <span className="mono">{v.shipDate}</span> },
-    { key: "vehicle", header: "차량", render: (v) => <b className="mono">{v.vehicleNo}</b> },
-    { key: "asn", header: "ASN번호", render: (v) => <span className="mono">{v.asnNo}</span> },
-    { key: "qty", header: "이 입고예정에서 담은 수량", render: (v) => <span className="mono">{`${v.lineCount}줄 · ${v.qtyByUnit.map(([u, n]) => `${u} ${n.toLocaleString()}`).join(" · ")}`}</span> },
-    { key: "status", header: "상태", render: (v) => <AsnStatusBadge status={v.status} /> },
+    { key: "date", header: "출고일", align: "center", render: (v) => <span className="mono">{v.shipDate}</span> },
+    { key: "vehicle", header: "차량", align: "center", render: (v) => <b className="mono">{v.vehicleNo}</b> },
+    { key: "asn", header: "ASN번호", align: "center", render: (v) => <span className="mono">{v.asnNo}</span> },
+    { key: "qty", header: "이 입고예정에서 담은 수량", render: (v) => <span className="mono">{`${v.lineCount.toLocaleString()}품목 · ${v.qtyByUnit.map(([u, n]) => `${u} ${n.toLocaleString()}`).join(" · ")}`}</span> },
+    { key: "status", header: "상태", align: "center", render: (v) => <AsnStatusBadge status={v.status} /> },
+    // 입고 대기 단계 (v1.9 D27) — 상차 전·상차중·출차 대기·운송 중·도착·검수 대기·검수중
+    { key: "stage", header: "입고 대기 단계", render: (v) => (v.waitStage ? WAIT_STAGE_LABEL[v.waitStage] : <span className="muted">–</span>) },
   ];
 
   const allocColumns: Column<Alloc>[] = [
-    { key: "at", header: "검수 확정", render: (a) => <span className="mono">{fmtShortDateTime(a.confirmedAt)}</span> },
-    { key: "rcv", header: "검수번호", render: (a) => <span className="mono">{a.rcvNo}</span> },
-    { key: "vehicle", header: "차량", render: (a) => <span className="mono">{a.vehicleNo}</span> },
-    { key: "asn", header: "ASN번호", render: (a) => (a.asnNo ? <span className="mono">{a.asnNo}</span> : <span className="muted">–</span>) },
+    { key: "at", header: "검수 확정", align: "center", render: (a) => <span className="mono">{fmtShortDateTime(a.confirmedAt)}</span> },
+    { key: "rcv", header: "검수번호", align: "center", render: (a) => <span className="mono">{a.rcvNo}</span> },
+    { key: "vehicle", header: "차량", align: "center", render: (a) => <span className="mono">{a.vehicleNo}</span> },
+    { key: "asn", header: "ASN번호", align: "center", render: (a) => (a.asnNo ? <span className="mono">{a.asnNo}</span> : <span className="muted">–</span>) },
     { key: "step", header: "배분 단계", render: (a) => STEP_LABEL[a.step] ?? `${a.step}단계` },
     { key: "item", header: "품목", wrap: true, render: (a) => <span>{`#${a.lineNo} ${a.itemName}`}</span> },
     { key: "kind", header: "구분", render: (a) => (a.kind === "GOOD" ? "입고" : <span className={styles.ret}>반송</span>) },
@@ -137,7 +141,6 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
           {d.canceledBy} · {fmtDateTime(d.canceledAt)}. 취소는 최종 상태입니다. 다시 입고하려면 새 입고예정을 등록합니다.
         </NoteBox>
       )}
-      {act.error && <NoteBox tone="error">{act.error}</NoteBox>}
 
       <Card title="입고예정 정보">
         <div className={styles.infoGrid}>
@@ -167,7 +170,7 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
                   <span className="mono">{pct}%</span>
                 </span>,
               ],
-              ["차량", d.vehicles.filter((v) => v.status !== "CANCELED").length ? `${d.vehicles.filter((v) => v.status !== "CANCELED").length}대` : "ASN 없음"],
+              ["차량", vehicleText(d.vehicles.filter((v) => v.status !== "CANCELED").length, d.unorderedCount)],
               ["메모", d.memo],
             ]}
           />
@@ -201,7 +204,7 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
         placeholder="취소하는 이유를 적어 주세요."
         target={
           <span>
-            <span className="mono">{d.planNo}</span> · {d.clientName} · {d.centerName} · {d.planDate} · {d.lineCount}품목
+            <span className="mono">{d.planNo}</span> · {d.clientName} · {d.centerName} · {d.planDate} · {d.lineCount.toLocaleString()}품목
           </span>
         }
         reasons={cancelReasons}
@@ -218,4 +221,11 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
       />
     </>
   );
+}
+
+/** 상단 요약 "차량" — ASN 차량 + 검수 확정으로 배분된 무지시 상차 차량(구분 표시, 2026-11-14 Sol) */
+function vehicleText(asnCount: number, unorderedCount: number) {
+  const total = asnCount + unorderedCount;
+  if (!total) return "차량 없음";
+  return `${total}대${unorderedCount ? `(무지시 ${unorderedCount}대)` : ""}`;
 }

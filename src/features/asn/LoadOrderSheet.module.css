@@ -260,3 +260,12 @@
   font-size: 0.7em;
   font-weight: 700;
 }
+
+/* # 열은 두 자리 너비·가운데, 단위는 좁게·가운데 (2026-11-14 Sol) */
+.lines .cNo {
+  width: 32px;
+}
+
+.lines .cUnit {
+  width: 48px;
+}

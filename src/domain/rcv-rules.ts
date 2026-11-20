@@ -10,7 +10,7 @@
  */
 import type { StatusTone } from "./plan-status";
 
-export const RCV_STATUSES = ["WORKING", "CONFIRMED", "CANCELED"] as const;
+export const RCV_STATUSES = ["WORKING", "CONFIRMED", "CANCELED", "VOIDED"] as const;
 export type RcvStatus = (typeof RCV_STATUSES)[number];
 export type RcvKind = "GOOD" | "DAMAGED" | "MISMATCH";
 export type RcvAllocKind = "GOOD" | "RETURN";
@@ -19,6 +19,7 @@ export const RCV_STATUS_META: Record<RcvStatus, { label: string; tone: StatusTon
   WORKING: { label: "검수중", tone: "part" },
   CONFIRMED: { label: "검수확정", tone: "done" },
   CANCELED: { label: "입고취소", tone: "cancel" },
+  VOIDED: { label: "입차 취소", tone: "cancel" },
 };
 export const RCV_KIND_LABEL: Record<RcvKind, string> = { GOOD: "정상", DAMAGED: "훼손·오염 반송", MISMATCH: "품목 불일치 반송" };
 
@@ -147,3 +148,57 @@ export const planStatusAfterReceive = (lines: { baseQty: number; rcvQty: number;
 
 export const RCV_CONFLICT_MSG = "그사이 다른 검수자가 입력했습니다. 최신 합계를 다시 확인한 뒤 확정하세요.";
 export const RCV_DONE_MSG = "이미 검수 확정된 차량입니다. 확정 뒤에는 고칠 수 없습니다. 잘못 확정했으면 3PL 관리자가 일마감 전에 입고취소한 뒤 다시 검수합니다.";
+
+/* ───────── 입차 · 검수 시작 · 입차 취소 (정의서 v1.9 ⑥ · C11 · D25 · D26) ───────── */
+
+/**
+ * 진행 중인 검수 전표의 단계 — 검수 시작 시각(첫 입력)이 없으면 "도착·검수 대기", 있으면 "검수중".
+ * 상차확인서만 스캔하고 하역하지 않은 차량이 "검수중"으로 보이지 않게 한다 (D26).
+ */
+export type RcvStage = "ARRIVED" | "WORKING" | "CONFIRMED" | "CANCELED" | "VOIDED";
+export const RCV_STAGE_META: Record<RcvStage, { label: string; tone: StatusTone }> = {
+  ARRIVED: { label: "도착·검수 대기", tone: "wait" },
+  WORKING: { label: "검수중", tone: "part" },
+  CONFIRMED: { label: "검수확정", tone: "done" },
+  CANCELED: { label: "입고취소", tone: "cancel" },
+  VOIDED: { label: "입차 취소", tone: "cancel" },
+};
+export const rcvStageOf = (r: { status: RcvStatus; startedAt: Date | string | null }): RcvStage =>
+  r.status === "WORKING" ? (r.startedAt ? "WORKING" : "ARRIVED") : r.status;
+
+/** 입차 취소 사유 코드 그룹 (임시안 — 차량 오인 스캔·기타) */
+export const ARRIVE_CANCEL_GROUP = "ARRIVE_CANCEL";
+
+/** 입차 취소 가능 여부 — 첫 입력 전(검수 시작 시각 없음, 살아 있는 입력·0 확인 없음)만. 불가하면 이유 문장 */
+export function arriveCancelBlock(r: { status: RcvStatus; startedAt: Date | string | null; inputCount: number; zeroCount: number }): string | null {
+  if (r.status !== "WORKING") return "검수 중인 차량만 입차 취소할 수 있습니다.";
+  if (r.startedAt || r.inputCount > 0 || r.zeroCount > 0) return "이미 검수를 시작한 차량은 입차 취소할 수 없습니다. 입력을 모두 취소해도 검수 시작 기록은 남습니다. 그대로 검수 확정하세요.";
+  return null;
+}
+
+/**
+ * 입고검수 첫 화면 입력 → 바로 진입할지, 목록을 보여 줄지 (v1.9 ⑥ "진입 방법")
+ * - 상차확인서·상차지시서 번호 또는 차량번호를 끝까지 정확히 입력(스캔 포함)하고 일치 대상이 1건 → 바로 진입
+ * - 정확히 일치하는 대상이 여러 건(같은 차량번호의 실적 2건 등) → 그 대상 목록
+ * - 정확히 일치하는 대상이 없고 일부만 일치(포함 검색) → 후보 목록 (1건이어도 목록에서 고른다)
+ */
+export interface EntryCandidate {
+  loadId: number;
+  loadNo: string;
+  orderNo: string | null;
+  vehicleNo: string;
+}
+/** 포함 검색 최소 글자 수 — 너무 짧으면 후보가 지나치게 많아진다 */
+export const ENTRY_SEARCH_MIN = 2;
+
+export const normalizeEntryQuery = (s: string) => s.replace(/\s+/g, "").toUpperCase();
+
+export function pickEntry<T extends EntryCandidate>(query: string, rows: T[]): { kind: "direct"; row: T } | { kind: "list"; rows: T[]; exact: boolean } | { kind: "none" } {
+  const q = normalizeEntryQuery(query);
+  if (!q) return { kind: "none" };
+  const exact = rows.filter((r) => r.loadNo === q || r.orderNo === q || r.vehicleNo === q);
+  if (exact.length === 1) return { kind: "direct", row: exact[0] };
+  if (exact.length > 1) return { kind: "list", rows: exact, exact: true };
+  const part = rows.filter((r) => r.loadNo.includes(q) || (r.orderNo ?? "").includes(q) || r.vehicleNo.includes(q));
+  return part.length ? { kind: "list", rows: part, exact: false } : { kind: "none" };
+}

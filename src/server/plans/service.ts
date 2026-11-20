@@ -16,6 +16,7 @@ import { CONFLICT_MSG, SAVE_CONFLICT_MSG, canReview, canShipperEdit, nextPlanNo,
 import { approvedCancelBlock, OPEN_ASN } from "@/domain/inquiry-rules";
 import { MAX_CLOSE_BATCH, remainCloseBlock, remainOf } from "@/domain/close-rules";
 import { PRE_APPROVAL } from "@/domain/business-day";
+import { DEPART_TYPE_LABEL } from "@/domain/load-rules";
 import { dailyTargets, rcvSums } from "@/server/plans/closing";
 import { expiryTooEarlyMsg, minExpiryDate } from "@/domain/plan-entry";
 import { minExpiryDays } from "@/server/plans/entry";
@@ -448,7 +449,7 @@ const EXPIRE_REASON_CODE = "X04";
  */
 export async function runDailyClose(
   me: PlanActor,
-  input: { centerId: number; businessDate: string; rcvIds: number[]; expireIds: number[] },
+  input: { centerId: number; businessDate: string; rcvIds: number[]; expireIds: number[]; departIds: number[] },
 ): Promise<ActionResult<{ dailyCloseId: number }>> {
   if (!can(me.roles, "closing", "edit")) return forbidden();
   if (me.centerId && me.centerId !== input.centerId) return fail("FORBIDDEN", "소속 센터만 일마감할 수 있습니다.");
@@ -460,12 +461,13 @@ export async function runDailyClose(
         const center = await tx.center.findUnique({ where: { id: input.centerId } });
         if (!center) return fail("NOT_FOUND", "센터를 찾을 수 없습니다.");
         const now = new Date();
-        const { today, rcvs, expire } = await dailyTargets(tx, center, now);
+        const { today, rcvs, expire, departs } = await dailyTargets(tx, center, now);
         if (today !== input.businessDate) return fail("STATE", `업무일이 바뀌었습니다(지금 ${today}). 화면을 새로 고쳐 다시 확인하세요.`);
         const done = await tx.dailyClose.findUnique({ where: { centerId_businessDate: { centerId: center.id, businessDate: new Date(`${today}T00:00:00Z`) } } });
         if (done) return fail("STATE", `${center.name} ${today} 업무일은 이미 일마감했습니다 (${done.closedBy}).`);
         const same = (a: number[], b: number[]) => a.length === b.length && [...a].sort((x, y) => x - y).every((v, i) => v === [...b].sort((x, y) => x - y)[i]);
-        if (!same(rcvs.map((r) => r.id), input.rcvIds) || !same(expire.map((p) => p.id), input.expireIds)) return fail("CONFLICT", DAILY_CONFLICT_MSG);
+        if (!same(rcvs.map((r) => r.id), input.rcvIds) || !same(expire.map((p) => p.id), input.expireIds) || !same(departs.map((l) => l.id), input.departIds))
+          return fail("CONFLICT", DAILY_CONFLICT_MSG);
 
         const reason = expire.length ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: CANCEL_GROUP, code: EXPIRE_REASON_CODE } } }) : null;
         if (expire.length && !reason) return fail("STATE", "기한경과 취소 사유 코드(X04)가 없습니다. 기준정보 › 사유 코드를 확인하세요.");
@@ -483,6 +485,7 @@ export async function runDailyClose(
             goodBaseQty: sums.reduce((s, x) => s + x.good, 0),
             returnBaseQty: sums.reduce((s, x) => s + x.ret, 0),
             expireCount: expire.length,
+            departCount: departs.length,
           },
         });
         if (rcvs.length) {
@@ -503,7 +506,27 @@ export async function runDailyClose(
             });
           }
         }
-        return ok(`${center.name} ${today} 일마감을 마쳤습니다 · 검수 실적 ${rcvs.length}건 확정${expire.length ? ` · 기한경과 ${expire.length}건 취소` : ""}`, { dailyCloseId: close.id });
+        // 미출차 차량 → 일마감 처리(시스템) 출차 (v1.9 ⑦·D23). 시각 = 일마감 실행 시각, 처리자 = 일마감한 담당자
+        if (departs.length) {
+          const ids = departs.map((l) => l.id);
+          await tx.$queryRaw`SELECT id FROM tb_load_h WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`;
+          const u = await tx.load.updateMany({
+            where: { id: { in: ids }, status: "COMPLETED", departedAt: null, arrivedAt: null },
+            data: { departedAt: now, departedBy: me.name, departUserId: me.id, departType: "DAILY_CLOSE", version: { increment: 1 } },
+          });
+          if (u.count !== ids.length) throw new Race();
+          const label = `${DEPART_TYPE_LABEL.DAILY_CLOSE} · ${today} 일마감`;
+          await tx.loadHistory.createMany({ data: departs.map((l) => ({ loadId: l.id, action: "DEPART" as const, revisionNo: l.revisionNo, actor: me.name, actorId: me.id, at: now, reasonText: label })) });
+          for (const l of departs) {
+            if (!l.asnId) continue;
+            const asn = await tx.asn.update({ where: { id: l.asnId }, data: { version: { increment: 1 }, updatedBy: me.name }, select: { id: true, version: true } });
+            await tx.asnHistory.create({ data: { asnId: asn.id, action: "LOAD_DEPART", version: asn.version, actor: me.name, actorId: me.id, at: now, reasonText: label } });
+          }
+        }
+        return ok(
+          `${center.name} ${today} 일마감을 마쳤습니다 · 검수 실적 ${rcvs.length}건 확정${expire.length ? ` · 기한경과 ${expire.length}건 취소` : ""}${departs.length ? ` · 미출차 ${departs.length}대 출차 처리` : ""}`,
+          { dailyCloseId: close.id },
+        );
       }),
     DAILY_CONFLICT_MSG,
   );

@@ -85,3 +85,43 @@ test("입고예정 상태: 모든 라인 잔량 0 이하 → 입고완료, 아�
   assert.equal(planStatusAfterReceive([{ baseQty: 10, rcvQty: 8, returnQty: 2, closeQty: 0 }]), "COMPLETED");
   assert.equal(planStatusAfterReceive([{ baseQty: 10, rcvQty: 8, returnQty: 0, closeQty: 0 }, { baseQty: 5, rcvQty: 5, returnQty: 0, closeQty: 0 }]), "PARTIAL");
 });
+
+/* 입차·검수 시작·입차 취소 (정의서 v1.9 ⑥ · C11 · D25 · D26) */
+test("검수 단계: 첫 입력 전이면 도착·검수 대기, 후면 검수중", async () => {
+  const { rcvStageOf } = await import("./rcv-rules");
+  assert.equal(rcvStageOf({ status: "WORKING", startedAt: null }), "ARRIVED");
+  assert.equal(rcvStageOf({ status: "WORKING", startedAt: "2026-11-14T01:00:00Z" }), "WORKING");
+  assert.equal(rcvStageOf({ status: "VOIDED", startedAt: null }), "VOIDED");
+});
+
+test("입차 취소: 첫 입력 전에만, 입력·0 확인이 있었으면 불가", async () => {
+  const { arriveCancelBlock } = await import("./rcv-rules");
+  assert.equal(arriveCancelBlock({ status: "WORKING", startedAt: null, inputCount: 0, zeroCount: 0 }), null);
+  assert.ok(arriveCancelBlock({ status: "WORKING", startedAt: new Date(), inputCount: 0, zeroCount: 0 }));
+  assert.ok(arriveCancelBlock({ status: "WORKING", startedAt: null, inputCount: 1, zeroCount: 0 })); // 취소한 입력도 센다
+  assert.ok(arriveCancelBlock({ status: "WORKING", startedAt: null, inputCount: 0, zeroCount: 1 }));
+  assert.ok(arriveCancelBlock({ status: "CONFIRMED", startedAt: null, inputCount: 0, zeroCount: 0 }));
+});
+
+test("입고검수 진입: 정확히 입력하고 1건이면 바로, 여럿이면 목록, 일부만 입력하면 1건이어도 목록", async () => {
+  const { pickEntry } = await import("./rcv-rules");
+  const rows = [
+    { loadId: 1, loadNo: "LD-20261114-0001", orderNo: "LO-20261114-0001", vehicleNo: "12가3456" },
+    { loadId: 2, loadNo: "LD-20261114-0002", orderNo: null, vehicleNo: "34나5678" },
+    { loadId: 3, loadNo: "LD-20261113-0007", orderNo: null, vehicleNo: "34나5678" },
+    { loadId: 4, loadNo: "LD-20261114-0003", orderNo: null, vehicleNo: "112가3456" },
+  ];
+  const direct = (q: string) => {
+    const r = pickEntry(q, rows);
+    return r.kind === "direct" ? r.row.loadId : r.kind;
+  };
+  assert.equal(direct("ld-20261114-0002"), 2); // 스캔·정확한 번호 (소문자·공백 허용)
+  assert.equal(direct("LO-20261114-0001"), 1); // 상차지시서 번호
+  assert.equal(direct("12가 3456"), 1); // 정확한 차량번호 — 112가3456이 포함돼도 정확히 일치하는 1건으로 바로
+  const many = pickEntry("34나5678", rows); // 같은 차량번호 실적 2건
+  assert.equal(many.kind, "list");
+  assert.deepEqual(many.kind === "list" ? [many.exact, many.rows.map((r) => r.loadId)] : null, [true, [2, 3]]);
+  const part = pickEntry("0002", rows); // 일부만 입력 → 1건이어도 목록
+  assert.deepEqual(part.kind === "list" ? [part.exact, part.rows.map((r) => r.loadId)] : null, [false, [2]]);
+  assert.equal(pickEntry("99하9999", rows).kind, "none");
+});

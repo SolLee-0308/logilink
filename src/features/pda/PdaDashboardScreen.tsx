@@ -25,8 +25,8 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
         <span className={styles.heroK}>오늘 상차 진행 · {data.today}</span>
         <span className={styles.heroRow}>
           <b className={styles.heroNum}>
-            {data.done}
-            <small> / {total}대</small>
+            {data.done.toLocaleString()}
+            <small> / {total.toLocaleString()}대</small>
           </b>
           <b className={styles.heroPct}>{pct}%</b>
         </span>
@@ -34,7 +34,7 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
           <span style={{ width: `${pct}%` }} />
         </span>
         <span className={styles.heroK}>
-          무지시 {data.unorderedDone}대 포함 · 내 입력 {data.myInputs}건
+          무지시 {data.unorderedDone.toLocaleString()}대 포함 · 내 입력 {data.myInputs.toLocaleString()}건
         </span>
       </section>
 
@@ -49,6 +49,17 @@ export function PdaDashboardScreen({ data }: { data: PdaLoadDashboard }) {
           </Link>
         ))}
       </section>
+
+      {/* 출차 전 (2026-11-17 Sol) — 0대면 숨긴다 */}
+      {data.notDeparted > 0 && (
+        <Link href="/pda?st=done" className={styles.departStrip}>
+          <b>출차 전</b>
+          <b className="mono">{data.notDeparted.toLocaleString()}</b>대<span className={styles.departNote}>· 상차완료했고 아직 출발 안 함</span>
+          <span className={styles.departGo}>
+            <Icon name="chevR" size={14} />
+          </span>
+        </Link>
+      )}
 
       <section className={styles.section}>
         <h2 className={styles.h2}>

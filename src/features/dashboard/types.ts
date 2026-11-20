@@ -1,5 +1,10 @@
 import type { PlanStatus } from "@/domain/plan-status";
 
+/**
+ * 대시보드 재구성 (2026-11-17 Sol, 시안 v0.1) — 처리할 일 → 오늘 차량 흐름 → 주의할 건 → 추이(14업무일).
+ * 빠진 것: 부분입고 칸, 입고예정 승인 전·이후 건수, 검수 품목 줄 수, 센터 기준 보기, 센터별 일마감 표, 이용 센터 표.
+ */
+
 /** 대시보드 센터 — 업무일은 센터마다 시작 시각이 달라 따로 센다 */
 export interface DashCenter {
   id: number;
@@ -8,21 +13,21 @@ export interface DashCenter {
   businessDate: string;
   businessDayStart: string;
   dailyCloseTime: string;
-  expireGraceDays: number;
-  /** 정기 휴무 요일 (0 일 ~ 6 토) */
-  weeklyOffDays: number[];
-  /** 오늘 업무일 검수 확정 차량 수 */
-  confirmedVehicles: number;
+  /** 오늘 업무일 일마감 — 안 했으면 null */
+  closed: { at: string; by: string } | null;
   /** 오늘 일마감 때 기한경과 취소 대상 */
   expireTargets: number;
-  /** 승인 전인데 입고예정일이 지났고 아직 유예 중인 건 */
-  expireGrace: number;
 }
 
-export interface DashPlanRow {
+/** 화주사 이름 칸 — 긴 이름은 줄이고, 누르면 전체 이름·코드를 보여 준다 (2026-11-17 Sol 시안 댓글) */
+export interface DashClient {
+  clientName: string;
+  clientCode: string;
+}
+
+export interface DashPlanRow extends DashClient {
   id: number;
   planNo: string;
-  clientName: string;
   centerName: string;
   planDate: string;
   status: PlanStatus;
@@ -30,100 +35,104 @@ export interface DashPlanRow {
   dueDate: string;
 }
 
-export interface DashAsnRow {
+export interface DashAsnRow extends DashClient {
   id: number;
   asnNo: string;
-  clientName: string;
   centerName: string;
   vehicleNo: string;
   shipDate: string;
 }
 
-export interface DashRcvRow {
+export interface DashRcvRow extends DashClient {
   rcvId: number;
   rcvNo: string;
   /** 웹에서 검수 결과를 보는 곳 — 지시 상차: ASN 상세 / 무지시: 상차 상세 */
   href: string;
-  clientName: string;
   centerName: string;
   vehicleNo: string;
   confirmedAt: string;
   issueCount: number;
 }
 
-export interface TplDashboard {
+/**
+ * 오늘 차량 흐름 — 5단계 (정의서 v1.9 입차 반영). 오늘 출고일 ASN + 오늘 상차한 무지시 차량.
+ * 상차 대기(ASN 등록) → 상차중 → 오는 중(상차완료·입차 전) → 도착·검수(입차 후 확정 전) → 입고완료(검수 확정)
+ */
+export interface DashFlow {
+  waiting: number;
+  loading: number;
+  onTheWay: number;
+  arrived: number;
+  received: number;
+}
+
+/** 추이 하루치 — 센터 업무일 기준 (2026-11-17 Sol: 14업무일) */
+export interface DashTrendDay {
+  date: string;
+  /** 검수 확정 차량 */
+  vehicles: number;
+  /** 그중 차이 있는 차량 */
+  issueVehicles: number;
+  /** 확정 수량 (기준 단위) — 정상 입고 / 반송(훼손·품목 불일치) */
+  goodQty: number;
+  returnQty: number;
+  /** 입차 → 검수 확정 평균 분 (입차 기록이 있는 차량만, 없으면 null) */
+  leadMinutes: number | null;
+  /** 그날 입고예정일인 승인 이후 건의 수량 (기준 단위, 취소 제외) — 화주사 입고율 */
+  planQty: number;
+  /** 그 수량 중 입고된 수량 */
+  planRcvQty: number;
+}
+
+export interface DashWatch {
+  expire: DashPlanRow[];
+  expireCount: number;
+  overdueAsn: DashAsnRow[];
+  overdueAsnCount: number;
+  issueRcv: DashRcvRow[];
+  issueCount: number;
+  unclosedOverdue: number;
+  alertDays: number;
+}
+
+interface DashBase {
   /** 조회 시각 (ISO) */
   now: string;
   centers: DashCenter[];
-  /** 소속 센터가 없는 계정만 — 센터 고르기 */
+  /** 고를 수 있는 센터 — 2곳 이상일 때만 고르기 */
   centerOptions: { id: number; name: string }[];
   selectedCenter: string;
+  flow: DashFlow;
+  trend: DashTrendDay[];
+}
+
+export interface TplDashboard extends DashBase {
   todo: {
     approvalWaiting: number;
-    inspectWaiting: number;
+    itemRequests: number;
+    /** 입차했고 검수 첫 입력 전 (입고취소 뒤 재검수 전 포함) */
+    arrivedWaiting: number;
+    /** 상차완료·입차 전 — 칸 보조 글 */
+    onTheWay: number;
     inspecting: number;
-    partial: number;
     expireTargets: number;
   };
-  flow: DashFlow;
-  watch: {
-    expire: DashPlanRow[];
-    expireCount: number;
-    overdueAsn: DashAsnRow[];
-    overdueAsnCount: number;
-    issueRcv: DashRcvRow[];
-    unclosedOverdue: number;
-    alertDays: number;
-  };
+  watch: DashWatch;
 }
 
-/** 오늘 흐름 — 3PL·화주사 공통 */
-export interface DashFlow {
-  /** 오늘 입고예정일 건 — 승인 전·승인 이후로 나눈다 (취소 제외) */
-  planPre: number;
-  planApproved: number;
-  /** 오늘 출고일 ASN 상태별 (취소 제외) */
-  asnRegistered: number;
-  asnLoading: number;
-  asnLoaded: number;
-  asnReceived: number;
-  /** 오늘 업무일 검수 확정 */
-  rcvVehicles: number;
-  rcvLines: number;
-  rcvIssueVehicles: number;
-}
-
-/** 화주사 대시보드 (2026-11-11) — 자기 화주사 건, 이용 센터 기준 */
-export interface ShipperDashboard {
-  now: string;
-  centers: DashCenter[];
-  /** 이용 센터 — 2곳 이상이면 고르기 */
-  centerOptions: { id: number; name: string }[];
-  selectedCenter: string;
+/** 화주사 대시보드 — 자기 화주사 건, 이용 센터 기준 */
+export interface ShipperDashboard extends DashBase {
+  clientName: string;
   todo: {
     /** 반려된 입고예정 — 고쳐서 다시 요청 */
     rejected: number;
-    /** 승인대기 — 3PL 검토 중 */
-    waiting: number;
+    /** 오늘 일마감 때 기한경과로 취소될 승인 전 건 */
+    expireTargets: number;
     /** ASN에 나눠 담을 잔량이 남은 승인·부분입고 건 */
     toAsn: number;
     /** 반려된 품목 등록 요청 (센터 무관) */
     itemRejected: number;
-    /** 오늘 일마감 때 기한경과로 취소될 승인 전 건 */
-    expireTargets: number;
-    /** 3PL이 검수 중인 내 차량 */
-    inspecting: number;
   };
-  flow: DashFlow;
-  watch: {
-    /** 승인 전 + 입고예정일 지남 — 오늘 취소 대상(target)과 유예 중 */
-    expire: (DashPlanRow & { target: boolean })[];
-    expireCount: number;
-    expireTargetCount: number;
-    overdueAsn: DashAsnRow[];
-    overdueAsnCount: number;
-    issueRcv: DashRcvRow[];
-    unclosedOverdue: number;
-    alertDays: number;
-  };
+  /** 기한경과 목록은 오늘 취소 대상(target)과 유예 중을 함께 */
+  watch: Omit<DashWatch, "expire"> & { expire: (DashPlanRow & { target: boolean })[] };
 }

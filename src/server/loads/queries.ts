@@ -61,7 +61,7 @@ const viewInclude = {
 type LoadRow = Prisma.LoadGetPayload<{ include: typeof viewInclude }>;
 
 function toView(l: LoadRow, meId: number | null): LoadView {
-  const departure = departureOf(l, l.center.businessDayStart);
+  const departure = departureOf(l);
   // 보여 줄 단위: ASN 지시 단위 → 처음 스캔한 단위 → 기준 단위
   const asnUnit = new Map<number, ItemUnit>();
   for (const a of l.asn?.lines ?? []) if (!asnUnit.has(a.itemId)) asnUnit.set(a.itemId, a.unit);
@@ -83,6 +83,9 @@ function toView(l: LoadRow, meId: number | null): LoadView {
         orderBase: d.orderBaseQty,
         loadBase: d.loadBaseQty,
         state: lineState(d.orderBaseQty, d.loadBaseQty),
+        diffReasonCode: d.diffReasonCode,
+        diffReasonName: d.diffReasonName,
+        diffReasonText: d.diffReasonText,
       };
     })
     // 지시 품목 먼저(품목코드 순), 그다음 지시 외 품목. 지시도 상차도 0인 줄(입력을 모두 취소한 지시 외 품목)은 뺀다
@@ -108,6 +111,7 @@ function toView(l: LoadRow, meId: number | null): LoadView {
     // 지시 상차만, 상차완료 + 출차 전 + 검수 전 (무지시는 재개 안 함, 출차 후 재개 안 함 — 2026-11-12 Sol)
     canReopen: l.status === "COMPLETED" && l.loadType === "ORDERED" && !departure && l.rcvs.length === 0,
     departure,
+    arrival: l.arrivedAt ? { at: iso(l.arrivedAt), by: l.arrivedBy } : null,
     canDepart: l.status === "COMPLETED" && !departure,
     lastReopen: l.histories[0]
       ? { at: iso(l.histories[0].at), by: l.histories[0].actor, reasonName: l.histories[0].reasonName, reasonText: l.histories[0].reasonText }
@@ -153,8 +157,8 @@ function toView(l: LoadRow, meId: number | null): LoadView {
     createdBy: l.createdBy,
     completedAt: l.completedAt ? iso(l.completedAt) : null,
     completedBy: l.completedBy,
-    diffReasonName: l.diffReasonName,
-    diffReasonText: l.diffReasonText,
+    legacyDiffReason: l.diffReasonName ? { name: l.diffReasonName, text: l.diffReasonText } : null,
+    diffLineCount: l.status === "COMPLETED" ? lines.filter((d) => d.diffReasonCode).length : 0,
   };
 }
 
@@ -210,7 +214,15 @@ const ROW_INCLUDE = {
   loadOrder: { select: { orderNo: true } },
   asn: { select: { shipDate: true } },
   inputs: { where: { canceledAt: null }, select: { workerId: true } },
+  lines: { where: { diffReasonCode: { not: null } }, select: { diffReasonName: true } },
 } satisfies Prisma.LoadInclude;
+
+/** 목록 한 줄의 차이 사유 — 품목별(v2.0), v2.0 이전 차량은 차량 사유 1개. 작업 중(재개 중)인 차량은 아직 없음 */
+function rowDiff(l: RowLoad) {
+  if (l.status !== "COMPLETED") return { diffCount: 0, diffReasonNames: [] as string[] };
+  if (l.lines.length) return { diffCount: l.lines.length, diffReasonNames: [...new Set(l.lines.map((d) => d.diffReasonName ?? ""))].filter(Boolean) };
+  return { diffCount: 0, diffReasonNames: l.diffReasonName ? [l.diffReasonName] : [] }; // v2.0 이전 차량 — 품목 수를 모름
+}
 
 type RowLoad = Prisma.LoadGetPayload<{ include: typeof ROW_INCLUDE }>;
 
@@ -224,12 +236,12 @@ const pdaRow = (l: RowLoad): PdaWorkingRow => ({
   loadDate: ymd(l.loadDate),
   shipDate: l.asn ? ymd(l.asn.shipDate) : null,
   revisionNo: l.revisionNo,
-  departure: departureOf(l, l.center.businessDayStart),
+  departure: departureOf(l),
   inputCount: l.inputs.length,
   workerCount: new Set(l.inputs.map((i) => i.workerId)).size,
   completedAt: l.completedAt ? iso(l.completedAt) : null,
   completedBy: l.completedBy,
-  diffReasonName: l.diffReasonName,
+  ...rowDiff(l),
 });
 
 /** PDA 상차내역 — 자기 화주사의 그 날짜(상차일) 상차완료 차량, 최근 완료가 앞 */
@@ -248,14 +260,18 @@ export async function pdaLoadDashboard(me: PlanActor): Promise<PdaLoadDashboard 
   const home = await pdaHome(me);
   if (!home) return null;
   const start = new Date(`${home.today}T00:00:00+09:00`);
-  const myInputs = await db.loadInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: start } } });
+  const [myInputs, notDeparted] = await Promise.all([
+    db.loadInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: start } } }),
+    db.load.count({ where: { clientId: me.clientId!, status: "COMPLETED", departedAt: null, arrivedAt: null } }),
+  ]);
   return {
+    notDeparted,
     today: home.today,
     todo: home.orders.filter((o) => !o.loadId).length,
     working: home.working.length,
     done: home.done.length,
     unorderedDone: home.done.filter((d) => d.type === "UNORDERED").length,
-    diffDone: home.done.filter((d) => !!d.diffReasonName).length,
+    diffDone: home.done.filter((d) => d.diffCount > 0 || d.diffReasonNames.length > 0).length,
     myInputs,
     recent: home.done.slice(0, 3),
   };

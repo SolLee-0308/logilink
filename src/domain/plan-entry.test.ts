@@ -72,6 +72,16 @@ test("편집기 라인 검사·중복", () => {
     items,
   );
   assert.deepEqual([...dup].sort(), [0, 1]);
+  // 관리 품목의 소비기한이 비어 있는 줄끼리는 아직 중복으로 보지 않는다 (필수 입력이 먼저)
+  const managed: CatalogItem = { ...tofu, expiryManaged: true };
+  const pending = duplicateLines(
+    [
+      { itemId: 1, unit: "BOX", qty: 1, expiryDate: null, lotNo: null },
+      { itemId: 1, unit: "BOX", qty: 2, expiryDate: null, lotNo: null },
+    ],
+    new Map([[1, managed]]),
+  );
+  assert.equal(pending.size, 0);
 });
 
 test("소비기한 하한: 입고예정일 + 최소 잔여일수보다 이르면 오류", () => {

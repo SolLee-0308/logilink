@@ -3,19 +3,40 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Barcode } from "@/components/ui/Barcode";
-import { DEPART_CONFIRM_MSG, LINE_STATE_LABEL, LOAD_TYPE_LABEL, UNORDERED_REASON_CODE, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_CONFIRM_MSG, DEPART_TYPE_LABEL, DIFF_STATES, LINE_STATE_LABEL, LOAD_TYPE_LABEL, codeFits, lineDiffState, qtyInUnit, type DiffState } from "@/domain/load-rules";
 import { fmtDateTime } from "@/lib/format";
 import { addLoadInput, cancelLoadInput, completeLoad, correctLoadInput, departLoad, previewScan, reloadLoad, reopenLoad } from "@/server/loads/actions";
 import type { ReasonOption } from "@/features/shared/RejectModal";
+import type { CodeOption } from "@/features/master/types";
 import type { LoadInputView, LoadLineView, LoadView, ScanPreview } from "@/features/loads/types";
 import { deviceId, takeNotice } from "./device";
-import { Icon, InfoRows, Pill } from "./PdaParts";
+import { Icon, InfoRows, Pill, QtyParts, RemainQty } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 /** 다른 작업자 입력을 다시 읽는 간격 */
 const POLL_MS = 5000;
 
 const fmt = (l: Pick<LoadLineView, "showUnit" | "showFactor" | "baseUnit">, base: number) => qtyInUnit(base, l.showUnit, l.showFactor, l.baseUnit);
+
+/** 품목별 차이 사유 고른 값 (정의서 v2.0 D28) — itemId → 코드·상세 */
+type Picks = Record<number, { code: string; text: string }>;
+
+/** 사유를 받는 품목 — 차이 품목(부족·초과·지시 외)과 그 상태 */
+const diffLinesOf = (lines: LoadLineView[]) =>
+  lines.flatMap((l) => {
+    const state = lineDiffState(l.orderBase, l.loadBase);
+    return state ? [{ line: l, state }] : [];
+  });
+
+/** 재완료 때 미리 채우기 — 직전 완료 때 사유가 지금 상태에도 쓸 수 있는 코드면 그대로 (v2.0 ④ 상차 재개) */
+function initialPicks(lines: LoadLineView[], reasons: CodeOption[]): Picks {
+  const out: Picks = {};
+  for (const { line, state } of diffLinesOf(lines)) {
+    const code = reasons.find((r) => r.code === line.diffReasonCode);
+    if (code && codeFits(code.appliesTo, state)) out[line.itemId] = { code: code.code, text: line.diffReasonText ?? "" };
+  }
+  return out;
+}
 const timeOf = (iso: string) => fmtDateTime(iso).slice(11);
 
 /**
@@ -36,7 +57,7 @@ const overAsk = (source: "add" | "edit", fe?: Record<string, string>): Ask | nul
  * 3) 본인 입력만 취소·정정, 다른 작업자 입력은 몇 초마다 합계에 반영
  * 4) 상차완료: 작업자·품목 합계를 보고 확인, 차이가 있으면 사유 선택 → 상차확인서 발행
  * 5) 상차 재개(v1.5 D20): 지시 상차만, 출차·검수 시작 전까지 사유와 함께 재개 → 다시 완료하면 같은 번호 다음 차수 (무지시 재개 안 함, 2026-11-12)
- * 6) 출차(2026-11-12 Sol): 상차완료 화면 [출차] → 확인 창 → 이후 재개 불가. 안 누르면 상차완료한 업무일이 지나면 자동 출차
+ * 6) 출차(2026-11-12 Sol, v1.9): 상차완료 화면 [출차] → 확인 창 → 이후 재개 불가. 누르지 않으면 3PL 입차 때·일마감 때 시스템이 출차를 저장한다
  * 화면 배치(2026-11-05 참고 UI): 차량 머리·진행 단계 → 스캔 카드 → 품목 → 상차 정보 → 내 입력 타임라인 → 아래 고정 [상차완료]
  */
 export function PdaLoadScreen({
@@ -46,7 +67,8 @@ export function PdaLoadScreen({
   homeHref = "/pda",
 }: {
   initial: LoadView;
-  reasons: ReasonOption[];
+  /** 상차 차이 사유 (LOAD_DIFF) — 품목 상태(적용 상태)로 걸러 보여 준다 */
+  reasons: CodeOption[];
   reopenReasons?: ReasonOption[];
   /** [처음으로] — 들어온 메뉴의 첫 화면(대시보드 또는 조회조건을 유지한 상차등록 목록) (2026-11-13 Sol) */
   homeHref?: string;
@@ -64,8 +86,10 @@ export function PdaLoadScreen({
   const [ask, setAsk] = useState<Ask | null>(null);
   const [editing, setEditing] = useState<{ id: number; qty: string } | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const [reason, setReason] = useState(initial.type === "UNORDERED" ? UNORDERED_REASON_CODE : "");
-  const [reasonText, setReasonText] = useState("");
+  /** 품목별 차이 사유 (v2.0 D28) — 상차완료 창을 열 때 채운다. 무지시 상차는 시스템이 정하므로 쓰지 않는다 */
+  const [picks, setPicks] = useState<Picks>({});
+  /** [모든 품목에 같은 사유]에서 마지막으로 고른 코드 — 안내 문구용 */
+  const [bulk, setBulk] = useState("");
   const [conflict, setConflict] = useState<string | null>(null);
   /** 상차 재개 창 (정의서 v1.5 D20) — 사유 코드·상세 */
   const [reopening, setReopening] = useState<{ code: string; text: string } | null>(null);
@@ -201,8 +225,8 @@ export function PdaLoadScreen({
       const r = await reopenLoad({ loadId: view.id, reasonCode: reopening.code, reasonText: reopening.text });
       if (r.ok) {
         setReopening(null);
-        setReason(view.type === "UNORDERED" ? UNORDERED_REASON_CODE : "");
-        setReasonText("");
+        setPicks({});
+        setBulk("");
         setNotice(r.message);
         await reload();
       } else {
@@ -252,7 +276,9 @@ export function PdaLoadScreen({
     start(async () => {
       setConflict(null);
       setError(null);
-      await reload();
+      const v = await reload();
+      // 이미 고른 사유는 두고, 처음 여는 품목만 직전 완료 사유로 채운다 (재개 후 재완료)
+      setPicks((p) => ({ ...initialPicks((v ?? view).lines, reasons), ...p }));
       setFinishing(true);
     });
 
@@ -260,7 +286,12 @@ export function PdaLoadScreen({
     start(async () => {
       setError(null);
       setConflict(null);
-      const r = await completeLoad({ loadId: view.id, lastInputId: view.lastInputId, reasonCode: view.hasDiff ? reason : null, reasonText: view.hasDiff ? reasonText : null });
+      const sent = ordered
+        ? diffLinesOf(view.lines)
+            .filter(({ line }) => picks[line.itemId]?.code)
+            .map(({ line }) => ({ itemId: line.itemId, code: picks[line.itemId].code, text: picks[line.itemId].text }))
+        : [];
+      const r = await completeLoad({ loadId: view.id, lastInputId: view.lastInputId, reasons: sent });
       if (r.ok) {
         // 최신 상태(상차완료)를 먼저 읽고 화면을 바꾼다
         meDone.current = true;
@@ -273,7 +304,6 @@ export function PdaLoadScreen({
     });
 
   const myInputs = view.inputs.filter((i) => i.mine && !i.canceled);
-  const chosen = reasons.find((r) => r.code === reason);
   const reopenChosen = reopenReasons.find((r) => r.code === reopening?.code);
   const loadedLines = view.lines.filter((l) => l.loadBase > 0).length;
 
@@ -286,7 +316,8 @@ export function PdaLoadScreen({
    * 박스 없이 두어 아래 스캔 칸이 화면의 중심이 되게 한다.
    */
   const head = () => (
-    <section className={styles.vHead}>
+    // 상차 작업은 차량 정보 아래 구분선 없이 보라색 스캔 영역을 바로 붙인다 (2026-11-14 Sol)
+    <section className={`${styles.vHead} ${styles.vHeadFlat}`}>
       <span className={styles.idHead}>
         <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
@@ -342,11 +373,16 @@ export function PdaLoadScreen({
               ["차량번호", <span key="v" className="mono">{view.vehicleNo}</span>],
               ["도착 센터", view.centerName],
               ["완료", `${view.completedAt ? timeOf(view.completedAt) : "-"} · ${view.completedBy ?? "-"}`],
-              // 출차 (2026-11-12 Sol) — 출차 전 / 시각·처리자 / 업무일이 지나 자동 출차
+              // 출차 (2026-11-12 Sol, v1.9) — 출차 전 / 시각·처리자 / 시스템 처리(입차·일마감) 구분
               ["출차", <DepartText key="dep" view={view} />],
               // ASN 대비 상차 — 품목 목록 대신 요약만 (2026-11-07 Sol 피드백)
               ["ASN 대비 상차", <LoadSummary key="sum" view={view} />],
-              ...(view.diffReasonName ? ([["차이 사유", `${view.diffReasonName}${view.diffReasonText ? ` — ${view.diffReasonText}` : ""}`]] as [string, React.ReactNode][]) : []),
+              // 차이 사유 — 품목별(v2.0), v2.0 이전 차량은 차량 사유 1개
+              ...(view.diffLineCount > 0
+                ? ([["차이 사유", <LineReasonList key="rs" lines={view.lines} ordered={ordered} />]] as [string, React.ReactNode][])
+                : view.legacyDiffReason
+                  ? ([["차이 사유", `${view.legacyDiffReason.name}${view.legacyDiffReason.text ? ` — ${view.legacyDiffReason.text}` : ""}`]] as [string, React.ReactNode][])
+                  : []),
             ]}
           />
           <div className={styles.barcode}>
@@ -486,7 +522,31 @@ export function PdaLoadScreen({
   }
 
   /* ═════════ 상차완료 확인 — 작업 화면 위에 아래에서 올라오는 확인 창 (2026-11-07 Sol 피드백: 위쪽 표시 → 모달) ═════════ */
-  const diffLines = view.lines.filter((l) => l.state !== "match" && (l.orderBase > 0 || l.loadBase > 0));
+  const diffLines = diffLinesOf(view.lines);
+  /** 이 품목 상태에 쓸 수 있는 사유만 (적용 상태, v2.0 D28) */
+  const optionsFor = (state: DiffState) => reasons.filter((r) => codeFits(r.appliesTo, state));
+  /** [모든 품목에 같은 사유] — 차이 품목 중 한 곳에라도 쓸 수 있는 코드 */
+  const bulkOptions = reasons.filter((r) => diffLines.some(({ state }) => codeFits(r.appliesTo, state)));
+  const pickOk = ({ line, state }: (typeof diffLines)[number]) => {
+    const p = picks[line.itemId];
+    const code = p && optionsFor(state).find((r) => r.code === p.code);
+    return !!code && (!code.requiresText || !!p.text.trim());
+  };
+  const missingPicks = ordered ? diffLines.filter((d) => !pickOk(d)).length : 0;
+  const setPick = (itemId: number, v: Partial<{ code: string; text: string }>) =>
+    setPicks((p) => ({ ...p, [itemId]: { code: p[itemId]?.code ?? "", text: p[itemId]?.text ?? "", ...v } }));
+  const applyAll = (code: string) => {
+    if (!code) return;
+    setPicks((p) => {
+      const next = { ...p };
+      for (const { line, state } of diffLines) {
+        if (!optionsFor(state).some((r) => r.code === code)) continue; // 쓸 수 없는 품목은 그대로 두고 따로 고른다
+        next[line.itemId] = { code, text: p[line.itemId]?.code === code ? p[line.itemId].text : "" };
+      }
+      return next;
+    });
+  };
+  const notFitting = (code: string) => diffLines.filter(({ state }) => !optionsFor(state).some((r) => r.code === code)).length;
   const finishSheet = finishing && (
     <div className={styles.modalScrim} onClick={(e) => e.target === e.currentTarget && !pending && setFinishing(false)}>
       <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="finish-title">
@@ -509,51 +569,94 @@ export function PdaLoadScreen({
             <MatchText matched={matchedCount} total={orderLineCount} />
           </p>
         )}
-        {view.hasDiff && diffLines.length > 0 && (
-          <ul className={styles.diffList} aria-label="차이 품목">
-            {diffLines.map((l) => (
-              <li key={l.itemId}>
-                <span className={styles.diffName}>
-                  <span className={`${styles.dim} mono`}>{l.itemClientCode ?? l.itemCode}</span> {l.itemName}
-                </span>
-                <span className={`mono ${styles.diffQty}`}>
-                  {fmt(l, l.loadBase)}
-                  {l.orderBase > 0 && <span className={styles.dim}> / {fmt(l, l.orderBase)}</span>}
-                </span>
-                <span className={`${styles.diffState} ${styles[`ds_${l.state}`]}`}>{LINE_STATE_LABEL[l.state]}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {view.hasDiff && loadedLines > 0 && (
+        {/* 품목별 차이 사유 (정의서 v2.0 ④·D28) — 차이 품목마다 그 상태에 맞는 사유만. 무지시는 시스템이 "예정 외 차량" */}
+        {ordered && diffLines.length > 1 && loadedLines > 0 && (
           <div className={styles.reasonBox}>
-            <label htmlFor="pda-reason" className={styles.label}>
-              차이 사유
+            <label htmlFor="pda-reason-all" className={styles.label}>
+              모든 품목에 같은 사유
             </label>
-            <select id="pda-reason" className={styles.field} value={reason} onChange={(e) => setReason(e.target.value)} disabled={pending}>
-              <option value="">사유를 고르세요</option>
-              {reasons.map((r) => (
+            <select
+              id="pda-reason-all"
+              className={styles.field}
+              value={bulk}
+              onChange={(e) => {
+                setBulk(e.target.value);
+                applyAll(e.target.value);
+              }}
+              disabled={pending}
+            >
+              <option value="">한 번에 고르기 (선택)</option>
+              {bulkOptions.map((r) => (
                 <option key={r.code} value={r.code}>
                   {r.name}
                 </option>
               ))}
             </select>
-            {chosen?.requiresText && (
-              <textarea
-                className={`${styles.field} ${styles.textarea}`}
-                value={reasonText}
-                onChange={(e) => setReasonText(e.target.value)}
-                placeholder="상세 내용 (필수)"
-                maxLength={500}
-                rows={3}
-                disabled={pending}
-              />
+            {bulk && notFitting(bulk) > 0 && (
+              <p className={styles.help}>이 사유를 쓸 수 없는 품목 {notFitting(bulk).toLocaleString()}개는 아래에서 따로 고르세요.</p>
             )}
           </div>
         )}
+        {diffLines.length > 0 && (
+          <ul className={styles.diffList} aria-label="차이 품목">
+            {diffLines.map(({ line: l, state }) => {
+              const p = picks[l.itemId];
+              const opts = optionsFor(state);
+              const chosen = opts.find((r) => r.code === p?.code);
+              return (
+                <li key={l.itemId}>
+                  <span className={styles.diffName}>
+                    <span className={`${styles.dim} mono`}>{l.itemClientCode ?? l.itemCode}</span> {l.itemName}
+                  </span>
+                  <span className={`mono ${styles.diffQty}`}>
+                    {fmt(l, l.loadBase)}
+                    {l.orderBase > 0 && <span className={styles.dim}> / {fmt(l, l.orderBase)}</span>}
+                  </span>
+                  <span className={`${styles.diffState} ${styles[`ds_${state}`]}`}>{LINE_STATE_LABEL[state]}</span>
+                  {ordered && loadedLines > 0 && (
+                    <div className={styles.diffPick}>
+                      <select
+                        aria-label={`${l.itemName} 차이 사유`}
+                        className={`${styles.field} ${!chosen ? styles.fieldNeed : ""}`}
+                        value={chosen?.code ?? ""}
+                        onChange={(e) => setPick(l.itemId, { code: e.target.value })}
+                        disabled={pending}
+                      >
+                        <option value="">{LINE_STATE_LABEL[state]} 사유를 고르세요</option>
+                        {opts.map((r) => (
+                          <option key={r.code} value={r.code}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                      {chosen?.requiresText && (
+                        <textarea
+                          aria-label={`${l.itemName} 상세 내용`}
+                          className={`${styles.field} ${styles.textarea}`}
+                          value={p?.text ?? ""}
+                          onChange={(e) => setPick(l.itemId, { text: e.target.value })}
+                          placeholder="상세 내용 (필수)"
+                          maxLength={500}
+                          rows={2}
+                          disabled={pending}
+                        />
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {!ordered && loadedLines > 0 && (
+          <p className={styles.help}>무지시 상차는 모든 품목의 차이 사유가 &lsquo;예정 외 차량(무지시)&rsquo;으로 자동 기록됩니다.</p>
+        )}
+        {ordered && missingPicks > 0 && loadedLines > 0 && (
+          <p className={styles.warnText}>사유를 고르지 않은 차이 품목이 {missingPicks.toLocaleString()}개 있습니다.</p>
+        )}
         {/* 작업자 — 이름 한 줄 (2026-11-11 Sol: 꼭 필요한 정보만). 여러 명이면 아직 싣는 사람이 없는지 확인 */}
         <p className={styles.finishSum}>
-          작업자 {view.workers.length}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
+          작업자 {view.workers.length.toLocaleString()}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
         </p>
         {view.workers.length > 1 && <p className={styles.warnText}>다른 작업자가 다 실었는지 확인하세요.</p>}
         {conflict && (
@@ -574,7 +677,7 @@ export function PdaLoadScreen({
             type="button"
             className={styles.primary}
             onClick={onComplete}
-            disabled={pending || loadedLines === 0 || (view.hasDiff && (!reason || (!!chosen?.requiresText && !reasonText.trim())))}
+            disabled={pending || loadedLines === 0 || missingPicks > 0}
           >
             상차완료
           </button>
@@ -687,27 +790,25 @@ export function PdaLoadScreen({
               if (Number(qty) > 0) onAdd(false);
             }}
           >
-            {/* 스캔한 품목 — 이름 + 라벨/값 상자 (2026-11-11 Sol: 이전 방식 유지, 필요한 줄만).
-                품목코드 · 지시(지시 상차만) · 지금 합계. 스캔 단위는 기준 단위와 다를 때만 */}
-            <div className={styles.sheetHead}>
-              <span className={styles.iconCircle}>
-                <Icon name="box" size={17} />
-              </span>
-              <b className={styles.previewName}>{preview.itemName}</b>
+            {/* 스캔한 품목 — 머리는 아이콘 없이 [품목코드(연한 회색·작게)] 품목명 (목록과 같은 표기),
+                아래는 라벨/값 줄: 지시 수량 · 합계 수량 · 남은 수량(지시 상차만). 스캔 단위는 기준 단위와 다를 때만 (2026-11-14 Sol) */}
+            <div className={`${styles.sheetHead} ${styles.previewHead}`}>
+              <b className={styles.previewName}>
+                <span className={`${styles.previewCode} mono`}>{preview.itemClientCode ?? preview.itemCode}</span> {preview.itemName}
+              </b>
             </div>
             <InfoRows
               tone="white"
               rows={[
-                ["품목코드", <span key="c" className="mono">{preview.itemClientCode ?? preview.itemCode}</span>],
                 ...(preview.unit !== preview.baseUnit
                   ? ([["스캔 단위", <span key="u" className="mono">{preview.unit} = {preview.factor} {preview.baseUnit}</span>]] as [string, React.ReactNode][])
                   : []),
                 ...(ordered
                   ? ([
                       [
-                        "지시",
+                        "지시 수량",
                         preview.orderBase ? (
-                          qtyInUnit(preview.orderBase, preview.showUnit, preview.showFactor, preview.baseUnit)
+                          <QtyParts key="o" text={qtyInUnit(preview.orderBase, preview.showUnit, preview.showFactor, preview.baseUnit)} />
                         ) : (
                           <span key="x" className={styles.warnInline}>
                             <Icon name="alert" size={15} /> 지시 외
@@ -716,11 +817,18 @@ export function PdaLoadScreen({
                       ],
                     ] as [string, React.ReactNode][])
                   : []),
-                ["지금 합계", <b key="n">{qtyInUnit(preview.loadBase, preview.showUnit, preview.showFactor, preview.baseUnit)}</b>],
+                ["합계 수량", <QtyParts key="n" text={qtyInUnit(preview.loadBase, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                ...(ordered
+                  ? ([["남은 수량", <RemainQty key="r" target={preview.orderBase} done={preview.loadBase} unit={preview.showUnit} factor={preview.showFactor} baseUnit={preview.baseUnit} />]] as [
+                      string,
+                      React.ReactNode,
+                    ][])
+                  : []),
               ]}
             />
-            <label htmlFor="pda-qty" className={styles.label}>
-              추가로 실은 수량 ({preview.unit})
+            {/* 보이는 라벨은 뺐다 — 입력칸 안내 글로 대신 (2026-11-14 Sol). 화면 읽기 프로그램용 라벨은 남김 */}
+            <label htmlFor="pda-qty" className="sr-only">
+              상차할 수량 ({preview.unit})
             </label>
             <div className={styles.qtyRow}>
               <input
@@ -730,7 +838,7 @@ export function PdaLoadScreen({
                 value={qty}
                 onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
-                placeholder="0"
+                placeholder={`상차할 수량 입력 (${preview.unit})`}
                 autoComplete="off"
                 enterKeyHint="done"
                 disabled={pending}
@@ -756,7 +864,7 @@ export function PdaLoadScreen({
       {/* 내 입력 — 접힌 줄, 눌러서 정정·취소 (2026-11-06 Sol 결정: 정보 줄이기) */}
       <details className={styles.fold}>
         <summary className={styles.foldHead}>
-          내 입력 <span className={styles.count}>{myInputs.length}</span>
+          내 입력 <span className={styles.count}>{myInputs.length.toLocaleString()}</span>
           <span className={styles.detailSum}>{myInputs[0] ? `마지막 ${timeOf(myInputs[0].inputAt)}` : "없음"}</span>
           <span className={styles.detailChev}>
             <Icon name="chevD" size={16} />
@@ -915,7 +1023,7 @@ function Lines({ view, flash }: { view: LoadView; flash?: { itemId: number; n: n
   return (
     <section className={styles.flat}>
       <h2 className={styles.h2}>
-        품목 <span className={styles.count}>{view.lines.length}</span>
+        품목 <span className={styles.count}>{view.lines.length.toLocaleString()}</span>
         {/* 지시 상차의 '일치 N/M' 태그는 머리 상태 줄로 옮겼다 (2026-11-07 Sol 확정) */}
         {!ordered && <span className={styles.h2Sub}>상차 수량</span>}
       </h2>
@@ -923,7 +1031,8 @@ function Lines({ view, flash }: { view: LoadView; flash?: { itemId: number; n: n
         <p className={styles.empty}>{ordered ? "지시 품목이 없습니다." : "아직 실은 품목이 없습니다. 오늘 ASN에 있는 품목만 실을 수 있습니다."}</p>
       ) : (
         <ul className={styles.flatLines}>
-          {view.lines.map((l) => {
+          {/* 지시 수량과 합계가 일치한 품목은 맨 아래로 — 남은 품목이 위에 보이게 (2026-11-14 Sol). 나머지 순서는 그대로 */}
+          {(ordered ? [...view.lines].sort((x, y) => Number(x.state === "match") - Number(y.state === "match")) : view.lines).map((l) => {
             const st = l.loadBase === 0 && l.orderBase > 0 ? "none" : l.state;
             const pct = l.orderBase > 0 ? Math.min(100, (l.loadBase / l.orderBase) * 100) : 100;
             return (
@@ -971,6 +1080,39 @@ function MatchText({ matched, total }: { matched: number; total: number }) {
 }
 
 /** 상차확인서의 ASN 대비 상차 요약 — 지시 품목 중 일치 수, 부족·초과·지시 외 품목 수 (2026-11-07 Sol 피드백) */
+/**
+ * 상차완료 화면의 차이 사유 (v2.0 D28, 2026-11-19 Sol B안) — 상태별 건수만 보여 주고 품목별 사유는 [사유 보기]로 펼친다.
+ * 무지시 상차는 모든 품목이 같은 사유라 한 줄로 끝낸다.
+ */
+function LineReasonList({ lines, ordered }: { lines: LoadLineView[]; ordered: boolean }) {
+  const rows = lines.filter((l) => l.diffReasonName);
+  if (!ordered) return <span>{rows[0]?.diffReasonName} · 모든 품목</span>;
+  const counts = DIFF_STATES.map((s) => [s, rows.filter((l) => l.state === s).length] as const).filter(([, n]) => n > 0);
+  return (
+    <details className={styles.reasonFold}>
+      <summary>
+        <span className={styles.reasonCounts}>
+          {counts.map(([s, n]) => (
+            <span key={s} className={`${styles.diffState} ${styles[`ds_${s}`]}`}>
+              {LINE_STATE_LABEL[s]} {n.toLocaleString()}
+            </span>
+          ))}
+        </span>
+        <span className={styles.reasonToggle}>사유 보기</span>
+      </summary>
+      <ul className={styles.reasonList}>
+        {rows.map((l) => (
+          <li key={l.itemId}>
+            <span className={`${styles.dim} mono`}>{l.itemClientCode ?? l.itemCode}</span>{" "}
+            <span className={`${styles.diffState} ${styles[`ds_${l.state}`]}`}>{LINE_STATE_LABEL[l.state]}</span> {l.diffReasonName}
+            {l.diffReasonText ? ` — ${l.diffReasonText}` : ""}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function LoadSummary({ view }: { view: LoadView }) {
   if (view.type !== "ORDERED") {
     return <span>무지시 상차 · {view.lines.filter((l) => l.loadBase > 0).length}품목</span>;
@@ -982,17 +1124,18 @@ function LoadSummary({ view }: { view: LoadView }) {
   return (
     <span>
       <b className={match === order.length ? styles.matchAll : undefined}>
-        일치 {match}/{order.length}품목
+        일치 {match}/{order.length.toLocaleString()}품목
       </b>
       {parts.length > 0 && <span className={styles.dim}> · {parts.map(([k, v]) => `${k} ${v}`).join(" · ")}</span>}
     </span>
   );
 }
 
-/** 출차 표시 (2026-11-12 Sol) — 출차 전 / "14:30 · 처리자" / "자동 출차(업무일 마감) 11-13 06:00" */
+/** 출차 표시 (2026-11-12 Sol, v1.9) — 출차 전 / "14:30 · 처리자" / "입차 처리(시스템) · 11-13 09:10" */
 function DepartText({ view }: { view: LoadView }) {
   const d = view.departure;
   if (!d) return <span className={styles.warnInline}>출차 전</span>;
-  if (d.auto) return <span>자동 출차(업무일 마감) · {fmtDateTime(d.at).slice(5, 16)}</span>;
+  if (d.system) return <span>{DEPART_TYPE_LABEL[d.type]} · {fmtDateTime(d.at).slice(5, 16)}</span>;
   return <span>{timeOf(d.at)} · {d.by ?? "-"}</span>;
 }
+

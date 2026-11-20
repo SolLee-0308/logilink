@@ -4,15 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge, Tag } from "@/components/ui/Badges";
-import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
+import { CellSub, DateStamp, DataTable, type Column } from "@/components/ui/DataTable";
 import { FilterBar, FilterCheckbox, FilterField } from "@/components/ui/FilterBar";
 import { DateRangeField, PlanSearchFields, matchPlanNo } from "./PlanSearchFields";
 import { Sheet } from "@/components/ui/Overlay";
 import { RuleList } from "@/components/ui/RuleList";
-import { ListToolbar } from "@/components/ui/SplitView";
-import { Tabs } from "@/components/ui/Tabs";
+import { Tabs, TabTotal } from "@/components/ui/Tabs";
 import { dday, ddayLabel } from "@/domain/plan-rules";
-import { fmtShortDateTime, includesText } from "@/lib/format";
+import { includesText } from "@/lib/format";
 import { APPROVAL_LIST_KEY, APPROVAL_TABS, approvalListSearch, inRange, type ApprovalListQuery } from "./approval-list";
 import { ClientFilter, type PickedClient } from "./ClientFinder";
 import { APPROVAL_RULES } from "./rules";
@@ -88,6 +87,7 @@ export function ApprovalScreen({
     {
       key: "no",
       header: "입고예정번호",
+      align: "center",
       render: (r) => (
         <span className="cell-tags">
           <span className="mono">{r.planNo}</span>
@@ -101,6 +101,7 @@ export function ApprovalScreen({
     {
       key: "date",
       header: "입고예정일",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{r.planDate}</span>
@@ -111,10 +112,9 @@ export function ApprovalScreen({
     {
       key: "qty",
       header: "품목 · 수량",
-      align: "right",
       render: (r) => (
         <>
-          <span className="mono">{r.lineCount}종</span>
+          <span className="mono">{r.lineCount.toLocaleString()}품목</span>
           <CellSub mono>{qtyText(r.qtyByUnit)}</CellSub>
         </>
       ),
@@ -124,24 +124,18 @@ export function ApprovalScreen({
       ? {
           key: "processed",
           header: "내 처리",
-          render: (r) => (
-            <>
-              <span className="mono">{fmtShortDateTime(r.processed?.at)}</span>
-              <CellSub>{r.processed?.action === "APPROVE" ? "승인" : "반려"}</CellSub>
-            </>
-          ),
+          align: "center",
+          // 1줄 날짜, 2줄 승인/반려(왼쪽)·시각(오른쪽) (2026-11-14 Sol)
+          render: (r) => <DateStamp at={r.processed?.at} by={r.processed?.action === "APPROVE" ? "승인" : "반려"} />,
         }
       : {
           key: "saved",
           header: "최종 저장",
-          render: (r) => (
-            <>
-              <span className="mono">{fmtShortDateTime(r.savedAt)}</span>
-              <CellSub>{r.savedBy}</CellSub>
-            </>
-          ),
+          align: "center",
+          // 1줄 날짜, 2줄 저장자(왼쪽)·시각(오른쪽) (2026-11-14 Sol)
+          render: (r) => <DateStamp at={r.savedAt} by={r.savedBy} />,
         },
-    { key: "status", header: "상태", render: (r) => <StatusBadge status={r.status} /> },
+    { key: "status", header: "상태", align: "center", render: (r) => <StatusBadge status={r.status} /> },
   ];
 
   return (
@@ -155,8 +149,9 @@ export function ApprovalScreen({
           <ClientFilter id="f-client" value={client} onChange={setClient} />
         </FilterField>
         <DateRangeField from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <FilterCheckbox id="f-rev" label="재요청 건만" checked={revOnly} onChange={setRevOnly} />
         <PlanSearchFields no={no} item={item} onNo={setNo} onItem={setItem} />
+        {/* 재요청 건만은 맨 뒤(2번째 줄) — 1번째 줄 열 맞춤 때 여백이 크게 생기지 않게 (2026-11-14 Sol) */}
+        <FilterCheckbox id="f-rev" label="재요청 건만" checked={revOnly} onChange={setRevOnly} />
       </FilterBar>
       <Tabs
         label="처리 구분"
@@ -164,9 +159,9 @@ export function ApprovalScreen({
         onChange={setTab}
         panelId="approval-body"
         items={APPROVAL_TABS.map((k) => ({ key: k, label: TAB_LABEL[k], count: counts[k] }))}
+        aside={<TabTotal total={list.length} />}
       />
       <div id="approval-body" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        <ListToolbar total={list.length} />
         <DataTable
           caption={`${TAB_LABEL[tab]} 입고예정 목록`}
           columns={columns}

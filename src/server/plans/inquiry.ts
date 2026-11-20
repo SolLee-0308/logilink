@@ -11,7 +11,9 @@ import { getPlanDetail } from "@/server/plans/queries";
 import { distributedByLine } from "@/server/asn/queries";
 import { can, isShipperRole } from "@/domain/permissions";
 import { CANCEL_GROUP, type ItemUnit } from "@/domain/master";
-import { ALERT_DAYS_KEY, DEFAULT_ALERT_DAYS, INQUIRY_PLAN, OPEN_ASN, OPEN_PLAN, approvedCancelBlock, asnStatusesOf, overdueCutoff, planStatusesOf } from "@/domain/inquiry-rules";
+import {
+  ALERT_DAYS_KEY, DEFAULT_ALERT_DAYS, INQUIRY_PLAN, OPEN_ASN, OPEN_PLAN, approvedCancelBlock, asnStatusesOf, overdueCutoff, planStatusesOf, waitStageOf, type WaitStage,
+} from "@/domain/inquiry-rules";
 import { todayKst } from "@/lib/format";
 import type { CenterOption, InquiryDetail, InquiryPlanRow, InquiryVehicleRow } from "@/features/plans/inquiry/types";
 import type { InquiryQuery } from "@/features/plans/inquiry/inquiry-list";
@@ -60,6 +62,24 @@ export async function inquiryCenters(me: PlanActor): Promise<CenterOption[]> {
   return db.center.findMany({ orderBy: { code: "asc" }, select: { id: true, name: true } });
 }
 
+/* ═════════ 입고 대기 단계 (정의서 v1.9 ⑤ · D27) ═════════ */
+
+/** ASN의 상차·출차·입차·검수 시작 저장값 — 입고 대기 단계 판단용 */
+const STAGE_SELECT = {
+  status: true,
+  load: { select: { status: true, departedAt: true, arrivedAt: true, rcvs: { where: { status: "WORKING" }, select: { startedAt: true }, take: 1 } } },
+} satisfies Prisma.AsnSelect;
+
+const stageOf = (a: Prisma.AsnGetPayload<{ select: typeof STAGE_SELECT }>): WaitStage | null =>
+  waitStageOf({ asnStatus: a.status, load: a.load, rcv: a.load?.rcvs[0] ?? null });
+
+/** ASN id → 입고 대기 단계 (입고완료·취소는 null) */
+async function asnStages(asnIds: number[]): Promise<Map<number, WaitStage | null>> {
+  if (!asnIds.length) return new Map();
+  const rows = await db.asn.findMany({ where: { id: { in: asnIds } }, select: { id: true, ...STAGE_SELECT } });
+  return new Map(rows.map((a) => [a.id, stageOf(a)]));
+}
+
 /* ═════════ 품목별 탭 ═════════ */
 
 export async function listInquiryPlans(me: PlanActor, q: InquiryQuery): Promise<InquiryPlanRow[]> {
@@ -92,6 +112,22 @@ export async function listInquiryPlans(me: PlanActor, q: InquiryQuery): Promise<
   ]);
   const vehicles = new Map<number, number>();
   for (const a of asnLinks) vehicles.set(a.planId, (vehicles.get(a.planId) ?? 0) + 1);
+  const stages = await asnStages([...new Set(asnLinks.map((a) => a.asnId))]);
+  // 무지시 상차 차량 — 검수 확정으로 이 입고예정에 배분된 뒤에만 센다 (확정 전에는 어느 입고예정인지 알 수 없다, 2026-11-14 Sol)
+  const unorderedAllocs = await db.rcvAlloc.findMany({
+    where: { reverse: false, planLine: { planId: { in: plans.map((p) => p.id) } }, rcv: { status: "CONFIRMED", load: { loadType: "UNORDERED" } } },
+    select: { rcv: { select: { loadId: true } }, planLine: { select: { planId: true } } },
+  });
+  const unordered = new Map<number, Set<number>>();
+  for (const a of unorderedAllocs) {
+    if (!a.planLine) continue;
+    unordered.set(a.planLine.planId, (unordered.get(a.planLine.planId) ?? new Set()).add(a.rcv.loadId));
+  }
+  const stagesOf = new Map<number, WaitStage[]>();
+  for (const a of asnLinks) {
+    const s = stages.get(a.asnId);
+    if (s) stagesOf.set(a.planId, [...(stagesOf.get(a.planId) ?? []), s]);
+  }
   return plans.map((p) => ({
     id: p.id,
     planNo: p.planNo,
@@ -104,6 +140,8 @@ export async function listInquiryPlans(me: PlanActor, q: InquiryQuery): Promise<
     approvedAt: p.approvedAt ? iso(p.approvedAt) : null,
     approvedBy: p.approvedBy,
     vehicleCount: vehicles.get(p.id) ?? 0,
+    unorderedCount: unordered.get(p.id)?.size ?? 0,
+    waitStages: OPEN_PLAN.includes(p.status) ? (stagesOf.get(p.id) ?? []) : [],
     lines: p.lines.map((l) => ({
       lineNo: l.lineNo,
       itemCode: l.item.code,
@@ -174,14 +212,19 @@ export async function listInquiryVehicles(me: PlanActor, q: InquiryQuery): Promi
           item: { select: { code: true, name: true, baseUnit: true } },
         },
       },
-      load: { select: { rcvs: { where: { status: "CONFIRMED" }, select: { id: true, confirmedAt: true } } } },
+      load: {
+        select: {
+          status: true, departedAt: true, arrivedAt: true,
+          rcvs: { where: { status: { in: ["WORKING", "CONFIRMED"] } }, select: { id: true, status: true, confirmedAt: true, startedAt: true } },
+        },
+      },
     },
     orderBy: [{ shipDate: "asc" }, { asnNo: "asc" }],
     take: 1000,
   });
   // 이 차량의 검수 확정으로 입고예정 라인에 배분된 입고·반송 (차량 × 입고예정 라인)
   const rcvToAsn = new Map<number, number>();
-  for (const a of asns) for (const r of a.load?.rcvs ?? []) rcvToAsn.set(r.id, a.id);
+  for (const a of asns) for (const r of a.load?.rcvs ?? []) if (r.status === "CONFIRMED") rcvToAsn.set(r.id, a.id);
   const allocs = rcvToAsn.size
     ? await db.rcvAlloc.groupBy({
         by: ["rcvId", "planLineId", "kind"],
@@ -199,6 +242,7 @@ export async function listInquiryVehicles(me: PlanActor, q: InquiryQuery): Promi
   }
   return asns.map((a) => {
     const open = a.status !== "RECEIVED";
+    const confirmed = a.load?.rcvs.find((r) => r.status === "CONFIRMED");
     return {
       id: a.id,
       asnNo: a.asnNo,
@@ -211,7 +255,8 @@ export async function listInquiryVehicles(me: PlanActor, q: InquiryQuery): Promi
       driverName: a.driverName,
       driverTel: a.driverTel,
       status: a.status,
-      receivedAt: a.load?.rcvs[0]?.confirmedAt ? iso(a.load.rcvs[0].confirmedAt) : null,
+      receivedAt: confirmed?.confirmedAt ? iso(confirmed.confirmedAt) : null,
+      waitStage: waitStageOf({ asnStatus: a.status, load: a.load, rcv: a.load?.rcvs.find((r) => r.status === "WORKING") ?? null }),
       planNos: [...new Set(a.lines.map((l) => l.plan.planNo))],
       lines: a.lines.map((l) => {
         const g = got.get(`${a.id}:${l.planLineId}`) ?? { rcv: 0, ret: 0 };
@@ -261,7 +306,7 @@ export async function getInquiryDetail(me: PlanActor, id: number): Promise<Inqui
     db.rcvAlloc.findMany({
       where: { planLine: { planId: id }, reverse: false },
       include: {
-        rcv: { select: { rcvNo: true, vehicleNo: true, confirmedAt: true } },
+        rcv: { select: { rcvNo: true, vehicleNo: true, confirmedAt: true, status: true, loadId: true, load: { select: { loadType: true } } } },
         asnLine: { select: { asn: { select: { asnNo: true } } } },
         planLine: { select: { lineNo: true, unit: true, qty: true, baseQty: true, item: { select: { code: true, name: true, baseUnit: true } } } },
       },
@@ -275,6 +320,7 @@ export async function getInquiryDetail(me: PlanActor, id: number): Promise<Inqui
   const byAsn = new Map<number, InquiryDetail["vehicles"][number] & { sums: Map<ItemUnit, number> }>();
   for (const l of asnLines) {
     const v = byAsn.get(l.asn.id) ?? {
+      waitStage: null,
       id: l.asn.id,
       asnNo: l.asn.asnNo,
       shipDate: ymd(l.asn.shipDate),
@@ -288,14 +334,22 @@ export async function getInquiryDetail(me: PlanActor, id: number): Promise<Inqui
     v.sums.set(l.unit, (v.sums.get(l.unit) ?? 0) + l.qty);
     byAsn.set(l.asn.id, v);
   }
-  const vehicles = [...byAsn.values()].map(({ sums, ...v }) => ({ ...v, qtyByUnit: UNIT_ORDER.filter((u) => sums.has(u)).map((u) => [u, sums.get(u)!] as [ItemUnit, number]) }));
+  const stages = await asnStages([...byAsn.keys()]);
+  const vehicles = [...byAsn.values()].map(({ sums, ...v }) => ({
+    ...v,
+    waitStage: stages.get(v.id) ?? null,
+    qtyByUnit: UNIT_ORDER.filter((u) => sums.has(u)).map((u) => [u, sums.get(u)!] as [ItemUnit, number]),
+  }));
   const activeAsnCount = vehicles.filter((v) => v.status !== "CANCELED").length;
+  // 확정·배분된 무지시 상차 차량 (2026-11-14 Sol)
+  const unorderedCount = new Set(allocs.filter((a) => a.rcv.status === "CONFIRMED" && a.rcv.load.loadType === "UNORDERED").map((a) => a.rcv.loadId)).size;
   const cancelBlock = approvedCancelBlock({ status: p.status, activeAsnCount, allocCount: allocs.length });
 
   return {
     ...base,
     incoming: Object.fromEntries(p.lines.map((l) => [l.lineNo, OPEN_PLAN.includes(p.status) ? (incoming.get(l.id) ?? 0) : 0])),
     vehicles,
+    unorderedCount,
     allocs: allocs.map((a) => ({
       id: a.id,
       confirmedAt: a.rcv.confirmedAt ? iso(a.rcv.confirmedAt) : null,

@@ -140,17 +140,27 @@ async function main() {
   ok(!done.ok && done.code === "CONFLICT" && done.error === LOAD_CONFLICT_MSG, "확인 화면 뒤에 다른 작업자 입력이 들어오면 상차완료를 막는다", done);
   v = (await getPdaLoad(jiho, loadId))!;
   ok(v.hasDiff, "1EA 더 실어 차이 생김");
+  // 품목별 차이 사유 (정의서 v2.0 D28) — 차이 품목마다, 품목 상태에 맞는 코드만, 기타는 텍스트 필수
+  const waterId = v.lines.find((l) => l.itemCode === C["HB-2210"])!.itemId;
+  const rk = `reason_${waterId}`;
   done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId });
-  ok(!done.ok && !!done.fieldErrors?.reasonCode, "차이가 있으면 사유 필수", done);
-  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasonCode: "L99" });
-  ok(!done.ok && !!done.fieldErrors?.reasonText, "'기타'는 상세 내용 필수", done);
-  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasonCode: "X03" });
-  ok(!done.ok && !!done.fieldErrors?.reasonCode, "다른 그룹 사유 코드는 받지 않는다", done);
-  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasonCode: "L99", reasonText: "기사 요청으로 1개 더" });
+  ok(!done.ok && !!done.fieldErrors?.[rk], "차이가 있으면 그 품목의 사유 필수", done);
+  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasons: [{ itemId: waterId, code: "L99" }] });
+  ok(!done.ok && !!done.fieldErrors?.[rk], "'기타'는 상세 내용 필수", done);
+  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasons: [{ itemId: waterId, code: "X03" }] });
+  ok(!done.ok && !!done.fieldErrors?.[rk], "다른 그룹 사유 코드는 받지 않는다", done);
+  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasons: [{ itemId: waterId, code: "L01" }] });
+  ok(!done.ok && !!done.fieldErrors?.[rk] && done.error.includes("초과"), "부족 전용 사유(결품)는 초과 품목에 쓸 수 없다(적용 상태)", done);
+  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasons: [{ itemId: waterId, code: "L99", text: "기사 요청으로 1개 더" }] });
   ok(done.ok && !!done.data?.loadNo.startsWith(`LD-${ymd}-`), "상차완료 → 상차확인서 번호 발행", done);
   const asn2c = await db.asn.findUniqueOrThrow({ where: { id: asn2.id }, include: { loadOrder: true, histories: true } });
-  ok(asn2c.status === "LOADED" && asn2c.loadOrder?.status === "LOADED" && asn2c.histories.some((h) => h.action === "LOAD_COMPLETE" && h.reasonCode === "L99"), "ASN·상차지시서 상차완료 + 이력(사유)");
-  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasonCode: "L99", reasonText: "x" });
+  ok(
+    asn2c.status === "LOADED" && asn2c.loadOrder?.status === "LOADED" && asn2c.histories.some((h) => h.action === "LOAD_COMPLETE" && !!h.reasonName?.includes("차이 1품목") && !!h.reasonText?.includes("기타")),
+    "ASN·상차지시서 상차완료 + 이력(품목별 사유 요약)",
+  );
+  const waterLine = await db.loadLine.findFirstOrThrow({ where: { loadId, itemId: waterId } });
+  ok(waterLine.diffReasonCode === "L99" && waterLine.diffReasonText === "기사 요청으로 1개 더", "사유는 품목(라인)에 저장", waterLine);
+  done = await completeLoad(jiho, { loadId, lastInputId: v.lastInputId, reasons: [{ itemId: waterId, code: "L99", text: "x" }] });
   ok(!done.ok && done.code === "STATE", "상차완료는 차량당 1회", done);
   a = await addLoadInput(worker2, { loadId, scan: "HB-2210", qty: 1, confirm: true });
   ok(!a.ok && a.code === "STATE", "상차완료 뒤 입력은 거부", a);
@@ -204,9 +214,9 @@ async function main() {
 
   const fv = (await getPdaLoad(jiho, freeId))!;
   done = await completeLoad(jiho, { loadId: freeId, lastInputId: fv.lastInputId });
-  ok(!done.ok && !!done.fieldErrors?.reasonCode, "무지시 상차는 항상 차이 → 사유 필수", done);
-  done = await completeLoad(jiho, { loadId: freeId, lastInputId: fv.lastInputId, reasonCode: "L04" });
-  ok(done.ok, "무지시 상차완료(예정 외 차량)", done);
+  ok(done.ok, "무지시 상차는 사유를 고르지 않고 완료(시스템 지정, v2.0)", done);
+  const freeLines = await db.loadLine.findMany({ where: { loadId: freeId, loadBaseQty: { gt: 0 } } });
+  ok(freeLines.length > 0 && freeLines.every((l) => l.diffReasonCode === "L04"), "무지시 상차 품목은 모두 '예정 외 차량(L04)'", freeLines);
 
   /* 웹 조회 · 범위 */
   const mine = await listMyAsns(minji);
@@ -214,10 +224,14 @@ async function main() {
   const asnRow = mine.find((x) => x.kind === "asn" && x.id === asn2.id)!;
   ok(!!asnRow.loadNo?.startsWith("LD-") && asnRow.tab === "loading", "지시 상차 ASN 행에 상차확인서 번호, 상차 진행 탭", asnRow);
   ok(!(await listMyAsns(doyun)).some((x) => x.kind === "load" && x.clientId === jiho.clientId), "다른 화주사 무지시 실적은 보이지 않는다");
-  const tpl = await listAsnStatus(kim);
+  const tpl = (await listAsnStatus(kim)).rows;
   ok(tpl.some((x) => x.kind === "load" && x.vehicleNo === "88거1234") && tpl.some((x) => x.kind === "load" && x.vehicleNo === "70나2222" && x.status === "LOADING"), "3PL 현황에 무지시 상차(상차완료·상차중)가 보인다");
   const det = (await getAsnDetail(minji, asn2.id))!;
-  ok(det.load?.status === "COMPLETED" && det.load.diffReasonName === "기타" && det.load.diffReasonText === "기사 요청으로 1개 더", "화주사 ASN 상세에 상차 실적·차이 사유", det.load);
+  ok(
+    det.load?.status === "COMPLETED" && det.load.diffLineCount === 1 && det.load.lines.some((l) => l.diffReasonName === "기타" && l.diffReasonText === "기사 요청으로 1개 더"),
+    "화주사 ASN 상세에 상차 실적·품목별 차이 사유",
+    det.load,
+  );
   ok(!!(await getAsnStatusDetail(kim, asn2.id))?.load, "3PL ASN 상세에도 상차 실적");
   ok((await getLoadView(doyun, freeId)) === null, "다른 화주사 담당자는 무지시 실적을 볼 수 없다");
   ok(!!(await getLoadView(kim, freeId)), "3PL은 소속 센터 무지시 실적을 본다");

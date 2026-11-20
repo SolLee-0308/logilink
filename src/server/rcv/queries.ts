@@ -8,10 +8,10 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { PlanActor } from "@/server/plans/service";
 import { can } from "@/domain/permissions";
 import type { ItemUnit } from "@/domain/master";
-import { qtyInUnit } from "@/domain/load-rules";
+import { departureOf, lineDiffState, qtyInUnit } from "@/domain/load-rules";
 import { lineDiff, needsReason, rcvLineState } from "@/domain/rcv-rules";
-import { todayKst } from "@/lib/format";
-import type { PdaRcvDashboard, PdaRcvHistory, PdaRcvHome, PdaRcvRow, RcvLineView, RcvView } from "@/features/rcv/types";
+import { DEFAULT_BUSINESS_DAY_START, businessDateOf, businessDayRange } from "@/domain/business-day";
+import type { PdaRcvDashboard, PdaRcvHistory, PdaRcvHome, PdaRcvRow, RcvLineView, RcvLoadDiff, RcvView } from "@/features/rcv/types";
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 const ymd = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
@@ -23,6 +23,16 @@ export const kstDay = (s: string) => {
 };
 
 export const canInspect = (me: PlanActor) => can(me.roles, "inspection", "edit");
+
+/**
+ * 검수자의 "오늘" = 소속 센터 업무일 (2026-11-17 Sol: 웹 대시보드와 같은 기준).
+ * 업무일 시작(기본 06:00) 전 새벽 확정은 전날 업무일로 센다. 센터가 없는 계정은 기본 시작 시각.
+ */
+async function rcvDayStart(me: Pick<PlanActor, "centerId">): Promise<string> {
+  if (!me.centerId) return DEFAULT_BUSINESS_DAY_START;
+  const c = await db.center.findUnique({ where: { id: me.centerId }, select: { businessDayStart: true } });
+  return c?.businessDayStart ?? DEFAULT_BUSINESS_DAY_START;
+}
 
 /** 검수자 범위 — 소속 센터 차량만, 센터가 없는 계정은 전체 (U19와 같은 기준) */
 export const rcvCenterScope = (me: Pick<PlanActor, "centerId">): { centerId?: number } => (me.centerId ? { centerId: me.centerId } : {});
@@ -38,6 +48,12 @@ const VIEW_INCLUDE = {
       loadOrder: { select: { orderNo: true } },
       asn: { select: { asnNo: true, driverName: true, lines: { select: { itemId: true, unit: true, qty: true, baseQty: true, planLine: { select: { expiryDate: true, lotNo: true } } } } } },
       inputs: { where: { canceledAt: null }, select: { itemId: true, unit: true }, orderBy: { id: "asc" } },
+      // 상차 차이 사유 — 검수 화면 참고 표시 (정의서 v2.0 ⑥, 2026-11-19 Sol)
+      lines: {
+        where: { diffReasonCode: { not: null } },
+        include: { item: { select: { code: true, clientCode: true, name: true, baseUnit: true, uoms: { select: { unit: true, qty: true } } } } },
+        orderBy: { id: "asc" },
+      },
     },
   },
   lines: { include: { item: { select: { code: true, name: true, baseUnit: true, expiryManaged: true, lotManaged: true, uoms: { select: { unit: true, qty: true } } } } }, orderBy: { id: "asc" } },
@@ -57,8 +73,24 @@ function unitOf(r: RcvFull, itemId: number, baseUnit: ItemUnit, uoms: { unit: It
   return { showUnit: baseUnit, showFactor: 1 };
 }
 
+/**
+ * 상차 차이 사유 (정의서 v2.0 ⑥ 참고 표시) — 검수 기준은 상차 수량이라 상차 단계의 차이(ASN 대비)는 검수에 드러나지 않는다.
+ * 지시 상차만 품목별로 보낸다. 무지시 상차는 모든 품목이 "예정 외 차량"이라 한 줄로.
+ */
+function loadDiffsOf(r: RcvFull): RcvLoadDiff[] {
+  if (r.load.loadType !== "ORDERED") return [];
+  return r.load.lines.flatMap((d) => {
+    const state = lineDiffState(d.orderBaseQty, d.loadBaseQty);
+    if (!state || !d.diffReasonName) return [];
+    const u = unitOf(r, d.itemId, d.item.baseUnit, d.item.uoms);
+    const q = (n: number) => qtyInUnit(n, u.showUnit, u.showFactor, d.item.baseUnit);
+    return [{ itemId: d.itemId, itemCode: d.item.clientCode ?? d.item.code, itemName: d.item.name, state, loadText: q(d.loadBaseQty), orderText: d.orderBaseQty ? q(d.orderBaseQty) : null, reasonName: d.diffReasonName, reasonText: d.diffReasonText }];
+  });
+}
+
 function toView(r: RcvFull, meId: number | null): RcvView {
   const live = r.inputs.filter((i) => !i.canceledAt);
+  const loadDiffs = loadDiffsOf(r);
   const lines: RcvLineView[] = r.lines.map((l) => {
     const mine = live.filter((i) => i.itemId === l.itemId);
     const q = {
@@ -92,6 +124,7 @@ function toView(r: RcvFull, meId: number | null): RcvView {
       planLot: plan?.lotNo ?? null,
       imageIds: r.images.filter((im) => im.itemId === l.itemId).map((im) => im.id),
       workers: [...new Set(mine.map((i) => i.workerName))],
+      loadDiff: loadDiffs.find((d) => d.itemId === l.itemId) ?? null,
     };
   });
   const workers = new Map<number, { workerId: number; name: string; count: number; lastAt: string }>();
@@ -106,6 +139,12 @@ function toView(r: RcvFull, meId: number | null): RcvView {
     id: r.id,
     rcvNo: r.rcvNo,
     status: r.status,
+    startedAt: iso(r.startedAt),
+    arrivedAt: iso(r.load.arrivedAt),
+    arrivedBy: r.load.arrivedBy,
+    departure: departureOf(r.load),
+    voided: r.status === "VOIDED" && r.voidedAt ? { at: iso(r.voidedAt)!, by: r.voidedBy ?? "", reasonName: r.voidReasonName ?? "", reasonText: r.voidReasonText } : null,
+    canVoid: r.status === "WORKING" && !r.startedAt && r.inputs.length === 0 && !r.lines.some((l) => l.zeroConfirm),
     clientName: r.client.name,
     centerName: r.center.name,
     vehicleNo: r.vehicleNo,
@@ -117,6 +156,14 @@ function toView(r: RcvFull, meId: number | null): RcvView {
       asnNo: r.load.asn?.asnNo ?? null,
       orderNo: r.load.loadOrder?.orderNo ?? null,
       driverName: r.load.asn?.driverName ?? null,
+      diffs: loadDiffs,
+      // 무지시 상차는 모든 품목 같은 사유(L04), v2.0 이전 차량은 차량 사유 1개 — 둘 다 한 줄
+      diffNote:
+        r.load.loadType === "UNORDERED"
+          ? `${r.load.lines[0]?.diffReasonName ?? r.load.diffReasonName ?? "예정 외 차량(무지시)"} · 모든 품목`
+          : !loadDiffs.length && r.load.diffReasonName
+            ? `${r.load.diffReasonName}${r.load.diffReasonText ? ` — ${r.load.diffReasonText}` : ""} (차량 사유)`
+            : null,
     },
     lines,
     inputs: r.inputs.map((i) => ({
@@ -171,13 +218,21 @@ export async function getRcvOfLoad(loadId: number): Promise<RcvView | null> {
 const ROW_INCLUDE = {
   client: { select: { name: true } },
   center: { select: { name: true } },
-  load: { select: { id: true, loadNo: true, loadType: true, completedAt: true, loadOrder: { select: { orderNo: true } }, _count: { select: { lines: true } } } },
+  load: {
+    select: {
+      id: true, loadNo: true, loadType: true, completedAt: true, arrivedAt: true, departedAt: true, departedBy: true, departType: true,
+      loadOrder: { select: { orderNo: true } }, _count: { select: { lines: true } },
+    },
+  },
   inputs: { where: { canceledAt: null }, select: { workerId: true } },
   lines: { select: { expectBaseQty: true, goodBaseQty: true, damagedBaseQty: true, mismatchBaseQty: true, mismatch: true, zeroConfirm: true } },
 } satisfies Prisma.RcvInclude;
 
 const rcvRow = (r: Prisma.RcvGetPayload<{ include: typeof ROW_INCLUDE }>): PdaRcvRow => ({
   rcvId: r.id,
+  arrivedAt: iso(r.load.arrivedAt),
+  startedAt: iso(r.startedAt),
+  departure: departureOf(r.load),
   rcvNo: r.rcvNo,
   loadId: r.load.id,
   loadNo: r.load.loadNo,
@@ -198,28 +253,30 @@ const rcvRow = (r: Prisma.RcvGetPayload<{ include: typeof ROW_INCLUDE }>): PdaRc
 });
 
 /**
- * PDA 입고검수 — 검수 대기·검수 중·확정 차량 (2026-11-12 Sol: 검수 내역을 합침)
- * 날짜 규칙: 검수 대기·검수 중은 남은 일이라 날짜와 상관없이 모두, 확정은 그 날짜(확정 시각 KST)
+ * PDA 입고검수 — 입차 전·도착·검수 대기·검수 중·확정 차량 (2026-11-12 Sol: 검수 내역을 합침, v1.9: 입차·검수 시작 구분)
+ * 날짜 규칙: 확정 전 차량은 남은 일이라 날짜와 상관없이 모두, 확정은 그 날짜(확정 시각 KST)
  */
 export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHome | null> {
   if (!canInspect(me)) return null;
-  const today = todayKst();
+  const start = await rcvDayStart(me);
+  const today = businessDateOf(new Date(), start);
   const day = date && date <= today ? date : today;
   const scope = rcvCenterScope(me);
   const [loads, working, done] = await Promise.all([
+    // 진행·확정 검수가 없는 상차완료 차량 — 입차 전(오는 중), 또는 입고취소 뒤 다시 검수할 차량(입차 기록 있음)
     db.load.findMany({
       where: { ...scope, status: "COMPLETED", rcvs: { none: { status: { in: [...ACTIVE_RCV] } } } },
       orderBy: [{ completedAt: "asc" }, { id: "asc" }],
       include: { client: { select: { name: true } }, center: { select: { name: true } }, loadOrder: { select: { orderNo: true } }, _count: { select: { lines: true } } },
     }),
     db.rcv.findMany({ where: { ...scope, status: "WORKING" }, orderBy: { id: "desc" }, include: ROW_INCLUDE }),
-    db.rcv.findMany({ where: { ...scope, status: "CONFIRMED", confirmedAt: kstDay(day) }, orderBy: [{ confirmedAt: "desc" }, { id: "desc" }], include: ROW_INCLUDE }),
+    db.rcv.findMany({ where: { ...scope, status: "CONFIRMED", confirmedAt: businessDayRange(day, start) }, orderBy: [{ confirmedAt: "desc" }, { id: "desc" }], include: ROW_INCLUDE }),
   ]);
-  return {
-    today,
-    date: day,
-    waiting: loads.map((l) => ({
+  const loadRow = (l: (typeof loads)[number]): PdaRcvRow => ({
       rcvId: null,
+      arrivedAt: iso(l.arrivedAt),
+      startedAt: null,
+      departure: departureOf(l),
       rcvNo: null,
       loadId: l.id,
       loadNo: l.loadNo,
@@ -235,40 +292,49 @@ export async function pdaRcvHome(me: PlanActor, date?: string): Promise<PdaRcvHo
       confirmedAt: null,
       confirmedBy: null,
       issueCount: 0,
-    })),
-    working: working.map(rcvRow),
+    });
+  const rows = working.map(rcvRow);
+  return {
+    today,
+    date: day,
+    waiting: loads.filter((l) => !l.arrivedAt).map(loadRow),
+    // 도착·검수 대기: 입차하고 첫 입력 전인 전표 + 입고취소 뒤 재검수 전 차량. 입차 순
+    arrived: [...rows.filter((r) => !r.startedAt), ...loads.filter((l) => l.arrivedAt).map(loadRow)].sort((a, b) => (a.arrivedAt ?? "").localeCompare(b.arrivedAt ?? "")),
+    working: rows.filter((r) => !!r.startedAt),
     done: done.map(rcvRow),
   };
 }
 
-/** 검수 내역 — 그 날짜(확정 시각, KST)에 확정한 차량, 최근이 앞 */
+/** 검수 내역 — 그 업무일(확정 시각, 센터 업무일 기준)에 확정한 차량, 최근이 앞 */
 export async function pdaRcvHistory(me: PlanActor, date: string): Promise<PdaRcvHistory | null> {
   if (!canInspect(me)) return null;
+  const start = await rcvDayStart(me);
   const rows = await db.rcv.findMany({
-    where: { ...rcvCenterScope(me), status: "CONFIRMED", confirmedAt: kstDay(date) },
+    where: { ...rcvCenterScope(me), status: "CONFIRMED", confirmedAt: businessDayRange(date, start) },
     orderBy: [{ confirmedAt: "desc" }, { id: "desc" }],
     include: ROW_INCLUDE,
   });
-  return { date, today: todayKst(), rows: rows.map(rcvRow) };
+  return { date, today: businessDateOf(new Date(), start), rows: rows.map(rcvRow) };
 }
 
-/** 입고검수자 대시보드 — 오늘 검수 대기·검수 중·확정·이상 있음, 내 입력 건수 (임시안 U45-⑦) */
+/**
+ * 입고검수자 대시보드 (임시안 U45-⑦, 2026-11-17 Sol 재구성) — 센터 업무일 기준.
+ * 진행률 = 오늘 도착한 차량(도착·검수 대기 + 검수 중 + 확정) 중 확정. 입차 전(오는 중)은 보조 글로만.
+ */
 export async function pdaRcvDashboard(me: PlanActor): Promise<PdaRcvDashboard | null> {
   const home = await pdaRcvHome(me);
   if (!home) return null;
-  const [done, myInputs] = await Promise.all([
-    db.rcv.findMany({ where: { ...rcvCenterScope(me), status: "CONFIRMED", confirmedAt: kstDay(home.today) }, orderBy: { confirmedAt: "desc" }, include: ROW_INCLUDE }),
-    db.rcvInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: kstDay(home.today).gte } } }),
-  ]);
-  const rows = done.map(rcvRow);
+  const start = await rcvDayStart(me);
+  const myInputs = await db.rcvInput.count({ where: { workerId: me.id, canceledAt: null, inputAt: { gte: businessDayRange(home.today, start).gte } } });
   return {
     today: home.today,
     waiting: home.waiting.length,
+    arrived: home.arrived.length,
     working: home.working.length,
-    done: rows.length,
-    issueDone: rows.filter((r) => r.issueCount > 0).length,
+    done: home.done.length,
+    issueDone: home.done.filter((r) => r.issueCount > 0).length,
     myInputs,
-    recent: rows.slice(0, 3),
+    recent: home.done.slice(0, 3),
   };
 }
 

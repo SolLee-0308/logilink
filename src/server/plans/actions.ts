@@ -157,6 +157,7 @@ export async function closeRemainPlans(input: { items: { id: number; version: nu
 }
 
 /** 일마감 (정의서 ⑦·D18, 2026-11-12) — 3PL, 센터의 지금 업무일 */
-export async function runDailyClose(input: { centerId: number; businessDate: string; rcvIds: number[]; expireIds: number[] }) {
-  return refresh(await svc.runDailyClose(await getActor(), input));
+export async function runDailyClose(input: { centerId: number; businessDate: string; rcvIds: number[]; expireIds: number[]; departIds: number[] }) {
+  // 이전 화면(미출차 목록 없던 때)이 departIds 없이 보내도 터지지 않게 — 대상이 있으면 "대상 바뀜"으로 막힌다
+  return refresh(await svc.runDailyClose(await getActor(), { ...input, departIds: input.departIds ?? [] }));
 }

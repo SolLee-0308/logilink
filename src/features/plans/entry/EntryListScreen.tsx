@@ -9,11 +9,10 @@ import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { inRange } from "../approval-list";
 import { DateRangeField, PlanSearchFields, matchPlanNo } from "../PlanSearchFields";
 import { Select } from "@/components/ui/Form";
-import { ListToolbar } from "@/components/ui/SplitView";
-import { Tabs } from "@/components/ui/Tabs";
+import { Tabs, TabTotal } from "@/components/ui/Tabs";
 import { dday, ddayLabel } from "@/domain/plan-rules";
 import { PLAN_INPUT_METHOD_LABEL } from "@/domain/plan-status";
-import { fmtShortDateTime, includesText } from "@/lib/format";
+import { fmtDateTime, includesText } from "@/lib/format";
 import { MasterHeader } from "@/features/master/shared";
 import { ENTRY_RULES } from "../rules";
 import type { CenterOption, EntryRow, EntryTab } from "../types";
@@ -90,6 +89,7 @@ export function EntryListScreen({
     {
       key: "no",
       header: "입고예정번호",
+      align: "center",
       render: (r) => (
         <span className="cell-tags">
           <span className="mono">{r.planNo}</span>
@@ -100,6 +100,7 @@ export function EntryListScreen({
     {
       key: "date",
       header: "입고예정일",
+      align: "center",
       render: (r) => {
         const n = dday(r.planDate, today);
         const open = r.tab === "wait" || r.tab === "rej";
@@ -112,14 +113,14 @@ export function EntryListScreen({
       },
     },
     ...(centers.length > 1 ? [{ key: "center", header: "센터", render: (r: EntryRow) => r.centerName }] : []),
-    { key: "method", header: "등록 방식", render: (r) => PLAN_INPUT_METHOD_LABEL[r.inputMethod] },
+    { key: "method", header: "등록 방식", align: "center", render: (r) => PLAN_INPUT_METHOD_LABEL[r.inputMethod] },
     {
       key: "lines",
       header: "품목·수량",
       wrap: true,
       render: (r) => (
         <>
-          {r.lineCount}품목
+          {r.lineCount.toLocaleString()}품목
           <CellSub mono>{qtyText(r.qtyByUnit)}</CellSub>
         </>
       ),
@@ -128,17 +129,26 @@ export function EntryListScreen({
     {
       key: "saved",
       header: tab === "approved" ? "승인" : tab === "canceled" ? "취소" : "최종 저장",
-      render: (r) =>
-        tab === "approved" || tab === "canceled" ? (
-          <span className="mono">{fmtShortDateTime(r.closedAt)}</span>
-        ) : (
-          <>
-            <span className="mono">{fmtShortDateTime(r.savedAt)}</span>
-            <CellSub>{r.savedBy}</CellSub>
-          </>
-        ),
+      align: "center",
+      // 1줄 YYYY-MM-DD, 2줄 이름(왼쪽)·시각(오른쪽) (2026-11-14 Sol). 승인·취소 탭은 이름 없이 시각만
+      render: (r) => {
+        const closed = tab === "approved" || tab === "canceled";
+        const at = fmtDateTime(closed ? r.closedAt : r.savedAt);
+        if (!at) return <span className="muted">–</span>;
+        return (
+          <span className={styles.stamp}>
+            <span className="mono">{at.slice(0, 10)}</span>
+            <CellSub>
+              <span className={styles.stampSub}>
+                <span>{closed ? "" : r.savedBy}</span>
+                <span className="mono">{at.slice(11, 16)}</span>
+              </span>
+            </CellSub>
+          </span>
+        );
+      },
     },
-    { key: "status", header: "상태", render: (r) => <StatusBadge status={r.status} /> },
+    { key: "status", header: "상태", align: "center", render: (r) => <StatusBadge status={r.status} /> },
   ];
 
   return (
@@ -169,9 +179,10 @@ export function EntryListScreen({
           <PlanSearchFields no={no} item={item} onNo={setNo} onItem={setItem} />
         </FilterBar>
       )}
-      <Tabs label="입고예정 상태" value={tab} onChange={setTab} panelId="entry-list" items={ENTRY_TABS.map((k) => ({ key: k, label: TAB_LABEL[k], count: counts[k] }))} />
+      <Tabs label="입고예정 상태" value={tab} onChange={setTab} panelId="entry-list" items={ENTRY_TABS.map((k) => ({ key: k, label: TAB_LABEL[k], count: counts[k] }))}
+        aside={<TabTotal total={list.length} />}
+      />
       <div id="entry-list" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        <ListToolbar total={list.length} />
         <DataTable
           caption="입고예정 목록"
           columns={columns}

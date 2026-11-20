@@ -31,7 +31,7 @@ export const ITEM_COLUMNS: BulkColumn[] = [
   { key: "name", header: "품목명", required: true, width: 28, note: "200자 이내", example: "국산콩 두부 300g" },
   { key: "storageTemp", header: "보관온도대", required: true, width: 11, note: "상온 / 냉장 / 냉동", list: TEMP_NAMES, example: "냉장" },
   { key: "baseUnit", header: "기준단위", required: true, width: 10, note: "수량 계산의 기준이 되는 가장 작은 단위: EA / BOX / PLT", list: ITEM_UNITS, example: "EA" },
-  { key: "boxQty", header: "BOX입수", required: false, width: 10, note: "BOX 1개 = 기준단위 몇 개인지 (BOX를 쓸 때만, 2 이상)", example: "20" },
+  { key: "boxQty", header: "BOX입수", required: false, width: 10, note: "BOX 1개에 든 EA 수 (BOX를 쓸 때만, 2 이상). 기준단위가 BOX이면 필수", example: "20" },
   { key: "pltQty", header: "PLT입수", required: false, width: 10, note: "PLT 1개 = 기준단위 몇 개인지 (PLT를 쓸 때만, 2 이상)", example: "800" },
   { key: "eaBarcode", header: "EA바코드", required: false, width: 18, note: "숫자 8~14자리. 여러 개면 쉼표(,)로 구분", example: "8801234500011" },
   { key: "boxBarcode", header: "BOX바코드", required: false, width: 18, note: "숫자 8~14자리. 여러 개면 쉼표(,)로 구분", example: "18801234500018" },
@@ -95,6 +95,8 @@ export interface ItemDraft {
   name: string;
   storageTemp: StorageTemp;
   baseUnit: ItemUnit;
+  /** 입수 — 기준단위가 BOX일 때 BOX 1개에 든 EA 수 (2026-11-17 Sol). 그 밖에는 null */
+  innerQty: number | null;
   uoms: { unit: ItemUnit; qty: number }[];
   barcodes: { unit: ItemUnit; barcode: string; isPrimary: boolean }[];
   expiryManaged: boolean;
@@ -206,7 +208,10 @@ export function parseItemRow(r: RawRow): Parsed<ItemDraft> {
     if (base !== "EA" && barcodeCells.EA.length) errors.push(`기준단위가 ${base}이면 EA바코드를 넣을 수 없습니다.`);
     for (const u of ["BOX", "PLT"] as const) {
       if (u === base) {
-        if (qtyOf[u]) errors.push(`${u}가 기준단위이면 ${u}입수는 비워 두세요.`);
+        // 기준단위가 BOX면 BOX입수 = BOX 1개에 든 EA 수(입수, 필수). PLT 기준의 PLT입수는 의미가 없어 비워 둔다
+        if (u === "BOX") {
+          if (!qtyOf.BOX && !cell(r, "boxQty")) errors.push("기준단위가 BOX이면 BOX입수(BOX 1개에 든 EA 수)를 입력하세요.");
+        } else if (qtyOf[u]) errors.push(`${u}가 기준단위이면 ${u}입수는 비워 두세요.`);
         continue;
       }
       if (base === "PLT" && u === "BOX" && (qtyOf.BOX || barcodeCells.BOX.length)) {
@@ -261,7 +266,7 @@ export function parseItemRow(r: RawRow): Parsed<ItemDraft> {
   if (errors.length || !temp || !base) return { ok: false, errors };
   return {
     ok: true,
-    value: { clientCode, name, storageTemp: temp, baseUnit: base, uoms, barcodes, expiryManaged: expiry ?? false, lotManaged: lot ?? false, aliases },
+    value: { clientCode, name, storageTemp: temp, baseUnit: base, innerQty: base === "BOX" ? (qtyOf.BOX ?? null) : null, uoms, barcodes, expiryManaged: expiry ?? false, lotManaged: lot ?? false, aliases },
   };
 }
 

@@ -98,9 +98,7 @@ export function Sidebar({ serverCounts = {}, viewer, onCollapse }: { serverCount
       </nav>
 
       <div className={styles.user}>
-        <span className={styles.avatar} aria-hidden="true">
-          {viewer.name.slice(0, 1)}
-        </span>
+        {/* 성 글자 원(아바타)은 뺐다 — 좁아진 메뉴 패널에서 이름·역할을 넓게 (2026-11-14 Sol) */}
         <div className={styles.userText}>
           {viewer.name}
           <small>{viewer.roleLabel}</small>
@@ -119,7 +117,7 @@ function Count({ value, danger = false }: { value?: number; danger?: boolean }) 
   if (!value) return null;
   return (
     <span className={`${styles.cnt} ${danger ? styles.cntDanger : ""}`}>
-      {value}
+      {value.toLocaleString()}
       <span className="sr-only">건</span>
     </span>
   );

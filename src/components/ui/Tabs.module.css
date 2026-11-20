@@ -65,3 +65,19 @@
 }
 
 
+
+/* 탭 줄 오른쪽 끝 (총 건수 등) */
+.aside {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.aside strong {
+  color: var(--fg);
+  font-weight: 500;
+}

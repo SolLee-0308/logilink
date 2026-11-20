@@ -10,6 +10,7 @@ import { listCodeOptions } from "@/server/master/queries";
 import { inquiryCenters } from "@/server/plans/inquiry";
 import { canRcvResults, listRcvResults } from "@/server/rcv/results";
 import { requireUser } from "@/server/session";
+import { db } from "@/server/db";
 
 export const metadata: Metadata = { title: "입고검수 실적" };
 export const dynamic = "force-dynamic";
@@ -26,12 +27,23 @@ export default async function RcvResultsPage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const today = todayKst();
   const day = (v: unknown, dflt: string) => (v === "-" ? "" : typeof v === "string" && DATE.test(v) ? v : dflt);
+  const one = (v: unknown) => (typeof v === "string" ? v : "");
   const q: RcvResultQuery = {
     tab: sp.tab === "working" ? "working" : sp.tab === "canceled" ? "canceled" : "confirmed",
     from: day(sp.from, addDays(today, -6)),
     to: day(sp.to, today),
+    client: /^\d+$/.test(one(sp.client)) ? one(sp.client) : "",
+    center: /^\d+$/.test(one(sp.center)) ? one(sp.center) : "",
+    closed: sp.closed === "open" || sp.closed === "closed" ? sp.closed : "all",
+    issue: sp.issue === "issue" ? "issue" : "all",
+    q: one(sp.q).slice(0, 50),
   };
   const canCancel = can(me.roles, "rcvResults", "edit");
-  const [rows, centers, reasons] = await Promise.all([listRcvResults(me, q), inquiryCenters(me), canCancel ? listCodeOptions(RCV_CANCEL_GROUP) : []]);
-  return <RcvResultsScreen query={q} rows={rows} centers={centers} today={today} canCancel={canCancel} cancelReasons={reasons} />;
+  const [rows, centers, reasons, client] = await Promise.all([
+    listRcvResults(me, q),
+    inquiryCenters(me),
+    canCancel ? listCodeOptions(RCV_CANCEL_GROUP) : [],
+    q.client ? db.client.findUnique({ where: { id: Number(q.client) }, select: { id: true, name: true } }) : null,
+  ]);
+  return <RcvResultsScreen query={q} rows={rows} centers={centers} today={today} canCancel={canCancel} cancelReasons={reasons} initialClient={client} />;
 }

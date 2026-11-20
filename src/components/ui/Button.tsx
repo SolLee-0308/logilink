@@ -41,6 +41,34 @@ export function LinkButton({
   );
 }
 
+/** 파일 내려받기 링크 (버튼 모양) — 비활성일 때는 누를 수 없는 버튼으로 (엑셀 다운로드 등) */
+export function DownloadButton({
+  href,
+  disabled,
+  title,
+  size = "sm",
+  children,
+}: {
+  href: string;
+  disabled?: boolean;
+  title?: string;
+  size?: Size;
+  children: React.ReactNode;
+}) {
+  if (disabled)
+    return (
+      <Button size={size} disabled title={title}>
+        {children}
+      </Button>
+    );
+  const cls = [styles.btn, styles.secondary, size === "sm" ? styles.sm : "", styles.link].join(" ");
+  return (
+    <a href={href} className={cls} title={title} download>
+      {children}
+    </a>
+  );
+}
+
 /* 새로 만들기 버튼 — 화면 제목 줄 오른쪽 위, 보라 채움 + 아이콘 (2026-11-04 Sol)
    색 역할: 보라 = 새로 만들기 / 검정 = 승인·저장(확정) / 빨강 = 반려·취소·삭제 */
 const PlusIcon = () => (

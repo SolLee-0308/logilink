@@ -1,27 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { ActiveBadge, Tag } from "@/components/ui/Badges";
-import { LinkButton, CreateButton } from "@/components/ui/Button";
+import { LinkButton, CreateButton, DownloadButton } from "@/components/ui/Button";
+import { itemFilterParams, matchItem } from "@/domain/item-list-filter";
 import { CellSub, DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { ClientPicker } from "@/features/plans/ClientFinder";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
-import { ALIAS_SOURCE_LABEL, STORAGE_TEMP_LABEL, STORAGE_TEMPS, type StorageTemp } from "@/domain/master";
-import { includesText } from "@/lib/format";
+import { ALIAS_SOURCE_LABEL, STORAGE_TEMP_LABEL, STORAGE_TEMPS, innerQtyOf, needsInnerQty, type StorageTemp } from "@/domain/master";
 import { itemsTitle } from "@/domain/master";
 import { LastChanged } from "./history";
 import { ViewSection } from "./record";
 import { RULES } from "./rules";
-import { ACTIVE_OPTIONS, MasterHeader, matchActive, type ActiveFilter } from "./shared";
+import { ACTIVE_OPTIONS, MasterHeader, type ActiveFilter } from "./shared";
 import type { ClientOption, ItemRow, ItemUomRow } from "./types";
 import recordStyles from "./ClientsScreen.module.css";
 import styles from "./ItemsScreen.module.css";
 
 /** 단위 환산 요약: EA · BOX=20 */
-export const uomSummary = (uoms: ItemUomRow[]) => uoms.map((u) => (u.qty === 1 ? u.unit : `${u.unit}=${u.qty}`)).join(" · ");
+export const uomSummary = (uoms: ItemUomRow[]) => uoms.map((u) => (u.qty === 1 ? u.unit : `${u.unit}=${u.qty.toLocaleString()}`)).join(" · ");
 
 
 export const LABELS = {
@@ -30,6 +31,7 @@ export const LABELS = {
   storageTemp: "보관 온도대",
   expiryManaged: "소비기한 관리",
   lotManaged: "로트 관리",
+  innerQty: "입수",
   isActive: "사용 여부",
   uoms: "단위 환산",
   barcodes: "바코드",
@@ -62,7 +64,7 @@ export function itemListSearch(f: ItemListQuery) {
   const p = new URLSearchParams();
   if (f.client) p.set("client", f.client);
   if (f.temp !== "all") p.set("temp", f.temp);
-  if (f.active !== "all") p.set("active", f.active);
+  if (f.active !== "on") p.set("active", f.active);
   if (f.q) p.set("q", f.q);
   if (f.item) p.set("item", String(f.item));
   const s = p.toString();
@@ -116,36 +118,42 @@ export function ItemsScreen({
   const singleClient = clients.length <= 1;
   const title = itemsTitle(canEdit);
 
-  const list = useMemo(
-    () =>
-      rows.filter(
-        (r) =>
-          (!clientId || r.clientId === Number(clientId)) &&
-          (temp === "all" || r.storageTemp === temp) &&
-          matchActive(active, r.isActive) &&
-          includesText([r.code, r.clientCode ?? "", r.name, ...r.barcodes.map((b) => b.barcode), ...r.aliases.map((a) => a.alias)], q),
-      ),
-    [rows, clientId, temp, active, q],
-  );
+  // 엑셀 다운로드와 같은 규칙으로 거른다 (U58)
+  const filter = { client: clientId, temp, active, q };
+  const list = useMemo(() => rows.filter((r) => matchItem(r, { client: clientId, temp, active, q })), [rows, clientId, temp, active, q]);
   // 걸러진 목록에 선택 품목이 없으면 첫 행을 보여 준다
   const activeId = selected !== null && list.some((r) => r.id === selected) ? selected : (list[0]?.id ?? null);
   const current = activeId === null ? null : (rows.find((r) => r.id === activeId) ?? null);
 
-  // 조회조건·선택을 주소에 반영 (서버 다시 읽기 없이) + 등록·수정 화면의 [← 목록]용으로 기억
+  // 화주사를 바꾸면 서버에서 그 화주사 품목만 다시 읽는다 (2026-11-14 Sol, 화주사 먼저 선택)
+  const router = useRouter();
+  const [loading, startLoading] = useTransition();
+  const pickClient = (v: string) => {
+    setClientId(v);
+    setSelected(null);
+  };
+  const needClient = !singleClient && !clientId;
+
+  // 조회조건·선택을 주소에 반영 + 등록·수정 화면의 [← 목록]용으로 기억.
+  // 서버가 읽은 화주사(initial.client)와 다르면 서버에서 다시 읽는다. 이때 history.replaceState를 함께 부르면
+  // 진행 중인 다시 읽기가 취소되어 목록이 비는 문제가 있었다 (2026-11-14 Sol 피드백) → 둘 중 하나만 한다
   useEffect(() => {
     const url = `/master/items${itemListSearch({ client: clientId, temp, active, q, item: activeId })}`;
-    window.history.replaceState(null, "", url);
+    if (!singleClient && clientId !== initial.client) startLoading(() => router.replace(url, { scroll: false }));
+    else window.history.replaceState(null, "", url);
     try {
       sessionStorage.setItem(ITEM_LIST_KEY, url);
     } catch {
       /* 저장소를 못 써도 목록은 동작 */
     }
-  }, [clientId, temp, active, q, activeId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, temp, active, q, activeId, initial.client]);
 
   const columns: Column<ItemRow>[] = [
     {
       key: "code",
       header: "품목코드",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{r.code}</span>
@@ -168,10 +176,37 @@ export function ItemsScreen({
         </>
       ),
     },
-    { key: "uom", header: "단위", render: (r) => <span className="mono">{uomSummary(r.uoms)}</span> },
+    // 단위 — 다른 화면 단위 열처럼 좁게, 단위가 여럿이면 한 줄에 하나씩 (2026-11-14 Sol)
+    {
+      key: "uom",
+      header: "단위",
+      align: "center",
+      width: 56,
+      wrap: true,
+      render: (r) => (
+        <span className="mono">
+          {[...r.uoms]
+            .sort((a, b) => a.qty - b.qty)
+            .map((u) => (
+              <span key={u.unit} style={{ display: "block", whiteSpace: "nowrap" }}>
+                {u.qty === 1 ? u.unit : `${u.unit}=${u.qty.toLocaleString()}`}
+              </span>
+            ))}
+        </span>
+      ),
+    },
+    // 입수 = BOX 1개에 든 EA 수 (2026-11-17 Sol). BOX 기준인데 비어 있으면 '미입력'
+    {
+      key: "innerQty",
+      header: "입수",
+      align: "right",
+      width: 64,
+      render: (r) => <InnerQtyCell row={r} />,
+    },
     {
       key: "barcode",
       header: "대표 바코드",
+      align: "center",
       render: (r) => (
         <>
           <span className="mono">{r.barcodes[0]?.barcode}</span>
@@ -182,6 +217,7 @@ export function ItemsScreen({
     {
       key: "manage",
       header: "관리",
+      align: "center",
       render: (r) => (
         <span className="cell-tags">
           {r.expiryManaged && <Tag tone="neutral">소비기한</Tag>}
@@ -190,10 +226,8 @@ export function ItemsScreen({
         </span>
       ),
     },
-    { key: "active", header: "사용 여부", render: (r) => <ActiveBadge active={r.isActive} /> },
+    { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
-
-  const clientQuery = clientId ? `?client=${clientId}` : "";
 
   return (
     <>
@@ -201,8 +235,9 @@ export function ItemsScreen({
         title={title}
         count={rows.length}
         rules={RULES.items}
-        // 단건·엑셀 일괄 등록은 등록 화면의 '입력 방법' 스위치에서 고른다
-        actions={canEdit ? <CreateButton href={`/master/items/new${clientQuery}`}>등록</CreateButton> : undefined}
+        // 단건·엑셀 일괄 등록은 등록 화면의 '입력 방법' 스위치에서 고른다.
+        // 목록에서 거른 화주사는 넘기지 않는다 — 다른 화주사 품목을 잘못 등록하지 않게 등록 화면에서 매번 고른다 (2026-11-20 Sol)
+        actions={canEdit ? <CreateButton href="/master/items/new">등록</CreateButton> : undefined}
       />
       <FilterBar>
         {!singleClient && (
@@ -211,11 +246,12 @@ export function ItemsScreen({
               <ClientPicker
                 id="f-client"
                 value={clientId}
-                onChange={setClientId}
+                onChange={pickClient}
                 clients={clients.filter((c) => withInactiveClients || c.isActive || String(c.id) === clientId)}
               />
+              {/* 화주사 칸에 붙여 둔다 — 따로 한 칸을 차지하면 열 맞춤이 어긋남 (2026-11-14 Sol) */}
+              <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
             </FilterField>
-            <FilterCheckbox id="f-client-inactive" label="사용 안 함 포함" checked={withInactiveClients} onChange={setWithInactiveClients} />
           </>
         )}
         <FilterField label="온도대">
@@ -251,7 +287,16 @@ export function ItemsScreen({
         collapsible
         list={
           <>
-            <ListToolbar total={list.length} />
+            <ListToolbar total={list.length}>
+              {/* 조회 결과만 내려받기 — 3PL은 고른 화주사, 화주사는 자기 품목 (U58, 2026-11-15 Sol) */}
+              <DownloadButton
+                href={`/master/items/export?${itemFilterParams(filter).toString()}`}
+                disabled={needClient || loading || list.length === 0}
+                title={needClient ? "화주사를 먼저 고르세요." : list.length === 0 ? "내려받을 품목이 없습니다." : "지금 조회된 품목을 엑셀로 내려받습니다."}
+              >
+                엑셀 다운로드
+              </DownloadButton>
+            </ListToolbar>
             <DataTable
               caption={`${title} 목록`}
               columns={columns}
@@ -259,7 +304,7 @@ export function ItemsScreen({
               rowKey={(r) => String(r.id)}
               activeKey={activeId === null ? null : String(activeId)}
               onActivate={(k) => setSelected(Number(k))}
-              empty="조건에 맞는 품목이 없습니다. 조회조건을 바꿔 보세요."
+              empty={needClient ? "화주사를 먼저 고르세요. 고른 화주사의 품목만 불러옵니다." : loading ? "불러오는 중입니다." : "조건에 맞는 품목이 없습니다. 조회조건을 바꿔 보세요."}
             />
           </>
         }
@@ -270,6 +315,14 @@ export function ItemsScreen({
 }
 
 /** 오른쪽 상세 조회 패널 — 3PL에게만 [수정] (수정 화면으로 이동) */
+/** 입수 표시 — 숫자, BOX 기준인데 없으면 '미입력', 해당 없으면 – */
+function InnerQtyCell({ row, long = false }: { row: ItemRow; long?: boolean }) {
+  const q = innerQtyOf(row);
+  if (q != null) return <span className="mono">{long ? `BOX 1개 = ${q.toLocaleString()} EA` : q.toLocaleString()}</span>;
+  if (needsInnerQty(row.baseUnit)) return <Tag tone="warn">미입력</Tag>;
+  return <span className="muted">{long ? "해당 없음" : "–"}</span>;
+}
+
 function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) {
   if (!row) {
     return (
@@ -305,6 +358,7 @@ function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) 
           ["화주사 품목코드", row.clientCode ? <span key="cc" className="mono">{row.clientCode}</span> : <span key="cc" className="muted">없음</span>],
           ["품목명", row.name],
           ["보관 온도대", STORAGE_TEMP_LABEL[row.storageTemp]],
+          ["입수", <InnerQtyCell key="iq" row={row} long />],
           [
             "관리",
             row.expiryManaged || row.lotManaged ? (
@@ -322,7 +376,7 @@ function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) 
         title="단위 환산"
         items={row.uoms.map((u): [string, React.ReactNode] => [
           `1 ${u.unit}`,
-          u.unit === base ? <span key={u.unit} className="muted">기준 단위</span> : <span key={u.unit} className="mono">{`${u.qty} ${base}`}</span>,
+          u.unit === base ? <span key={u.unit} className="muted">기준 단위</span> : <span key={u.unit} className="mono">{`${u.qty.toLocaleString()} ${base}`}</span>,
         ])}
       />
       <ViewSection

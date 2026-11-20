@@ -5,7 +5,7 @@
  * 2026-11-05 Sol 결정: 지시수량 초과는 입력할 때 경고·확인만 받고, 사유는 상차완료 때 차이 사유로 한 번만 받는다.
  */
 import type { ItemUnit } from "./master";
-import { businessDateOf, businessDayRange } from "./business-day";
+import { businessDayRange } from "./business-day";
 import type { StatusTone } from "./plan-status";
 
 export const LOAD_STATUSES = ["WORKING", "COMPLETED"] as const;
@@ -67,6 +67,81 @@ export function hasLoadDiff(ordered: boolean, lines: { orderBase: number; loadBa
   return lines.some((l) => l.orderBase !== l.loadBase);
 }
 
+/* ───────── 품목별 차이 사유 (정의서 v2.0 ④·C6·D28, 2026-11-19 Sol A안) ───────── */
+
+/** 사유를 받는 품목 상태 — 일치는 받지 않는다 */
+export const DIFF_STATES = ["short", "over", "extra"] as const;
+export type DiffState = (typeof DIFF_STATES)[number];
+
+/** 사유를 받는 품목인지 — 지시도 상차도 0인 줄(입력을 모두 취소한 지시 외 품목)은 화면에도 없으므로 뺀다 */
+export function lineDiffState(orderBase: number, loadBase: number): DiffState | null {
+  if (orderBase === 0 && loadBase === 0) return null;
+  const s = lineState(orderBase, loadBase);
+  return s === "match" ? null : s;
+}
+
+/** 이 코드를 이 품목 상태에 쓸 수 있는지 (공통코드 적용 상태, 비어 있으면 드롭다운에 안 보임 — L04 무지시 전용) */
+export const codeFits = (appliesTo: readonly string[], state: DiffState) => appliesTo.includes(state);
+
+export interface DiffCode {
+  code: string;
+  name: string;
+  requiresText: boolean;
+  appliesTo: string[];
+}
+
+export interface LineReasonPick {
+  itemId: number;
+  code: string;
+  text?: string | null;
+}
+
+/**
+ * 지시 상차 상차완료 때 품목별 사유 확인 — 차이 품목마다 사유 1개, 품목 상태에 맞는 코드만, 기타는 텍스트 필수.
+ * 차이 없는 품목에 온 사유는 무시한다. 오류는 품목별로 돌려준다(itemId → 문구).
+ */
+export function checkLineReasons(
+  lines: { itemId: number; itemLabel: string; orderBase: number; loadBase: number }[],
+  picks: LineReasonPick[],
+  codes: DiffCode[],
+): { ok: true; reasons: Map<number, { code: string; name: string; text: string | null }> } | { ok: false; errors: Map<number, string> } {
+  const byItem = new Map(picks.map((p) => [p.itemId, p]));
+  const errors = new Map<number, string>();
+  const reasons = new Map<number, { code: string; name: string; text: string | null }>();
+  for (const l of lines) {
+    const state = lineDiffState(l.orderBase, l.loadBase);
+    if (!state) continue;
+    const pick = byItem.get(l.itemId);
+    const code = pick?.code ? codes.find((c) => c.code === pick.code) : undefined;
+    if (!code) {
+      errors.set(l.itemId, `${l.itemLabel}: ${LINE_STATE_LABEL[state]} 사유를 고르세요.`);
+      continue;
+    }
+    if (!codeFits(code.appliesTo, state)) {
+      errors.set(l.itemId, `${l.itemLabel}: "${code.name}"은(는) ${LINE_STATE_LABEL[state]} 품목에 쓸 수 없는 사유입니다.`);
+      continue;
+    }
+    const text = pick?.text?.trim() ?? "";
+    if (text.length > 500) {
+      errors.set(l.itemId, `${l.itemLabel}: 상세 내용은 500자 이내로 입력하세요.`);
+      continue;
+    }
+    if (code.requiresText && !text) {
+      errors.set(l.itemId, `${l.itemLabel}: "${code.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`);
+      continue;
+    }
+    reasons.set(l.itemId, { code: code.code, name: code.name, text: text || null });
+  }
+  return errors.size ? { ok: false, errors } : { ok: true, reasons };
+}
+
+/** 상차·ASN 이력 한 줄 요약 — "차이 2품목" + "HF-1001 부족: 재고 부족(결품) / …" (500자 이내) */
+export function lineReasonSummary(items: { label: string; state: DiffState; name: string; text: string | null }[]) {
+  const name = `품목별 사유 · 차이 ${items.length.toLocaleString()}품목`;
+  const text = items.map((i) => `${i.label} ${LINE_STATE_LABEL[i.state]}: ${i.name}${i.text ? `(${i.text})` : ""}`).join(" / ");
+  return { name, text: text.length > 500 ? `${text.slice(0, 497)}…` : text || null };
+}
+
 /**
  * 기준 단위 수량을 보기 쉬운 단위로 — 예: 기준 EA 125개, BOX = 12EA → "10 BOX 5 EA".
  * factor가 1이거나 단위가 기준 단위면 그대로.
@@ -89,31 +164,51 @@ export const normalizeDocNo = (s: string) => normalizeScan(s).replace(/\s+/g, ""
 export const LOAD_CONFLICT_MSG = "그사이 다른 작업자가 입력했습니다. 최신 합계를 다시 확인한 뒤 상차완료하세요.";
 export const LOAD_DONE_MSG = "이미 상차완료된 차량입니다. 더 실어야 하면 출차·입고검수 전에 [상차 재개]를 누르세요(지시 상차만).";
 
-/* ───────── 출차 (2026-11-12 Sol) ───────── */
+/* ───────── 출차 (2026-11-12 Sol, 정의서 v1.9 수정) ───────── */
 
 /**
- * 출차 — PDA 상차담당이 상차완료 화면에서 [출차]를 누른다. 출차 후에는 상차 재개 불가(되돌리기 없음).
- * 누르지 않았으면 상차완료한 업무일(도착 센터의 업무일 시작 시각 기준)이 지나면 출차로 본다 — 자동 출차.
- * 자동 출차는 DB에 쓰지 않고 볼 때마다 판단한다(배치 없음). 시각은 그 업무일이 끝난 시각으로 보여 준다.
+ * 출차 — PDA 상차담당이 차량이 실제로 떠날 때 [출차]를 누른다. 출차 후에는 상차 재개 불가(되돌리기 없음).
+ * 자동 출차(조회 시 판단)는 폐지(v1.8·v1.9). 누락된 출차는 시스템이 입차 때(입차 처리) 또는
+ * 일마감 때(일마감 처리, 전날까지 상차완료분) 저장한다. 화면은 저장된 값만 보여 준다.
  */
+export const DEPART_TYPES = ["MANUAL", "ARRIVAL", "DAILY_CLOSE"] as const;
+export type DepartType = (typeof DEPART_TYPES)[number];
+export const DEPART_TYPE_LABEL: Record<DepartType, string> = {
+  MANUAL: "사람",
+  ARRIVAL: "입차 처리(시스템)",
+  DAILY_CLOSE: "일마감 처리(시스템)",
+};
+
 export interface Departure {
-  /** 출차 시각 — 자동 출차면 완료한 업무일이 끝난 시각 */
   at: string;
-  /** 처리자 — 자동 출차면 null */
   by: string | null;
-  auto: boolean;
+  type: DepartType;
+  /** 시스템 처리(입차·일마감) 여부 */
+  system: boolean;
 }
 
-export function departureOf(
-  l: { status: string; completedAt: Date | null; departedAt: Date | null; departedBy: string | null },
+export function departureOf(l: { departedAt: Date | null; departedBy: string | null; departType: DepartType | null }): Departure | null {
+  if (!l.departedAt) return null;
+  const type = l.departType ?? "MANUAL";
+  return { at: l.departedAt.toISOString(), by: l.departedBy, type, system: type !== "MANUAL" };
+}
+
+/** 출차 표시 문구 — "사람"은 처리자 이름, 시스템 처리는 구분 이름 */
+export const departureLabel = (d: Departure) => (d.system ? DEPART_TYPE_LABEL[d.type] : d.by ?? DEPART_TYPE_LABEL.MANUAL);
+
+/**
+ * 일마감 처리(시스템) 대상 — 출차·입차 기록이 없고 일마감하는 업무일 "전날까지" 상차완료한 차량 (v1.9 ⑦·D23).
+ * 당일 상차분은 빼서 저녁에 싣고 다음 날 아침 떠나는 차량이 출발 전에 출차로 기록되지 않게 한다.
+ * 반환값: 상차완료 시각이 이 시각보다 앞서면 대상 (= 마감 업무일의 시작 시각)
+ */
+export const dailyDepartBefore = (closeBusinessDate: string, businessDayStart: string) => businessDayRange(closeBusinessDate, businessDayStart).gte;
+
+export function isDailyDepartTarget(
+  l: { status: string; completedAt: Date | null; departedAt: Date | null; arrivedAt: Date | null },
+  closeBusinessDate: string,
   businessDayStart: string,
-  now: Date = new Date(),
-): Departure | null {
-  if (l.status !== "COMPLETED" || !l.completedAt) return null;
-  if (l.departedAt) return { at: l.departedAt.toISOString(), by: l.departedBy, auto: false };
-  const doneDay = businessDateOf(l.completedAt, businessDayStart);
-  if (doneDay < businessDateOf(now, businessDayStart)) return { at: businessDayRange(doneDay, businessDayStart).lt.toISOString(), by: null, auto: true };
-  return null;
+) {
+  return l.status === "COMPLETED" && !!l.completedAt && !l.departedAt && !l.arrivedAt && l.completedAt < dailyDepartBefore(closeBusinessDate, businessDayStart);
 }
 
 export const DEPART_CONFIRM_MSG = "출차하면 상차를 다시 열 수 없습니다. 차량 문을 닫고 상차확인서를 기사에게 넘긴 뒤 누르세요.";

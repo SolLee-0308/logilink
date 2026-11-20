@@ -5,9 +5,15 @@ export type RcvResultTab = "confirmed" | "working" | "canceled";
 
 export interface RcvResultQuery {
   tab: RcvResultTab;
-  /** 업무일 범위 (YYYY-MM-DD) — 확정은 확정 시각, 검수 중은 시작 시각, 입고취소는 역전표 시각의 센터 업무일 */
+  /** 업무일 범위 (YYYY-MM-DD) — 확정은 확정 시각, 입고취소는 역전표 시각의 센터 업무일. 검수 중 탭은 기간을 쓰지 않는다 (2026-11-14 Sol) */
   from: string;
   to: string;
+  /** 화면에서 거르는 조건 — 주소에 남겨 상세에서 돌아와도 그대로 (2026-11-14 Sol) */
+  client: string;
+  center: string;
+  closed: "all" | "open" | "closed";
+  issue: "all" | "issue";
+  q: string;
 }
 
 /** 입고검수 실적 한 줄 — 차량 1대 = 검수 1건 */

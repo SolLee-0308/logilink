@@ -87,3 +87,44 @@ export function approvedCancelBlock(p: { status: PlanStatus; activeAsnCount: num
   if (p.allocCount > 0) return "입고검수 실적이 배분되어 있어 취소할 수 없습니다.";
   return null;
 }
+
+/* ───────── 입고 대기 단계 (정의서 v1.9 ⑤ · 5-3 · D27) ───────── */
+
+/**
+ * 입고 대기 — ASN에 배정됐지만 아직 검수 확정되지 않은 수량("오는 중"에서 이름을 바꿈).
+ * 우리 ASN은 상차 전에 등록되므로 "ASN 있음 = 운송 중"이 아니다. 차량(ASN)별 단계를 저장값으로 판단한다.
+ */
+export const WAIT_STAGES = ["BEFORE_LOAD", "LOADING", "DEPART_WAIT", "IN_TRANSIT", "ARRIVED", "INSPECTING"] as const;
+export type WaitStage = (typeof WAIT_STAGES)[number];
+export const WAIT_STAGE_LABEL: Record<WaitStage, string> = {
+  BEFORE_LOAD: "상차 전",
+  LOADING: "상차중",
+  DEPART_WAIT: "출차 대기",
+  IN_TRANSIT: "운송 중",
+  ARRIVED: "도착·검수 대기",
+  INSPECTING: "검수중",
+};
+
+/**
+ * ASN 한 대의 입고 대기 단계 — 입고완료·취소면 null
+ * load: 그 ASN의 상차 실적, rcv: 진행 중 검수 전표(검수중, 입차 취소·입고취소 제외)
+ */
+export function waitStageOf(p: {
+  asnStatus: AsnStatus | "CANCELED";
+  load: { status: string; departedAt: Date | string | null; arrivedAt: Date | string | null } | null;
+  rcv: { startedAt: Date | string | null } | null;
+}): WaitStage | null {
+  if (p.asnStatus === "RECEIVED" || p.asnStatus === "CANCELED") return null;
+  if (p.asnStatus === "REGISTERED" || !p.load) return "BEFORE_LOAD";
+  if (p.asnStatus === "LOADING" || p.load.status !== "COMPLETED") return "LOADING";
+  if (p.rcv) return p.rcv.startedAt ? "INSPECTING" : "ARRIVED";
+  if (p.load.arrivedAt) return "ARRIVED"; // 입고취소 뒤 재검수 전 — 차량은 센터에 있다
+  return p.load.departedAt ? "IN_TRANSIT" : "DEPART_WAIT";
+}
+
+/** 단계별 대수 요약 — "운송 중 1대 · 상차 전 1대" (진행 순서 역순: 센터에 가까운 단계가 앞) */
+export function waitStageSummary(stages: (WaitStage | null)[]): string {
+  const n = new Map<WaitStage, number>();
+  for (const s of stages) if (s) n.set(s, (n.get(s) ?? 0) + 1);
+  return [...WAIT_STAGES].reverse().filter((s) => n.has(s)).map((s) => `${WAIT_STAGE_LABEL[s]} ${n.get(s)}대`).join(" · ");
+}

@@ -14,6 +14,7 @@ import {
   MATCHED_BY_LABEL,
   minExpiryDate,
   PLAN_MAX_LINES,
+  duplicateKey,
   duplicateLines,
   lineErrors,
   parseQty,
@@ -154,6 +155,8 @@ export function PlanEditor({
   const errorsOf = (i: number): Partial<Record<FieldKey, string>> => {
     const e: Partial<Record<FieldKey, string>> = { ...lineErrors(values[i], values[i].itemId ? itemMap.get(values[i].itemId!) : undefined, minExpiry) };
     if (lines[i].qty.trim() && values[i].qty === null) e.qty = "수량은 1 이상의 정수로 입력하세요.";
+    // 품목을 못 찾은 줄은 단위를 고를 수 없으므로 단위 안내는 빼고 품목 매칭만 요구 (2026-11-15 Sol)
+    if (!values[i].itemId) delete e.unit;
     if (dups.has(i)) e.itemId ??= "같은 품목·단위·소비기한·로트 줄이 있습니다. 한 줄로 합치세요.";
     for (const k of ["itemId", "unit", "qty", "expiryDate", "lotNo"] as const) {
       const s = serverErrors[`lines.${i}.${k}`];
@@ -163,9 +166,27 @@ export function PlanEditor({
   };
   const lineErrs = lines.map((_, i) => errorsOf(i));
   const hasErr = (i: number) => Object.keys(lineErrs[i]).length > 0;
+  /**
+   * 줄 색 (2026-11-15 Sol): 값은 있지만 틀렸을 수 있으면 빨강(확인 필요), 값이 비었으면 노랑(입력 필요). 둘 다면 빨강.
+   * 빨강 = 품목 미매칭 · 신뢰도 낮은 수량 · 품목에 없는 단위 · 하한보다 이른 소비기한 · 중복 줄 · 서버가 돌려준 오류
+   */
+  const severityOf = (i: number): "check" | "input" | null => {
+    const e = lineErrs[i];
+    if (!Object.keys(e).length) return null;
+    const v = values[i];
+    const check =
+      !v.itemId ||
+      dups.has(i) ||
+      (!!e.qty && v.qty !== null && v.qty >= 1) ||
+      (!!e.unit && !!v.unit) ||
+      (!!e.expiryDate && !!v.expiryDate) ||
+      (["itemId", "unit", "qty", "expiryDate", "lotNo"] as const).some((k) => serverErrors[`lines.${i}.${k}`]);
+    return check ? "check" : "input";
+  };
   // 엑셀·판독 줄은 처음부터, 직접 입력 줄은 저장을 한 번 누른 뒤부터 오류를 보여 준다
   const visible = (i: number) => showAll || !!lines[i].origin;
   const issueCount = lines.filter((_, i) => hasErr(i)).length;
+  const checkCount = lines.filter((_, i) => severityOf(i) === "check").length;
   const today = options.today;
   const holiday = options.holidays.find((h) => String(h.centerId) === centerId && h.date === planDate);
   const centerName = options.centers.find((c) => String(c.id) === centerId)?.name ?? "";
@@ -221,7 +242,7 @@ export function PlanEditor({
       }
       return next;
     });
-    toast.show(`${items.length}개 품목을 넣었습니다. 수량을 입력하세요.`);
+    toast.show(`${items.length.toLocaleString()}개 품목을 넣었습니다. 수량을 입력하세요.`);
     setFinder(null);
   }
 
@@ -237,13 +258,47 @@ export function PlanEditor({
     setServerErrors({});
   }
 
+  /**
+   * [한 줄로 합치기] (2026-11-15 Sol) — 같은 품목·단위(관리 품목은 소비기한·로트까지)인 줄을 첫 줄에 모아 수량을 더한다.
+   * 판독 때 자동으로 합치지 않는 것은 AI가 같은 줄을 두 번 읽었을 때 수량이 2배가 된 것을 놓치지 않게 하기 위함.
+   */
+  function mergeLines(i: number) {
+    const key = duplicateKey(values[i], itemMap);
+    if (!key) return;
+    const same = lines.filter((_, j) => duplicateKey(values[j], itemMap) === key);
+    if (same.length < 2) return;
+    const total = same.reduce((s, l) => s + (parseQty(l.qty) ?? 0), 0);
+    const first = same[0];
+    const drop = new Set(same.slice(1).map((l) => l.key));
+    setLines((ls) =>
+      ls
+        .filter((l) => !drop.has(l.key))
+        .map((l) =>
+          l.key === first.key
+            ? {
+                ...l,
+                qty: total ? String(total) : l.qty,
+                // 합친 줄 중 하나라도 신뢰도가 낮고 고치지 않았으면 확인 필요로 남긴다
+                lowConfidence: same.some((x) => x.lowConfidence),
+                confirmed: same.every((x) => !x.lowConfidence || x.confirmed),
+                issues: [...new Set(same.flatMap((x) => x.issues))],
+              }
+            : l,
+        ),
+    );
+    setServerErrors({});
+    toast.show(`${same.length}줄을 한 줄로 합쳤습니다. 수량 ${total.toLocaleString()}`);
+  }
+
   /* ───── 저장 ───── */
   function submit() {
     setShowAll(true);
     setFormError(null);
     const bad = lines.findIndex((_, i) => hasErr(i));
     if (headerErrors.centerId || headerErrors.planDate || bad >= 0) {
-      toast.show(bad >= 0 ? `확인 필요 ${issueCount}줄을 고친 뒤 저장하세요.` : "입력 내용을 확인하세요.", { tone: "error" });
+      const inputN = issueCount - checkCount;
+      const parts = [checkCount ? `확인 필요 ${checkCount}줄` : "", inputN ? `입력 필요 ${inputN}줄` : ""].filter(Boolean).join(" · ");
+      toast.show(bad >= 0 ? `${parts}을 고친 뒤 저장하세요.` : "입력 내용을 확인하세요.", { tone: "error" });
       revealError();
       return;
     }
@@ -369,8 +424,8 @@ export function PlanEditor({
                 value={onlyIssues}
                 onChange={setOnlyIssues}
                 options={[
-                  { value: "all", label: `전체 ${lines.length}` },
-                  { value: "issues", label: `확인 필요 ${issueCount}` },
+                  { value: "all", label: `전체 ${lines.length.toLocaleString()}` },
+                  { value: "issues", label: `고칠 줄 ${issueCount}` },
                 ]}
               />
             )}
@@ -386,12 +441,7 @@ export function PlanEditor({
         <div className={side ? styles.withSide : undefined}>
           {side && <div className={styles.side}>{side}</div>}
           <div className={styles.main}>
-        {imported && issueCount > 0 && (
-          <NoteBox tone="warn">
-            <strong>확인 필요 {issueCount}줄</strong> — 품목을 찾지 못했거나 값이 비어 있는 줄입니다. 후보에서 품목을 고르거나 직접 찾고, 새 품목이면
-            [품목 등록 요청]을 보낸 뒤 그 줄을 빼고 저장하세요.
-          </NoteBox>
-        )}
+        {/* '확인 필요 n줄' 안내 상자는 없앰 — 줄 표시·[확인 필요] 보기·아래 합계 줄로 충분 (2026-11-15 Sol) */}
 
         <div className={styles.tableWrap} ref={tableRef}>
           <table className={styles.table}>
@@ -433,6 +483,8 @@ export function PlanEditor({
                   minExpiry={minExpiry.date}
                   errors={visible(i) ? lineErrs[i] : {}}
                   flagged={hasErr(i) && visible(i)}
+                  severity={visible(i) ? severityOf(i) : null}
+                  onMerge={visible(i) && dups.has(i) ? () => mergeLines(i) : undefined}
                   autoFocus={focusKey === l.key}
                   onPick={(it, unit) => setItem(l, it, unit)}
                   onFind={() => setFinder({ q: "", lineKey: l.key })}
@@ -464,7 +516,12 @@ export function PlanEditor({
               · {u} {n.toLocaleString()}
             </span>
           ))}
-          {issueCount > 0 && (showAll || imported) && <span className={styles.bad}> · 확인 필요 {issueCount}줄</span>}
+          {issueCount > 0 && (showAll || imported) && (
+            <span className={styles.bad}>
+              {checkCount > 0 && ` · 확인 필요 ${checkCount}줄`}
+              {issueCount - checkCount > 0 && ` · 입력 필요 ${issueCount - checkCount}줄`}
+            </span>
+          )}
         </span>
         <Button onClick={cancel} disabled={pending}>
           취소
@@ -518,6 +575,8 @@ function LineRow({
   minExpiry,
   errors,
   flagged,
+  severity,
+  onMerge,
   autoFocus,
   onPick,
   onFind,
@@ -534,6 +593,10 @@ function LineRow({
   minExpiry: string;
   errors: Partial<Record<FieldKey, string>>;
   flagged: boolean;
+  /** 줄 바탕색: check = 빨강(확인 필요), input = 노랑(입력 필요) */
+  severity: "check" | "input" | null;
+  /** 중복 줄이면 [한 줄로 합치기] */
+  onMerge?: () => void;
   autoFocus: boolean;
   onPick: (it: CatalogItem, unit?: ItemUnit | null) => void;
   /** 품목 찾기 창으로 이 줄의 품목 고르기 */
@@ -545,11 +608,27 @@ function LineRow({
   const id = `${idPrefix}-ln-${line.key}`;
   const uom = item?.uoms.find((u) => u.unit === line.unit);
   const qty = parseQty(line.qty);
-  const msgs = [...new Set(Object.values(errors))];
-  const showIssues = flagged && line.issues.length > 0;
+  // 소비기한·로트 경고는 칸 위쪽 테두리에 짧게 걸쳐 보여 주고(2026-11-14 Sol), 행 아래 줄에는 나머지 오류만
+  // 수량이 비었거나 1 미만이면 칸 위에 '수량 입력' (2026-11-15 Sol). 판독 대조 안내는 문장이 길어 아래 줄에 그대로
+  const qtyMissing = !!errors.qty && (qty === null || qty < 1);
+  const qtyNote = qtyMissing ? "수량 입력" : null;
+  // 품목 미매칭은 품목 칸 안에 빨간 글씨로 (아래 줄에는 띄우지 않음, 2026-11-15 Sol)
+  const itemMissing = !!errors.itemId && !item;
+  const msgs = [
+    ...new Set(
+      Object.entries(errors)
+        .filter(([k]) => k !== "expiryDate" && k !== "lotNo" && !(k === "qty" && qtyMissing) && !(k === "itemId" && itemMissing))
+        .map(([, m]) => m),
+    ),
+  ];
+  const expiryNote = errors.expiryDate ? (!line.expiryDate ? "필수 입력" : minExpiry && line.expiryDate < minExpiry ? `${minExpiry.slice(5)} 이후` : "확인 필요") : null;
+  const lotNote = errors.lotNo ? (!line.lotNo.trim() ? "필수 입력" : "확인 필요") : null;
+  // 원본 판독 메모 중 수량 관련은 칸 위 '수량 입력'과 겹치므로 뺀다
+  const issues = qtyMissing ? line.issues.filter((m) => !m.startsWith("수량")) : line.issues;
+  const showIssues = flagged && issues.length > 0;
   return (
     <>
-      <tr className={`${styles.row} ${flagged ? styles.flagged : ""}`}>
+      <tr className={`${styles.row} ${severity === "check" ? styles.flaggedCheck : severity === "input" ? styles.flagged : ""} ${line.origin ? styles.hasOrigin : ""}`}>
         <td className={`${styles.cNo} mono`}>{no}</td>
         <td className={styles.cItem}>
           {line.origin && (
@@ -559,14 +638,15 @@ function LineRow({
                 {line.text}
               </span>
               {line.matchedBy && <Tag tone="accent">{MATCHED_BY_LABEL[line.matchedBy]}</Tag>}
-              {flagged && <Tag tone="warn">확인 필요</Tag>}
+              {severity === "check" && <Tag tone="danger">확인 필요</Tag>}
+              {severity === "input" && <Tag tone="warn">입력 필요</Tag>}
             </div>
           )}
           {/* 드롭다운 자동완성 없이, 누르면 품목 찾기 창이 열린다 (2026-11-13 Sol 결정) */}
           <button
             type="button"
             id={`${id}-item`}
-            className={`${styles.itemBtn} ${item ? "" : styles.itemBtnEmpty} ${errors.itemId ? styles.itemBtnInvalid : ""}`}
+            className={`${styles.itemBtn} ${item ? "" : styles.itemBtnEmpty} ${errors.itemId ? styles.itemBtnInvalid : ""} ${itemMissing ? styles.itemBtnMissing : ""}`}
             aria-invalid={!!errors.itemId || undefined}
             aria-describedby={msgs.length ? `${id}-err` : undefined}
             aria-haspopup="dialog"
@@ -579,6 +659,8 @@ function LineRow({
                 <>
                   <span className="mono">{item.code}</span> {item.name}
                 </>
+              ) : itemMissing ? (
+                errors.itemId
               ) : (
                 "품목 찾기"
               )}
@@ -629,44 +711,55 @@ function LineRow({
           </Select>
         </td>
         <td className={styles.cQty}>
-          <Input
-            aria-label={`${no}번째 줄 수량`}
-            className="mono"
-            inputMode="numeric"
-            value={line.qty}
-            onChange={(e) => onChange({ qty: e.target.value.replace(/[^\d,]/g, ""), confirmed: false })}
-            aria-invalid={!!errors.qty || undefined}
-          />
+          <FieldNote id={`${id}-qty`} note={qtyNote} message={qtyMissing ? errors.qty : undefined}>
+            <Input
+              aria-label={`${no}번째 줄 수량`}
+              className="mono"
+              inputMode="numeric"
+              value={line.qty}
+              onChange={(e) => onChange({ qty: e.target.value.replace(/[^\d,]/g, ""), confirmed: true })}
+              title={qtyMissing ? errors.qty : undefined}
+              aria-invalid={!!errors.qty || undefined}
+              aria-describedby={qtyMissing ? `${id}-qty` : undefined}
+            />
+          </FieldNote>
           {uom && qty && item && uom.unit !== item.baseUnit && (
             <span className={`${styles.base} mono`}>
               = {(qty * uom.qty).toLocaleString()} {item.baseUnit}
             </span>
           )}
-          {line.lowConfidence && (
-            <label className={styles.confirm}>
-              <input type="checkbox" checked={line.confirmed} onChange={(e) => onChange({ confirmed: e.target.checked })} />
-              원본과 대조함
-            </label>
-          )}
         </td>
         <td className={styles.cDate}>
           {item?.expiryManaged ? (
-            <Input
-              type="date"
-              aria-label={`${no}번째 줄 소비기한`}
-              min={minExpiry}
-              title={`${minExpiry} 이후 날짜 (입고예정일 + 최소 잔여일수)`}
-              value={line.expiryDate}
-              onChange={(e) => onChange({ expiryDate: e.target.value })}
-              aria-invalid={!!errors.expiryDate || undefined}
-            />
+            <FieldNote id={`${id}-exp`} note={expiryNote} message={errors.expiryDate}>
+              <Input
+                type="date"
+                aria-label={`${no}번째 줄 소비기한`}
+                min={minExpiry}
+                title={errors.expiryDate ?? `${minExpiry} 이후 날짜 (입고예정일 + 최소 잔여일수)`}
+                value={line.expiryDate}
+                onChange={(e) => onChange({ expiryDate: e.target.value })}
+                aria-invalid={!!errors.expiryDate || undefined}
+                aria-describedby={errors.expiryDate ? `${id}-exp` : undefined}
+              />
+            </FieldNote>
           ) : (
             <span className="muted">{item ? "관리 안 함" : "–"}</span>
           )}
         </td>
         <td className={styles.cLot}>
           {item?.lotManaged ? (
-            <Input aria-label={`${no}번째 줄 로트`} maxLength={40} value={line.lotNo} onChange={(e) => onChange({ lotNo: e.target.value })} aria-invalid={!!errors.lotNo || undefined} />
+            <FieldNote id={`${id}-lot`} note={lotNote} message={errors.lotNo}>
+              <Input
+                aria-label={`${no}번째 줄 로트`}
+                maxLength={40}
+                value={line.lotNo}
+                onChange={(e) => onChange({ lotNo: e.target.value })}
+                title={errors.lotNo}
+                aria-invalid={!!errors.lotNo || undefined}
+                aria-describedby={errors.lotNo ? `${id}-lot` : undefined}
+              />
+            </FieldNote>
           ) : (
             <span className="muted">{item ? "관리 안 함" : "–"}</span>
           )}
@@ -677,19 +770,46 @@ function LineRow({
           </button>
         </td>
       </tr>
-      {(msgs.length > 0 || showIssues) && (
+      {(msgs.length > 0 || showIssues || onMerge) && (
         <tr className={styles.errRow}>
           <td />
           <td colSpan={6} id={`${id}-err`}>
+            {onMerge && (
+              <button type="button" className={styles.mergeBtn} onClick={onMerge}>
+                한 줄로 합치기
+              </button>
+            )}
             <ul className={styles.errs}>
               {msgs.map((m) => (
                 <li key={m}>{m}</li>
               ))}
-              {showIssues && line.issues.filter((m) => !msgs.includes(m)).map((m) => <li key={`i-${m}`}>원본: {m}</li>)}
+              {showIssues && issues.filter((m) => !msgs.includes(m)).map((m) => <li key={`i-${m}`}>원본: {m}</li>)}
             </ul>
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * 칸 위쪽 테두리에 걸친 짧은 경고 (2026-11-14 Sol) — 행 높이를 바꾸지 않는다.
+ * 짧은 글(필수 입력 / 12-01 이후)만 보이고, 전체 문장은 마우스를 올리면(title) 또는 화면 읽기 프로그램(describedby)으로.
+ */
+function FieldNote({ id, note, message, children }: { id: string; note: string | null; message?: string; children: React.ReactNode }) {
+  return (
+    <span className={styles.noteWrap}>
+      {children}
+      {note && (
+        <>
+          <span className={styles.noteTag} aria-hidden="true" title={message}>
+            {note}
+          </span>
+          <span id={id} className="sr-only">
+            {message}
+          </span>
+        </>
+      )}
+    </span>
   );
 }

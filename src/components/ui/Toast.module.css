@@ -1,7 +1,8 @@
 .region {
   position: fixed;
   left: 50%;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  /* 화면 위 가운데에 띄운다 — 고정 영역을 밀지 않고 잠깐 덮었다 사라진다 (2026-11-14 Sol) */
+  top: calc(16px + env(safe-area-inset-top, 0px));
   transform: translateX(-50%);
   z-index: 40;
   width: max-content;
@@ -43,7 +44,7 @@
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;

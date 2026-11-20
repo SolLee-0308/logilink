@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PdaShell } from "@/features/pda/PdaShell";
 import { PdaInspectScreen } from "@/features/pda/PdaInspectScreen";
 import { RCV_DIFF_GROUP } from "@/domain/master";
+import { ARRIVE_CANCEL_GROUP } from "@/domain/rcv-rules";
 import { getPdaRcv } from "@/server/rcv/queries";
 import { listCodeOptions } from "@/server/master/queries";
 import { requirePdaUser } from "@/server/session";
@@ -25,7 +26,7 @@ export default async function PdaInspectWorkPage({ params, searchParams }: { par
   if (typeof sp.from === "string" && DATE.test(sp.from)) back.set("date", sp.from);
   if (typeof sp.st === "string" && STS.has(sp.st)) back.set("st", sp.st);
   const home = sp.ret === "dashboard" ? "/pda/dashboard" : back.size ? `/pda/inspect?${back}` : "/pda/inspect";
-  const [rcv, reasons] = await Promise.all([getPdaRcv(me, id), listCodeOptions(RCV_DIFF_GROUP)]);
+  const [rcv, reasons, voidReasons] = await Promise.all([getPdaRcv(me, id), listCodeOptions(RCV_DIFF_GROUP), listCodeOptions(ARRIVE_CANCEL_GROUP)]);
   if (!rcv) notFound();
   return (
     <PdaShell
@@ -33,9 +34,9 @@ export default async function PdaInspectWorkPage({ params, searchParams }: { par
       org={me.clientName ?? me.centerName}
       roles={me.roles}
       back={home}
-      title={rcv.status === "WORKING" ? "입고검수" : "검수 결과"}
+      title={rcv.status === "WORKING" ? "입고검수" : rcv.status === "VOIDED" ? "입차 취소" : "검수 결과"}
     >
-      <PdaInspectScreen key={rcv.id} initial={rcv} reasons={reasons} homeHref={home} />
+      <PdaInspectScreen key={rcv.id} initial={rcv} reasons={reasons} voidReasons={voidReasons} homeHref={home} />
     </PdaShell>
   );
 }

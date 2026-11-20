@@ -176,7 +176,7 @@ export function ItemFinderModal({
                   <input type="checkbox" aria-label={`${it.code} ${it.name} 선택`} checked={picked.has(it.id)} onChange={() => toggle(it)} onClick={(e) => e.stopPropagation()} />
                 </td>
                 )}
-                <td className="mono">
+                <td className="mono cell-center">
                   {single ? (
                     <button
                       type="button"

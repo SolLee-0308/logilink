@@ -289,7 +289,8 @@ export function lineErrors(
   if (!line.unit) e.unit = "단위를 고르세요.";
   else if (item && !item.uoms.some((u) => u.unit === line.unit)) e.unit = `${item.name}에 등록되지 않은 단위입니다.`;
   if (!line.qty || line.qty < 1) e.qty = "수량은 1 이상이어야 합니다.";
-  else if (line.lowConfidence && !line.confirmed) e.qty = "판독 신뢰도가 낮은 수량입니다. 원본 이미지와 대조한 뒤 '원본과 대조함'에 체크하세요.";
+  // 체크박스 없이 수량을 직접 고치면(다시 입력하면) 확인한 것으로 본다 (2026-11-15 Sol)
+  else if (line.lowConfidence && !line.confirmed) e.qty = "판독 신뢰도가 낮은 수량입니다. 원본 이미지와 대조해 수량을 다시 입력하세요.";
   if (item?.expiryManaged && !line.expiryDate) e.expiryDate = "소비기한 관리 품목입니다.";
   else if (item?.expiryManaged && line.expiryDate && minExpiry && line.expiryDate < minExpiry.date) e.expiryDate = expiryTooEarlyMsg(minExpiry.date, minExpiry.days);
   if (item?.lotManaged && !line.lotNo?.trim()) e.lotNo = "로트 관리 품목입니다.";
@@ -297,13 +298,25 @@ export function lineErrors(
 }
 
 /** 같은 품목·단위·소비기한·로트 라인 (서버 C1 중복 규칙과 같음) — 중복된 라인 번호(0부터) */
+/**
+ * 중복 판단 열쇠 — 같은 열쇠의 줄은 한 줄로 합칠 수 있다. 검사 대상이 아니면 null.
+ * 관리 품목의 소비기한·로트가 비어 있으면 아직 채우는 중이므로 중복으로 보지 않는다 (2026-11-15 Sol):
+ * 로트가 달라 두 줄로 적은 경우 '합치세요'가 잘못 뜨던 문제. 비어 있는 칸은 '필수 입력'으로 먼저 알린다.
+ */
+export function duplicateKey(l: EditorLineValue, items: Map<number, CatalogItem>): string | null {
+  if (!l.itemId || !l.unit) return null;
+  const it = items.get(l.itemId);
+  if (it?.expiryManaged && !l.expiryDate) return null;
+  if (it?.lotManaged && !l.lotNo?.trim()) return null;
+  return `${l.itemId}:${l.unit}:${it?.expiryManaged ? l.expiryDate : null}:${it?.lotManaged ? l.lotNo?.trim() : null}`;
+}
+
 export function duplicateLines(lines: EditorLineValue[], items: Map<number, CatalogItem>): Set<number> {
   const seen = new Map<string, number>();
   const dup = new Set<number>();
   lines.forEach((l, i) => {
-    if (!l.itemId || !l.unit) return;
-    const it = items.get(l.itemId);
-    const key = `${l.itemId}:${l.unit}:${it?.expiryManaged ? l.expiryDate : null}:${it?.lotManaged ? l.lotNo?.trim() : null}`;
+    const key = duplicateKey(l, items);
+    if (!key) return;
     if (seen.has(key)) {
       dup.add(i);
       dup.add(seen.get(key)!);

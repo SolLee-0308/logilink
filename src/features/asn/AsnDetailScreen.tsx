@@ -67,11 +67,11 @@ export function AsnDetailScreen({
   const n = dday(d.shipDate, today);
 
   const columns: Column<AsnLineView>[] = [
-    { key: "no", header: "#", align: "right", render: (l) => <span className="mono">{l.lineNo}</span> },
-    { key: "plan", header: "입고예정번호", render: (l) => <span className="mono">{l.planNo}</span> },
-    { key: "code", header: "품목코드", render: (l) => <span className="mono">{l.itemCode}</span> },
+    { key: "no", header: "#", align: "center", width: 36, render: (l) => <span className="mono">{l.lineNo}</span> },
+    { key: "plan", header: "입고예정번호", align: "center", render: (l) => <span className="mono">{l.planNo}</span> },
+    { key: "code", header: "품목코드", align: "center", render: (l) => <span className="mono">{l.itemCode}</span> },
     { key: "name", header: "품목명", wrap: true, render: (l) => l.itemName },
-    { key: "unit", header: "단위", render: (l) => <span className="mono">{l.unit}</span> },
+    { key: "unit", header: "단위", align: "center", width: 56, render: (l) => <span className="mono">{l.unit}</span> },
     { key: "qty", header: "지시수량", align: "right", render: (l) => <span className="mono">{l.qty.toLocaleString()}</span> },
     {
       key: "base",
@@ -79,7 +79,7 @@ export function AsnDetailScreen({
       align: "right",
       render: (l) => (l.unit === l.baseUnit ? <span className="muted">–</span> : <span className="mono">{`${l.baseQty.toLocaleString()} ${l.baseUnit}`}</span>),
     },
-    { key: "exp", header: "소비기한", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">–</span>) },
+    { key: "exp", header: "소비기한", align: "center", render: (l) => (l.expiryDate ? <span className="mono">{l.expiryDate}</span> : <span className="muted">–</span>) },
     { key: "lot", header: "로트", render: (l) => (l.lotNo ? <span className="mono">{l.lotNo}</span> : <span className="muted">–</span>) },
   ];
 
@@ -149,7 +149,6 @@ export function AsnDetailScreen({
           {d.canceledBy} · {fmtDateTime(d.canceledAt)}. 상차지시서도 함께 취소되었{tpl ? "습니다." : "고, 담았던 수량은 다른 ASN에 다시 담을 수 있습니다."}
         </NoteBox>
       )}
-      {act.error && <NoteBox tone="error">{act.error}</NoteBox>}
 
       <Card title="ASN 정보">
         <div className={styles.infoGrid}>
@@ -170,7 +169,7 @@ export function AsnDetailScreen({
               [
                 "처리 이력",
                 <span key="h">
-                  {d.histories.length}건 ·{" "}
+                  {d.histories.length.toLocaleString()}건 ·{" "}
                   <button type="button" className={styles.link} onClick={() => setHistoryOpen(true)}>
                     이력 보기
                   </button>
@@ -187,7 +186,7 @@ export function AsnDetailScreen({
       <Card
         title={d.load ? "ASN 지시 품목" : "품목"}
         count={d.lineCount}
-        description={`입고예정 ${d.planNos.length}건: ${d.planNos.join(", ")}`}
+        description={`입고예정 ${d.planNos.length.toLocaleString()}건: ${d.planNos.join(", ")}`}
         aside={<span className={`${styles.qty} mono`}>{d.qtyByUnit.map(([u, q]) => `${u} ${q.toLocaleString()}`).join(" · ")}</span>}
       >
         <DataTable caption="ASN 품목" columns={columns} rows={d.lines} rowKey={(l) => String(l.lineNo)} compact />
@@ -208,7 +207,7 @@ export function AsnDetailScreen({
         placeholder="취소하는 이유를 적어 주세요."
         target={
           <span>
-            <span className="mono">{d.asnNo}</span> · <span className="mono">{d.vehicleNo}</span> · {d.shipDate} · {d.lineCount}줄
+            <span className="mono">{d.asnNo}</span> · <span className="mono">{d.vehicleNo}</span> · {d.shipDate} · {d.lineCount.toLocaleString()}품목
           </span>
         }
         reasons={cancelReasons}

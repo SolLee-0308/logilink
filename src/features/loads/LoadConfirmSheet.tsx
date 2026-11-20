@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { Barcode } from "@/components/ui/Barcode";
-import { LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_TYPE_LABEL, LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
 import { fmtDateTime } from "@/lib/format";
 import type { LoadConfirmPrint } from "./types";
 import styles from "@/features/asn/LoadOrderSheet.module.css";
@@ -80,7 +80,9 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
               {/* 출차 (2026-11-12 Sol) — 출차 전에 인쇄하면 "출차 전" */}
               <tr>
                 <th scope="row">출차</th>
-                <td className="mono">{d.departure ? (d.departure.auto ? `자동 출차 · ${fmtDateTime(d.departure.at)}` : fmtDateTime(d.departure.at)) : "출차 전"}</td>
+                <td className="mono">
+                  {d.departure ? `${fmtDateTime(d.departure.at)}${d.departure.system ? ` · ${DEPART_TYPE_LABEL[d.departure.type]}` : ""}` : "출차 전"}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -130,7 +132,7 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
           <caption className="sr-only">상차 품목</caption>
           <thead>
             <tr>
-              <th scope="col">#</th>
+              <th scope="col" className={styles.cNo}>#</th>
               <th scope="col">품목코드 · 품목명</th>
               {ordered && (
                 <th scope="col" className={styles.num}>
@@ -149,7 +151,7 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
           <tbody>
             {loaded.map((l, i) => (
               <tr key={l.itemId}>
-                <td className="mono">{i + 1}</td>
+                <td className="mono cell-center">{i + 1}</td>
                 <td>
                   <span className="mono">{l.itemCode}</span>
                   <br />
@@ -160,7 +162,21 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
                   <b>{qtyInUnit(l.loadBase, l.showUnit, l.showFactor, l.baseUnit)}</b>
                   {l.showUnit !== l.baseUnit && <span className={styles.dim}> ({l.loadBase.toLocaleString()} {l.baseUnit})</span>}
                 </td>
-                {ordered && <td>{LINE_STATE_LABEL[l.state]}</td>}
+                {/* 비교 + 품목별 차이 사유 (정의서 v2.0 D28) */}
+                {ordered && (
+                  <td>
+                    {LINE_STATE_LABEL[l.state]}
+                    {l.diffReasonName && (
+                      <>
+                        <br />
+                        <span className={styles.dim}>
+                          {l.diffReasonName}
+                          {l.diffReasonText ? ` — ${l.diffReasonText}` : ""}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                )}
                 <td className={styles.write} />
               </tr>
             ))}
@@ -173,10 +189,17 @@ export function LoadConfirmSheet({ data: d, auto }: { data: LoadConfirmPrint; au
           </tfoot>
         </table>
 
-        {d.diffReasonName && (
+        {/* 무지시 상차는 비교 열이 없어 한 줄로 — 모든 품목 "예정 외 차량"(시스템 지정, v2.0) */}
+        {!ordered && d.diffLineCount > 0 && (
           <p className={styles.memo}>
-            <b>차이 사유</b> {d.diffReasonName}
-            {d.diffReasonText ? ` — ${d.diffReasonText}` : ""}
+            <b>차이 사유</b> {[...new Set(d.lines.map((l) => l.diffReasonName).filter(Boolean))].join(", ")} (모든 품목)
+          </p>
+        )}
+        {/* v2.0 이전에 상차완료한 차량 — 차량 사유 1개 */}
+        {d.diffLineCount === 0 && d.legacyDiffReason && (
+          <p className={styles.memo}>
+            <b>차이 사유</b> {d.legacyDiffReason.name}
+            {d.legacyDiffReason.text ? ` — ${d.legacyDiffReason.text}` : ""}
           </p>
         )}
 

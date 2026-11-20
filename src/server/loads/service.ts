@@ -24,11 +24,16 @@ import {
   LOAD_PREFIX,
   addQtyError,
   departureOf,
-  hasLoadDiff,
+  DEPART_TYPE_LABEL,
+  UNORDERED_REASON_CODE,
+  checkLineReasons,
+  lineDiffState,
+  lineReasonSummary,
   normalizeDocNo,
   normalizeScan,
   overWarning,
   qtyInUnit,
+  type LineReasonPick,
 } from "@/domain/load-rules";
 import { todayKst } from "@/lib/format";
 import type { ScanPreview } from "@/features/loads/types";
@@ -61,11 +66,6 @@ async function lockLoad(tx: Tx, id: number) {
   return tx.load.findUnique({ where: { id } });
 }
 
-/** 출차 여부 — [출차]를 눌렀거나, 상차완료한 업무일(도착 센터 기준)이 지났으면 출차 (2026-11-12 Sol) */
-async function departureOfLoad(tx: Tx, load: { centerId: number; status: string; completedAt: Date | null; departedAt: Date | null; departedBy: string | null }) {
-  const center = await tx.center.findUniqueOrThrow({ where: { id: load.centerId }, select: { businessDayStart: true } });
-  return departureOf(load, center.businessDayStart);
-}
 
 /* ═════════ 지시 상차 시작 — 상차지시서 바코드 스캔 ═════════ */
 
@@ -369,14 +369,12 @@ export interface CompleteInput {
   loadId: number;
   /** 확인 화면에서 본 마지막 입력 id */
   lastInputId: number;
-  reasonCode?: string | null;
-  reasonText?: string | null;
+  /** 품목별 차이 사유 (정의서 v2.0 D28) — 지시 상차의 차이 품목마다. 무지시 상차는 시스템이 L04로 정하므로 보내지 않는다 */
+  reasons?: LineReasonPick[];
 }
 
 export async function completeLoad(me: PlanActor, input: CompleteInput): Promise<ActionResult<{ loadNo: string }>> {
   if (!canLoad(me)) return forbidden();
-  const text = input.reasonText?.trim() ?? "";
-  if (text.length > 500) return fail("VALIDATION", "상세 내용은 500자 이내로 입력하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
   return guarded(() =>
     db.$transaction(async (tx) => {
       const load = await lockLoad(tx, input.loadId);
@@ -385,36 +383,55 @@ export async function completeLoad(me: PlanActor, input: CompleteInput): Promise
       const last = await tx.loadInput.findFirst({ where: { loadId: load.id }, orderBy: { id: "desc" }, select: { id: true } });
       if ((last?.id ?? 0) !== input.lastInputId) return fail("CONFLICT", LOAD_CONFLICT_MSG);
 
-      const lines = await tx.loadLine.findMany({ where: { loadId: load.id } });
+      const lines = await tx.loadLine.findMany({ where: { loadId: load.id }, include: { item: { select: { code: true, clientCode: true, name: true } } } });
       if (!lines.some((l) => l.loadBaseQty > 0))
         return fail("STATE", "아직 실은 품목이 없습니다. 품목을 스캔해 수량을 입력한 뒤 상차완료하세요. 차량이 출발하지 않으면 화주사 담당자에게 알리세요.");
       const ordered = load.loadType === "ORDERED";
-      const diff = hasLoadDiff(ordered, lines.map((l) => ({ orderBase: l.orderBaseQty, loadBase: l.loadBaseQty })));
+      const label = (l: (typeof lines)[number]) => l.item.clientCode ?? l.item.code;
 
-      let reason: { code: string; name: string } | null = null;
-      if (diff) {
-        const code = input.reasonCode
-          ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: LOAD_DIFF_GROUP, code: input.reasonCode } } })
-          : null;
-        if (!code || !code.isActive) return fail("VALIDATION", "지시수량과 차이가 있습니다. 차이 사유를 고르세요.", { reasonCode: "차이 사유를 고르세요." });
-        if (code.requiresText && !text) return fail("VALIDATION", `"${code.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`, { reasonText: "상세 내용을 입력하세요." });
-        reason = { code: code.code, name: code.name };
+      // 품목별 차이 사유 (v2.0 D28) — 지시 상차는 차이 품목마다 상차담당이 고르고, 무지시 상차는 시스템이 L04
+      const reasons = new Map<number, { code: string; name: string; text: string | null }>();
+      if (ordered) {
+        const codes = await tx.commonCode.findMany({ where: { groupCode: LOAD_DIFF_GROUP, isActive: true }, select: { code: true, name: true, requiresText: true, appliesTo: true } });
+        const checked = checkLineReasons(
+          lines.map((l) => ({ itemId: l.itemId, itemLabel: `${label(l)} ${l.item.name}`, orderBase: l.orderBaseQty, loadBase: l.loadBaseQty })),
+          // 화면에서 온 값 — 모양이 맞는 것만 쓴다
+          (Array.isArray(input.reasons) ? input.reasons : [])
+            .filter((p) => p && Number.isInteger(p.itemId) && typeof p.code === "string")
+            .map((p) => ({ itemId: p.itemId, code: p.code, text: typeof p.text === "string" ? p.text : null })),
+          codes,
+        );
+        if (!checked.ok) {
+          const errs = [...checked.errors.values()];
+          return fail("VALIDATION", errs.length > 1 ? `차이 품목 ${errs.length}건의 사유를 확인하세요. ${errs[0]}` : errs[0], Object.fromEntries([...checked.errors].map(([k, v]) => [`reason_${k}`, v])));
+        }
+        for (const [k, v] of checked.reasons) reasons.set(k, v);
+      } else {
+        const l04 = await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: LOAD_DIFF_GROUP, code: UNORDERED_REASON_CODE } } });
+        for (const l of lines) if (l.loadBaseQty > 0) reasons.set(l.itemId, { code: UNORDERED_REASON_CODE, name: l04?.name ?? "예정 외 차량(무지시)", text: null });
       }
+      // 차이 없는 품목은 비우고, 차이 품목은 이번 사유로 덮어쓴다 (재개 후 재완료 포함)
+      for (const l of lines) {
+        const r = reasons.get(l.itemId) ?? null;
+        if (r || l.diffReasonCode) await tx.loadLine.update({ where: { id: l.id }, data: { diffReasonCode: r?.code ?? null, diffReasonName: r?.name ?? null, diffReasonText: r?.text ?? null } });
+      }
+      const summary = reasons.size
+        ? lineReasonSummary(
+            lines
+              .filter((l) => reasons.has(l.itemId))
+              .map((l) => ({ label: label(l), state: lineDiffState(l.orderBaseQty, l.loadBaseQty) ?? "extra", ...reasons.get(l.itemId)! })),
+          )
+        : null;
 
       const now = new Date();
       const r = await tx.load.updateMany({
         where: { id: load.id, status: "WORKING" },
-        data: {
-          status: "COMPLETED", version: { increment: 1 }, completedAt: now, completedBy: me.name, completeUserId: me.id,
-          diffReasonCode: reason?.code ?? null, diffReasonName: reason?.name ?? null, diffReasonText: reason ? text || null : null,
-        },
+        // 헤더 사유는 v2.0 이전 차량 조회용 — 새로 저장하지 않는다
+        data: { status: "COMPLETED", version: { increment: 1 }, completedAt: now, completedBy: me.name, completeUserId: me.id, diffReasonCode: null, diffReasonName: null, diffReasonText: null },
       });
       if (!r.count) return fail("STATE", "이미 상차완료된 차량입니다.");
       await tx.loadHistory.create({
-        data: {
-          loadId: load.id, action: "COMPLETE", revisionNo: load.revisionNo, actor: me.name, actorId: me.id,
-          reasonCode: reason?.code ?? null, reasonName: reason?.name ?? null, reasonText: reason ? text || null : null,
-        },
+        data: { loadId: load.id, action: "COMPLETE", revisionNo: load.revisionNo, actor: me.name, actorId: me.id, reasonCode: null, reasonName: summary?.name ?? null, reasonText: summary?.text ?? null },
       });
 
       // 지시 상차: ASN 상차완료(= ASN 확정), 상차지시서 상차완료
@@ -425,7 +442,7 @@ export async function completeLoad(me: PlanActor, input: CompleteInput): Promise
         await tx.asnHistory.create({
           data: {
             asnId: asn.id, action: "LOAD_COMPLETE", version: asn.version + 1, actor: me.name, actorId: me.id,
-            reasonCode: reason?.code ?? null, reasonName: reason?.name ?? null, reasonText: reason ? text || null : null,
+            reasonCode: null, reasonName: summary?.name ?? null, reasonText: summary?.text ?? null,
           },
         });
       }
@@ -459,8 +476,9 @@ export async function reopenLoad(me: PlanActor, input: ReopenInput): Promise<Act
       if (load.status !== "COMPLETED") return fail("STATE", "상차 중인 차량입니다. 그대로 이어서 실으면 됩니다.");
       // 무지시 상차는 재개하지 않는다 (2026-11-12 Sol) — 더 실을 물량은 새 무지시 상차로
       if (load.loadType === "UNORDERED") return fail("STATE", "무지시 상차는 재개할 수 없습니다. 더 실을 물량은 새 무지시 상차로 등록하세요.");
-      // 출차한 차량은 재개하지 않는다 (2026-11-12 Sol) — [출차]를 눌렀거나 상차완료한 업무일이 지났으면 출차
-      if (await departureOfLoad(tx, load)) return fail("STATE", "출차한 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
+      // 출차한 차량은 재개하지 않는다 (2026-11-12 Sol, v1.9: 저장된 출차만 — 사람·입차 처리·일마감 처리). 입차하면 출차도 저장된다
+      const dep = departureOf(load);
+      if (dep) return fail("STATE", dep.system ? `출차가 ${DEPART_TYPE_LABEL[dep.type]}로 기록된 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.` : "출차한 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
       const rcv = await tx.rcv.findFirst({ where: { loadId: load.id, status: { in: ["WORKING", "CONFIRMED"] } }, select: { id: true } });
       if (rcv) return fail("STATE", "입고검수가 시작된 차량은 재개할 수 없습니다. 차이는 입고검수에서 처리합니다.");
 
@@ -475,7 +493,8 @@ export async function reopenLoad(me: PlanActor, input: ReopenInput): Promise<Act
         where: { id: load.id, status: "COMPLETED" },
         data: {
           status: "WORKING", revisionNo: next, version: { increment: 1 },
-          // 재완료 때 다시 채운다 — 이전 완료 정보는 이력(TB_LOAD_HIS)에 남아 있다
+          // 재완료 때 다시 채운다 — 이전 완료 정보는 이력(TB_LOAD_HIS)에 남아 있다.
+          // 품목별 사유(TB_LOAD_D)는 지우지 않고 두어, 재완료 화면에서 상태가 같은 품목에 미리 채운다 (v2.0 ④)
           completedAt: null, completedBy: null, completeUserId: null, diffReasonCode: null, diffReasonName: null, diffReasonText: null,
         },
       });
@@ -501,7 +520,7 @@ export async function reopenLoad(me: PlanActor, input: ReopenInput): Promise<Act
 
 /**
  * 출차 — 상차완료한 차량을 내보낸다. 상태는 상차완료 그대로 두고 출차 시각·처리자만 남긴다.
- * 출차 후에는 상차 재개 불가, 되돌리기 없음. 지시·무지시 모두. 이미 출차(직접 또는 업무일이 지나 자동)면 막는다.
+ * 출차 후에는 상차 재개 불가, 되돌리기 없음. 지시·무지시 모두. 이미 출차(사람·입차 처리·일마감 처리)면 막는다.
  */
 export async function departLoad(me: PlanActor, input: { loadId: number }): Promise<ActionResult<{ departedAt: string }>> {
   if (!canLoad(me)) return forbidden();
@@ -510,13 +529,13 @@ export async function departLoad(me: PlanActor, input: { loadId: number }): Prom
       const load = await lockLoad(tx, input.loadId);
       if (!load || load.clientId !== me.clientId) return notFound();
       if (load.status !== "COMPLETED") return fail("STATE", "상차완료한 차량만 출차할 수 있습니다. 먼저 상차완료하세요.");
-      const dep = await departureOfLoad(tx, load);
-      if (dep) return fail("STATE", dep.auto ? "상차완료한 업무일이 지나 이미 출차로 처리된 차량입니다." : "이미 출차한 차량입니다.");
+      const dep = departureOf(load);
+      if (dep) return fail("STATE", dep.system ? `이미 ${DEPART_TYPE_LABEL[dep.type]}로 출차가 기록된 차량입니다.` : "이미 출차한 차량입니다.");
 
       const now = new Date();
       const r = await tx.load.updateMany({
         where: { id: load.id, status: "COMPLETED", departedAt: null },
-        data: { departedAt: now, departedBy: me.name, departUserId: me.id, version: { increment: 1 } },
+        data: { departedAt: now, departedBy: me.name, departUserId: me.id, departType: "MANUAL", version: { increment: 1 } },
       });
       if (!r.count) return fail("STATE", "이미 출차했거나 상차가 다시 열린 차량입니다. 화면을 새로 고치세요.");
       await tx.loadHistory.create({ data: { loadId: load.id, action: "DEPART", revisionNo: load.revisionNo, actor: me.name, actorId: me.id } });

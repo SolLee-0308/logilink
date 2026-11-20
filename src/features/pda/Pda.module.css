@@ -1510,6 +1510,13 @@ select.field {
   font-weight: 600;
 }
 
+/* 입고검수 — 상차 차이 사유 참고 표시 (정의서 v2.0 ⑥, 2026-11-19 Sol). 검수 정보와 섞이지 않게 회색 작은 글씨 */
+.loadRef {
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .scanCard {
   position: sticky;
   top: 0;
@@ -1901,6 +1908,62 @@ select.field {
   font-size: var(--fs-13);
 }
 
+/* 품목별 차이 사유 (정의서 v2.0 D28) — 품목 줄 아래 한 줄 전체 */
+.diffPick {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 아직 고르지 않은 사유 칸 */
+.fieldNeed {
+  border-color: var(--st-rej-fg);
+}
+
+/* 상차완료 화면 — 차이 사유: 상태별 건수 + [사유 보기]로 품목별 목록 (2026-11-19 Sol B안) */
+.reasonFold summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.reasonFold summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasonCounts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.reasonToggle {
+  font-size: var(--fs-12);
+  color: var(--st-ok-fg);
+  text-decoration: underline;
+}
+
+.reasonToggle::before {
+  content: "▸ ";
+}
+
+.reasonFold[open] .reasonToggle::before {
+  content: "▾ ";
+}
+
+.reasonList {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .diffName {
   min-width: 0;
   overflow: hidden;
@@ -2162,6 +2225,17 @@ p.askBody {
   background: var(--st-done-bg);
 }
 
+/* 도착·검수 대기 차량 카드 — 연한 파랑 바탕 + 왼쪽 파란 띠 (v1.9 입차: 입차했고 첫 입력 전) */
+.cardArrived {
+  background: color-mix(in srgb, var(--st-ok-bg) 40%, #fff);
+  border-color: color-mix(in srgb, var(--st-ok-fg) 18%, transparent);
+  border-left: 4px solid #1c7ed6;
+}
+
+.cardArrived:active {
+  background: var(--st-ok-bg);
+}
+
 /* 카드 오른쪽 위 알약 묶음 (2026-11-12 Sol: 상차완료 카드의 [차이 있음]·[출차 전]) */
 .pills {
   display: inline-flex;
@@ -2235,4 +2309,108 @@ p.askBody {
 .tabSoon {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ═════════ 상차 스캔 영역 (2026-11-14 Sol) ═════════ */
+/* 품목명 앞 품목코드 — 연한 회색·조금 작게 */
+.previewCode {
+  color: var(--soft);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  margin-right: 2px;
+}
+
+/* 숫자 + 작은 단위(오른쪽) — 숫자 크기는 기존 그대로 */
+.qtyParts {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.qtyUnit {
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* 남은 수량 — 부족(−) 보라, 초과(+) 붉은색, 0은 기본색 */
+.remainMinus .mono {
+  color: var(--violet-600);
+}
+
+.remainPlus .mono {
+  color: var(--st-rej-fg);
+}
+
+/* 상차 작업 머리 — 아래 구분선·여백 없이 보라색 스캔 영역을 위로 붙인다 (2026-11-14 Sol) */
+.vHeadFlat {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.vHeadFlat + .scanCard {
+  margin-top: -4px;
+}
+
+/* 스캔한 품목 이름 줄과 수량 줄(그리드) 사이 여백 */
+.previewHead {
+  margin-bottom: 8px;
+}
+
+/* 수량 입력칸 안내 글 — 숫자(20px 굵게)보다 작고 가늘게 */
+.qty::placeholder {
+  font-size: var(--fs-14);
+  font-weight: 400;
+}
+
+/* 수량 줄(그리드) — 보라 바탕(violet-50 #EFEDFE)보다 아주 옅은 연보라 #FBFAFF, 아래 입력칸과 간격 (2026-11-14 Sol) */
+.previewHead + .info {
+  background: #fbfaff;
+  margin-bottom: 10px;
+}
+
+/* 입력 전 안내 글은 왼쪽 — 숫자를 입력하면 지금처럼 오른쪽 정렬 (2026-11-14 Sol) */
+.qty:placeholder-shown {
+  text-align: left;
+}
+
+/* 입고검수 품목 줄의 반송 수량 — 붉은색 (2026-11-14 Sol) */
+.returnText {
+  color: var(--st-rej-fg);
+}
+
+/* 품목 줄 반송 — 수량 아래 별도 줄 (2026-11-14 Sol) */
+.returnLine {
+  color: var(--st-rej-fg);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+/* 상차담당 대시보드 '출차 전' 줄 (2026-11-17 Sol) — 상차완료했고 아직 출발 안 한 차량. 승인대기 노랑 톤 */
+.departStrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #e6c860;
+  border-radius: var(--r-group);
+  background: var(--st-wait-bg);
+  color: var(--st-wait-fg);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+
+.departStrip b {
+  font-weight: 700;
+}
+
+.departStrip .departNote {
+  font-size: var(--fs-12);
+}
+
+.departStrip .departGo {
+  margin-left: auto;
+  display: inline-flex;
 }

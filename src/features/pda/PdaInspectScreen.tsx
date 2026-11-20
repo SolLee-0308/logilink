@@ -2,16 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
+import { DEPART_TYPE_LABEL, DIFF_STATES, LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
 import { RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
 import { fmtDateTime } from "@/lib/format";
 import {
-  addRcvImage, addRcvInput, cancelRcvInput, confirmRcv, correctRcvInput, deleteRcvImage, previewRcvScan, reloadRcv, setRcvLineInfo, setRcvZero,
+  addRcvImage, addRcvInput, cancelRcvInput, confirmRcv, correctRcvInput, deleteRcvImage, previewRcvScan, reloadRcv, setRcvLineInfo, setRcvZero, voidRcv,
 } from "@/server/rcv/actions";
 import type { ReasonOption } from "@/features/shared/RejectModal";
 import type { RcvInputView, RcvLineView, RcvScanPreview, RcvView } from "@/features/rcv/types";
 import { deviceId, takeNotice } from "./device";
-import { Icon, InfoRows, Pill } from "./PdaParts";
+import { Icon, InfoRows, Pill, QtyParts, RemainQty } from "./PdaParts";
 import styles from "./Pda.module.css";
 
 const POLL_MS = 5000;
@@ -47,14 +47,18 @@ async function compress(file: File): Promise<string> {
  * 4) 검수 확정: 검수자·품목 합계를 보고 확정, 미입력 품목은 [돌아가서 스캔] / [남은 품목 전부 0 처리] → 자동 배분
  * 2026-11-12 Sol: 상차 작업과 같은 UI — 확정 확인·수량 경고·입력 취소는 아래에서 올라오는 창, 토스트 대신 그 품목 줄 강조,
  *   머리는 차량·상차 구분 + 짧은 상태 줄, 상차확인서·지시서·검수자는 접힌 '검수 정보', 완료 화면은 방금 확정/목록 조회 구분
+ * v1.9: 머리 아래 단계(상차완료 → 입차 → 검수 중 → 검수확정). 첫 입력 전이면 "도착·검수 대기"이고 [입차 취소](사유 필수)를 할 수 있다.
  */
 export function PdaInspectScreen({
   initial,
   reasons,
+  voidReasons = [],
   homeHref = "/pda/inspect",
 }: {
   initial: RcvView;
   reasons: ReasonOption[];
+  /** 입차 취소 사유 (ARRIVE_CANCEL) */
+  voidReasons?: ReasonOption[];
   /** [처음으로] — 들어온 메뉴의 첫 화면(대시보드 또는 조회조건을 유지한 입고검수 목록) (2026-11-13 Sol) */
   homeHref?: string;
 }) {
@@ -75,6 +79,8 @@ export function PdaInspectScreen({
   const [finishing, setFinishing] = useState(false);
   const [unentered, setUnentered] = useState<string[] | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
+  /** 입차 취소 창 — 사유 코드·상세 */
+  const [voiding, setVoiding] = useState<{ code: string; text: string } | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const working = view.status === "WORKING";
@@ -181,6 +187,26 @@ export function PdaInspectScreen({
     if (warned) setTimeout(() => qtyRef.current?.select(), 0);
   };
 
+  /** 입차 취소 (v1.9 ⑥·C11) — 첫 입력 전만. 끝나면 입고검수 첫 화면으로 */
+  const onVoid = () =>
+    start(async () => {
+      if (!voiding) return;
+      setError(null);
+      const r = await voidRcv({ rcvId: view.id, reasonCode: voiding.code, reasonText: voiding.text });
+      if (r.ok) {
+        setVoiding(null);
+        router.push(homeHref);
+        router.refresh();
+        return;
+      }
+      setError(r.error);
+      if (r.code === "STATE") {
+        setVoiding(null);
+        await reload();
+      }
+    });
+  const voidChosen = voidReasons.find((r) => r.code === voiding?.code);
+
   const onComplete = (zeroRest = false) =>
     start(async () => {
       setError(null);
@@ -218,17 +244,51 @@ export function PdaInspectScreen({
    * 차량번호·상차 구분 알약 + 상태 한 줄(검수 중 · 시작 · 화주사). 상차확인서·지시서·검수자는 아래 '검수 정보'로.
    */
   const head = (
-    <section className={styles.vHead}>
+    // 차량 머리 아래 구분선 없이 보라색 스캔 영역을 바로 붙인다 — 상차 작업과 같게 (2026-11-14 Sol)
+    <section className={`${styles.vHead} ${styles.vHeadFlat}`}>
       <span className={styles.idHead}>
         <Icon name="truck" size={18} />
         <b className={`mono ${styles.idNo}`}>{view.vehicleNo}</b>
         <Pill tone={view.load.type === "ORDERED" ? "blue" : "amber"}>{LOAD_TYPE_LABEL[view.load.type]}</Pill>
       </span>
       <span className={styles.vStatus}>
-        <b>검수 중</b> · {hm(view.createdAt)} 시작 · {view.clientName}
+        {view.startedAt ? (
+          <>
+            <b>검수 중</b> · {hm(view.startedAt)} 시작 · {hm(view.arrivedAt)} 입차 · {view.clientName}
+          </>
+        ) : (
+          <>
+            <b>도착·검수 대기</b> · {hm(view.arrivedAt)} 입차 · {view.clientName}
+          </>
+        )}
       </span>
+      {/* 단계 타임라인은 뺐다 — 상태 줄에 시작·입차 시각을 함께 보인다 (2026-11-14 Sol) */}
+      {/* 상차 차이 사유 참고 (정의서 v2.0 ⑥) — 상차 단계에서 ASN과 다르게 실은 품목과 원인 */}
+      <LoadDiffSummary view={view} />
     </section>
   );
+
+  /* ═════════ 입차 취소된 전표 (v1.9) ═════════ */
+  if (view.status === "VOIDED") {
+    return (
+      <section className={styles.success}>
+        <h2 className={styles.successTitle}>입차를 취소한 차량입니다.</h2>
+        <p className={styles.successSub}>이 검수 전표는 쓰지 않습니다. 차량이 다시 오면 상차확인서를 스캔해 입차하세요.</p>
+        <InfoRows
+          rows={[
+            ["검수 번호", <span key="n" className="mono">{view.rcvNo}</span>],
+            ["차량번호", <span key="v" className="mono">{view.vehicleNo}</span>],
+            ["상차확인서", <span key="l" className="mono">{view.load.loadNo}</span>],
+            ["입차 취소", `${fmtDateTime(view.voided?.at ?? null)} · ${view.voided?.by ?? ""}`],
+            ["사유", `${view.voided?.reasonName ?? "-"}${view.voided?.reasonText ? ` — ${view.voided.reasonText}` : ""}`],
+          ]}
+        />
+        <button type="button" className={styles.blackPill} onClick={() => router.push(homeHref)}>
+          처음으로
+        </button>
+      </section>
+    );
+  }
 
   /* ═════════ 확정 뒤 — 결과·배분 ═════════ */
   if (!working) {
@@ -252,6 +312,8 @@ export function PdaInspectScreen({
               ["화주사", view.clientName],
               ["상차확인서", <span key="l" className="mono">{view.load.loadNo}</span>],
               ["확정", `${fmtDateTime(view.confirmedAt)} · ${view.confirmedBy ?? ""}`],
+              // 상차 차이 사유 참고 (정의서 v2.0 ⑥)
+              ...(view.load.diffs.length || view.load.diffNote ? ([["상차 차이", <LoadDiffSummary key="ld" view={view} />]] as [string, React.ReactNode][]) : []),
             ]}
           />
           <button type="button" className={styles.blackPill} onClick={() => router.push(homeHref)}>
@@ -261,7 +323,7 @@ export function PdaInspectScreen({
         <RcvLines view={view} reasons={reasons} pending={pending} onDone={after} />
         <section className={styles.sheet}>
           <h2 className={styles.h2}>
-            자동 배분 <span className={styles.count}>{view.allocs.length}</span>
+            자동 배분 <span className={styles.count}>{view.allocs.length.toLocaleString()}</span>
           </h2>
           {view.allocs.length === 0 ? (
             <p className={styles.empty}>배분한 수량이 없습니다 (0 확인·품목 불일치만).</p>
@@ -301,8 +363,8 @@ export function PdaInspectScreen({
         <p className={styles.help}>검수 확정은 차량당 한 번입니다. 확정하면 입고예정에 자동 배분하고, 이후에는 고칠 수 없습니다.</p>
         <p className={styles.finishSum}>
           입력 <b className="mono">{enteredCount}</b>
-          <span className="mono">/{planned.length}</span>품목
-          {diffLines.length > 0 && <span className={styles.warnInline}> · 차이 {diffLines.length}</span>}
+          <span className="mono">/{planned.length.toLocaleString()}</span>품목
+          {diffLines.length > 0 && <span className={styles.warnInline}> · 차이 {diffLines.length.toLocaleString()}</span>}
         </p>
         {/* 차이 품목 — 사유는 수량으로 시스템이 정한다. 고르지 않고 확인만 (2026-11-13 Sol, A안) */}
         {diffLines.length > 0 && (
@@ -319,13 +381,13 @@ export function PdaInspectScreen({
         )}
         {/* 검수자 — 이름 한 줄 (상차완료 확인과 같게). 여러 명이면 아직 세는 사람이 없는지 확인 */}
         <p className={styles.finishSum}>
-          검수자 {view.workers.length}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
+          검수자 {view.workers.length.toLocaleString()}명 <span className={styles.dim}>· {view.workers.map((w) => w.name).join(", ") || "-"}</span>
         </p>
         {view.workers.length > 1 && <p className={styles.warnText}>다른 검수자가 아직 세고 있지 않은지 확인하세요.</p>}
         {unentered && (
           <div className={styles.confirm} role="alertdialog" aria-label="입력하지 않은 품목">
             <p>
-              <b>입력하지 않은 품목이 {unentered.length}개 있습니다.</b> 시스템이 대신 0으로 처리하지 않습니다.
+              <b>입력하지 않은 품목이 {unentered.length.toLocaleString()}개 있습니다.</b> 시스템이 대신 0으로 처리하지 않습니다.
             </p>
             <ul className={styles.unentered}>
               {unentered.map((n) => (
@@ -461,11 +523,12 @@ export function PdaInspectScreen({
               if (Number(qty) > 0) onAdd(false);
             }}
           >
-            <div className={styles.sheetHead}>
-              <span className={styles.iconCircle}>
-                <Icon name="box" size={17} />
-              </span>
-              <b className={styles.previewName}>{preview.itemName}</b>
+            {/* 스캔한 품목 — 상차 작업과 같은 형식 (2026-11-14 Sol): 아이콘 없이 [품목코드] 품목명,
+                수량 줄은 상차 · 정상 · 반송 · 남은 수량(정상+반송 − 상차). 스캔 단위는 기준 단위와 다를 때만 */}
+            <div className={`${styles.sheetHead} ${styles.previewHead}`}>
+              <b className={styles.previewName}>
+                <span className={`${styles.previewCode} mono`}>{preview.itemCode}</span> {preview.itemName}
+              </b>
             </div>
             {preview.mismatch ? (
               <p className={styles.error}>상차 실적에 없는 품목입니다. 입고하지 않고 품목 불일치 반송으로 기록합니다.</p>
@@ -473,9 +536,13 @@ export function PdaInspectScreen({
               <InfoRows
                 tone="white"
                 rows={[
-                  ["스캔 단위", <span key="u" className="mono">{preview.unit}{preview.unit !== preview.baseUnit ? ` (= ${preview.factor} ${preview.baseUnit})` : ""}</span>],
-                  ["상차 수량", qtyInUnit(preview.expect, preview.showUnit, preview.showFactor, preview.baseUnit)],
-                  ["지금 정상 / 반송", `${qtyInUnit(preview.good, preview.showUnit, preview.showFactor, preview.baseUnit)} / ${qtyInUnit(preview.damaged, preview.showUnit, preview.showFactor, preview.baseUnit)}`],
+                  ...(preview.unit !== preview.baseUnit
+                    ? ([["스캔 단위", <span key="u" className="mono">{preview.unit} = {preview.factor} {preview.baseUnit}</span>]] as [string, React.ReactNode][])
+                    : []),
+                  ["상차 수량", <QtyParts key="e" text={qtyInUnit(preview.expect, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                  ["정상 수량", <QtyParts key="g" text={qtyInUnit(preview.good, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                  ["반송 수량", <QtyParts key="d" text={qtyInUnit(preview.damaged, preview.showUnit, preview.showFactor, preview.baseUnit)} />],
+                  ["남은 수량", <RemainQty key="r" target={preview.expect} done={preview.good + preview.damaged} unit={preview.showUnit} factor={preview.showFactor} baseUnit={preview.baseUnit} />],
                 ]}
               />
             )}
@@ -488,8 +555,9 @@ export function PdaInspectScreen({
                 ))}
               </div>
             )}
-            <label htmlFor="pda-rcv-qty" className={styles.label}>
-              추가로 센 수량 ({preview.unit})
+            {/* 보이는 라벨은 뺐다 — 입력칸 안내 글이 고른 구분(정상/반송)을 보여 준다 (2026-11-14 Sol) */}
+            <label htmlFor="pda-rcv-qty" className="sr-only">
+              {preview.mismatch || kind === "DAMAGED" ? "반송" : "정상"} 수량 ({preview.unit})
             </label>
             <div className={styles.qtyRow}>
               <input
@@ -499,7 +567,7 @@ export function PdaInspectScreen({
                 value={qty}
                 onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))}
                 inputMode="numeric"
-                placeholder="0"
+                placeholder={`${preview.mismatch || kind === "DAMAGED" ? "반송" : "정상"} 수량 입력 (${preview.unit})`}
                 autoComplete="off"
                 enterKeyHint="done"
                 disabled={pending}
@@ -513,9 +581,18 @@ export function PdaInspectScreen({
             </button>
           </form>
         )}
-        {error && (
+        {error && !voiding && (
           <p className={styles.error} role="alert">
             {error}
+          </p>
+        )}
+        {/* 입차 취소 — 첫 입력 전에만 (잘못 스캔한 차량 등, v1.9 ⑥·C11) */}
+        {view.canVoid && !preview && (
+          <p className={styles.help}>
+            품목을 스캔하면 검수가 시작됩니다. 잘못 입차한 차량이면{" "}
+            <button type="button" className={styles.link} onClick={() => (setError(null), setVoiding({ code: "", text: "" }))} disabled={pending}>
+              입차 취소
+            </button>
           </p>
         )}
       </section>
@@ -525,7 +602,7 @@ export function PdaInspectScreen({
       {/* 내 입력 — 상차 작업과 같이 아래 접힌 줄 */}
       <details className={styles.fold}>
         <summary className={styles.foldHead}>
-          내 입력 <span className={styles.count}>{myInputs.length}</span>
+          내 입력 <span className={styles.count}>{myInputs.length.toLocaleString()}</span>
           <span className={styles.detailSum}>{myInputs[0] ? `마지막 ${hm(myInputs[0].inputAt)}` : "없음"}</span>
           <span className={styles.detailChev}>
             <Icon name="chevD" size={16} />
@@ -611,6 +688,8 @@ export function PdaInspectScreen({
             ["상차확인서", <span key="l" className="mono">{view.load.loadNo}</span>],
             ["지시서", view.load.orderNo ? <span key="o" className="mono">{view.load.orderNo}</span> : "ASN 없음 (무지시)"],
             ["상차완료", hm(view.load.completedAt)],
+            ["출차", view.departure ? `${fmtDateTime(view.departure.at).slice(5, 16)} · ${view.departure.system ? DEPART_TYPE_LABEL[view.departure.type] : view.departure.by ?? "-"}` : "-"],
+            ["입차", view.arrivedAt ? `${fmtDateTime(view.arrivedAt).slice(5, 16)} · ${view.arrivedBy ?? "-"}` : "-"],
             ...(view.load.driverName ? ([["기사", view.load.driverName]] as [string, React.ReactNode][]) : []),
             ["검수자", view.workers.length ? view.workers.map((w) => w.name).join(", ") : "-"],
           ]}
@@ -621,7 +700,7 @@ export function PdaInspectScreen({
       <div className={`${styles.bottomBar} ${styles.barRow}`}>
         {attention.length > 0 && (
           <span className={`${styles.barInfo} ${styles.warnInline}`}>
-            확인 필요 <b className="mono">{attention.length}</b>
+            확인 필요 <b className="mono">{attention.length.toLocaleString()}</b>
           </span>
         )}
         {/* 1개 이상 검수했을 때만 (2026-11-06 Sol) */}
@@ -636,6 +715,53 @@ export function PdaInspectScreen({
       </div>
       {finishSheet}
       {askSheet}
+      {voiding && (
+        <div className={styles.modalScrim}>
+          <section className={styles.modalSheet} role="dialog" aria-modal="true" aria-labelledby="void-title">
+            <h2 id="void-title" className={styles.h2}>
+              입차 취소
+            </h2>
+            <p className={styles.help}>
+              <b className="mono">{view.vehicleNo}</b> 입차를 취소합니다. 검수 전표도 함께 취소되고, 차량은 다시 입차 전으로 돌아갑니다. 이미 기록된 출차는 그대로 둡니다.
+            </p>
+            <label htmlFor="pda-void" className={styles.label}>
+              입차 취소 사유
+            </label>
+            <select id="pda-void" className={styles.field} value={voiding.code} onChange={(e) => setVoiding({ ...voiding, code: e.target.value })} disabled={pending} autoFocus>
+              <option value="">사유를 고르세요</option>
+              {voidReasons.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+            {voidChosen?.requiresText && (
+              <textarea
+                className={`${styles.field} ${styles.textarea}`}
+                value={voiding.text}
+                onChange={(e) => setVoiding({ ...voiding, text: e.target.value })}
+                placeholder="상세 내용 (필수)"
+                maxLength={500}
+                rows={3}
+                disabled={pending}
+              />
+            )}
+            {error && (
+              <p className={styles.error} role="alert">
+                {error}
+              </p>
+            )}
+            <div className={styles.btnRow}>
+              <button type="button" className={styles.secondary} onClick={() => (setVoiding(null), setError(null))} disabled={pending}>
+                그만두기
+              </button>
+              <button type="button" className={styles.dangerBtn} onClick={onVoid} disabled={pending || !voiding.code || (!!voidChosen?.requiresText && !voiding.text.trim())}>
+                입차 취소
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
@@ -686,14 +812,15 @@ function RcvLines({
   return (
     <section className={styles.flat}>
       <h2 className={styles.h2}>
-        품목 <span className={styles.count}>{view.lines.length}</span>
+        품목 <span className={styles.count}>{view.lines.length.toLocaleString()}</span>
         {/* 입력 진행 강조 (2026-11-06 Sol) */}
         <span className={`${styles.progressTag} ${planned.length > 0 && entered === planned.length ? styles.progressDone : ""}`}>
-          입력 <b className="mono">{entered}</b> / {planned.length}
+          입력 <b className="mono">{entered}</b> / {planned.length.toLocaleString()}
         </span>
       </h2>
       <ul className={`${styles.rcvLines} ${styles.rcvFlat}`}>
-        {view.lines.map((l) => (
+        {/* 더 셀 게 없는 품목(일치·0 확인)은 맨 아래로 — 남은 품목이 위에 보이게 (2026-11-14 Sol). 나머지 순서는 그대로 */}
+        {[...view.lines].sort((x, y) => Number(x.state === "match" || x.state === "zero") - Number(y.state === "match" || y.state === "zero")).map((l) => (
           <RcvLineItem key={l.itemId} view={view} line={l} reasons={reasons} pending={pending} onDone={onDone} editable={editable && view.status === "WORKING"} lit={lit === l.itemId} />
         ))}
       </ul>
@@ -740,9 +867,8 @@ function RcvLineItem({
     return names.map((n) => [n, sum.has(n) ? sum.get(n)! : null]);
   })();
 
-  const qtyText = l.mismatch
-    ? `반송 ${f(l, l.mismatchQty)}`
-    : `${f(l, l.good)}${l.damaged ? ` · 반송 ${f(l, l.damaged)}` : ""} / ${f(l, l.expect)}`;
+  // 정상 / 상차 한 줄, 반송은 그 아래 줄에 붉은색 — 긴 품목명이 눌리지 않게 수량 칸을 좁힌다 (2026-11-14 Sol)
+  const qtyText = l.mismatch ? <span className={styles.returnText}>반송 {f(l, l.mismatchQty)}</span> : `${f(l, l.good)} / ${f(l, l.expect)}`;
 
   return (
     <li id={`rcv-line-${l.itemId}`} className={`${styles.rcvLine} ${lit ? styles.lit : ""} ${l.zeroConfirm ? styles.rcvZero : ""}`}>
@@ -755,9 +881,17 @@ function RcvLineItem({
               {l.itemCode}
               {byWorker.length > 0 && ` · ${byWorker.map(([n, q]) => `${n} ${q === null ? "—" : f(l, q)}`).join(" · ")}`}
             </span>
+            {/* 상차 차이 사유 참고 (정의서 v2.0 ⑥) — 검수 기준(상차 수량)과 별개로, 상차 때 ASN과 달랐던 원인 */}
+            {l.loadDiff && (
+              <span className={styles.loadRef}>
+                상차: {LINE_STATE_LABEL[l.loadDiff.state]} · {l.loadDiff.reasonName}
+                {l.loadDiff.orderText ? ` (ASN ${l.loadDiff.orderText})` : ""}
+              </span>
+            )}
           </span>
           <span className={styles.lineQty}>
             <b className="mono">{qtyText}</b>
+            {!l.mismatch && l.damaged > 0 && <span className={`${styles.returnLine} mono`}>반송 {f(l, l.damaged)}</span>}
             <span className={`${styles.stText} ${problem && editable ? styles.rst_problem : styles[`rst_${l.state}`]}`}>{problem && editable ? "확인 필요" : RCV_LINE_STATE_LABEL[l.state]}</span>
           </span>
           {/* 진행 막대 — 상차 수량 대비 센 수량(정상+반송), 상차 작업의 품목 줄과 같은 색 */}
@@ -848,7 +982,7 @@ function RcvLineItem({
                 </>
               )}
               <span className={styles.dim}>
-                훼손 사진 {l.imageIds.length}/{RCV_IMAGE_MAX}
+                훼손 사진 {l.imageIds.length.toLocaleString()}/{RCV_IMAGE_MAX}
               </span>
             </div>
           )}
@@ -867,7 +1001,7 @@ const BAR_TONE: Record<RcvLineState, string> = { todo: "st_none", short: "st_sho
  */
 /** 확정 확인 창의 차이 품목 한 줄 — 수량·상태와 시스템이 정한 사유 (2026-11-13 Sol, A안: 고르지 않음) */
 function ReasonRow({ line: l, reasons }: { line: RcvLineView; reasons: ReasonOption[] }) {
-  const qty = l.mismatch ? `반송 ${f(l, l.mismatchQty)}` : `${f(l, l.good + l.damaged)} / ${f(l, l.expect)}`;
+  const qty = l.mismatch ? <span className={styles.returnText}>반송 {f(l, l.mismatchQty)}</span> : `${f(l, l.good + l.damaged)} / ${f(l, l.expect)}`;
   return (
     <li>
       <span className={styles.reasonHead}>
@@ -877,5 +1011,44 @@ function ReasonRow({ line: l, reasons }: { line: RcvLineView; reasons: ReasonOpt
       </span>
       <span className={styles.dim}>사유: {reasonLabel(l, reasons) ?? "-"} (자동)</span>
     </li>
+  );
+}
+
+/**
+ * 상차 차이 사유 — 참고 표시 (정의서 v2.0 ⑥, 2026-11-19 Sol). 검수 기준은 상차 수량이라 ASN 대비 차이는 검수에 드러나지 않으므로
+ * 상차담당이 남긴 원인을 보여 준다. 상차완료 화면과 같은 모양(B안): 상태별 건수 + [상차 사유 보기].
+ */
+function LoadDiffSummary({ view }: { view: RcvView }) {
+  const diffs = view.load.diffs;
+  if (!diffs.length) return view.load.diffNote ? <span className={styles.loadRef}>상차 차이 · {view.load.diffNote}</span> : null;
+  const counts = DIFF_STATES.map((s) => [s, diffs.filter((d) => d.state === s).length] as const).filter(([, n]) => n > 0);
+  return (
+    <details className={styles.reasonFold}>
+      <summary>
+        <span className={styles.loadRef}>상차 차이</span>
+        <span className={styles.reasonCounts}>
+          {counts.map(([s, n]) => (
+            <span key={s} className={`${styles.diffState} ${styles[`ds_${s}`]}`}>
+              {LINE_STATE_LABEL[s]} {n.toLocaleString()}
+            </span>
+          ))}
+        </span>
+        <span className={styles.reasonToggle}>상차 사유 보기</span>
+      </summary>
+      <ul className={styles.reasonList}>
+        {diffs.map((d) => (
+          <li key={d.itemId}>
+            <span className={`${styles.dim} mono`}>{d.itemCode}</span> {d.itemName}{" "}
+            <span className={`${styles.diffState} ${styles[`ds_${d.state}`]}`}>{LINE_STATE_LABEL[d.state]}</span>{" "}
+            <span className={`${styles.dim} mono`}>
+              {d.loadText}
+              {d.orderText ? ` / ASN ${d.orderText}` : ""}
+            </span>{" "}
+            · {d.reasonName}
+            {d.reasonText ? ` — ${d.reasonText}` : ""}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

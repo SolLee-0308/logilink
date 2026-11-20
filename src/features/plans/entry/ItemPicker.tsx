@@ -186,7 +186,7 @@ export function ItemPicker({
                 onMore(q === label ? "" : q);
               }}
             >
-              {total > results.length ? `${total.toLocaleString()}건 중 ${results.length}건 · ` : ""}품목 찾기 창에서 찾기
+              {total > results.length ? `${total.toLocaleString()}건 중 ${results.length.toLocaleString()}건 · ` : ""}품목 찾기 창에서 찾기
             </button>
           </li>
         </ul>

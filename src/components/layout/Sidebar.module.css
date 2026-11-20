@@ -114,6 +114,10 @@ a.on:hover {
 
 .navLabel {
   min-width: 0;
+  /* 메뉴 너비를 줄여도 이름이 두 줄로 꺾이지 않게 — 넘치면 말줄임 (2026-11-14) */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 건수 배지: CI 규칙상 작은 흰 글자는 violet-600 이상 위에만 */
@@ -152,19 +156,6 @@ a.on:hover {
   font-size: var(--fs-11);
 }
 
-.avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--violet-600);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: var(--fs-12);
-  font-weight: 600;
-  flex: none;
-}
-
 /* 하위 메뉴가 있는 메뉴 */
 .parent {
   width: 100%;
@@ -199,7 +190,7 @@ a.on:hover {
 
 .sub {
   list-style: none;
-  margin: 0 0 2px 19px;
+  margin: 0 0 2px 15px; /* 19 → 15 (2026-11-14 메뉴 너비 176px에 맞춤) */
   padding: 0 0 0 10px;
   border-left: 1px solid var(--ink-line);
   display: flex;

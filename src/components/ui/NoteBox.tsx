@@ -13,14 +13,20 @@ export function NoteBox({
 }: {
   tone: NoteTone;
   children: React.ReactNode;
+  /** 버튼 — 글 아래 줄이 아니라 같은 줄 오른쪽 끝에 둔다 (2026-11-14 Sol, 모든 안내 박스) */
   action?: React.ReactNode;
 }) {
+  if (action) {
+    return (
+      <div className={`${styles.note} ${styles[tone]} ${styles.inline}`} role={tone === "error" ? "alert" : undefined}>
+        <div className={styles.text}>{children}</div>
+        <div className={styles.actRight}>{action}</div>
+      </div>
+    );
+  }
   return (
     <div className={`${styles.note} ${styles[tone]}`} role={tone === "error" ? "alert" : undefined}>
-      <div>
-        {children}
-        {action && <div className={styles.act}>{action}</div>}
-      </div>
+      <div>{children}</div>
     </div>
   );
 }
