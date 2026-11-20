@@ -8,9 +8,11 @@ import { hashPassword, tempPassword } from "@/server/auth/password";
 import { can, canReviewItemRequests, isShipperRole, type Op, type Resource } from "@/domain/permissions";
 import { MSG, addressErrors, formatBizNo, formatPhone, bizNoError, isValidEmail, isValidPhone, isValidTime, textError } from "@/domain/validators";
 import { fail, type ActionResult } from "@/server/action-result";
-import { BARCODE_PATTERN, ITEM_REQ_REJECT_GROUP, ITEM_UNITS, ROLE_META, STORAGE_TEMPS, USER_ROLES, isManagerCandidate, normalizeAlias, sortRoles } from "@/domain/master";
+import { BARCODE_PATTERN, ITEM_REQ_REJECT_GROUP, ITEM_UNITS, ROLE_META, STORAGE_TEMPS, USER_ROLES, innerQtyError, isManagerCandidate, needsInnerQty, normalizeAlias, sortRoles } from "@/domain/master";
 import type { Prisma } from "@/generated/prisma/client";
 import type { UserRole } from "@/domain/master";
+import { LOAD_DIFF_GROUP } from "@/domain/master";
+import { DIFF_STATES } from "@/domain/load-rules";
 import { CLIENT_PREFIX_PATTERN, PREFIX_EXHAUSTED_MSG, composeClientCode, nextClientSerial } from "@/domain/client-code";
 import { ITEM_SERIAL_MAX, cleanClientCode, composeItemCode, nextItemSerial } from "@/domain/item-code";
 import { deactivateBlock, removeCenterBlock } from "@/domain/unclosed";
@@ -328,6 +330,8 @@ const itemSchema = z
     storageTemp: z.enum(STORAGE_TEMPS, { error: "보관 온도대를 선택하세요." }),
     expiryManaged: z.boolean(),
     lotManaged: z.boolean(),
+    /** 입수 — BOX 기준 품목만 필수 (2026-11-17 Sol). 다른 기준 단위면 저장하지 않는다 */
+    innerQty: z.number().nullish(),
     isActive: z.boolean(),
     uoms: z.array(uomSchema),
     barcodes: z.array(barcodeSchema),
@@ -342,6 +346,8 @@ const itemSchema = z
       if (u.unit !== v.baseUnit && u.qty < 2) ctx.addIssue({ code: "custom", path: ["uoms"], message: `${u.unit} 환산 수량은 2 이상으로 입력하세요.` });
     }
     if (!units.has(v.baseUnit)) ctx.addIssue({ code: "custom", path: ["uoms"], message: "기준 단위가 단위 환산에 있어야 합니다." });
+    const innerErr = innerQtyError(v.baseUnit, v.innerQty);
+    if (innerErr) ctx.addIssue({ code: "custom", path: ["innerQty"], message: innerErr });
     if (v.barcodes.length === 0) ctx.addIssue({ code: "custom", path: ["barcodes"], message: "바코드를 하나 이상 입력하세요 (PDA 스캔 기준)." });
     const seen = new Set<string>();
     for (const b of v.barcodes) {
@@ -357,7 +363,8 @@ const itemSchema = z
       if (al.has(n)) ctx.addIssue({ code: "custom", path: ["aliases"], message: `별칭 '${a}'이(가) 두 번 들어 있습니다.` });
       al.add(n);
     }
-  });
+  })
+  .transform((v) => ({ ...v, innerQty: needsInnerQty(v.baseUnit) ? (v.innerQty ?? null) : null }));
 
 type ItemInput = z.output<typeof itemSchema>;
 
@@ -425,6 +432,7 @@ const itemSnapshot = (v: Omit<ItemInput, "id" | "version" | "clientId">) => ({
   storageTemp: v.storageTemp,
   expiryManaged: v.expiryManaged,
   lotManaged: v.lotManaged,
+  innerQty: v.innerQty,
   isActive: v.isActive,
   uoms: uomText(v.uoms),
   barcodes: barcodeText(v.barcodes),
@@ -449,7 +457,7 @@ async function createItemTx(tx: Tx, v: ItemInput, code: string, actor: string, l
   const row = await tx.item.create({
     data: {
       clientId: v.clientId, code, clientCode: v.clientCode, name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp,
-      expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, isActive: v.isActive, createdBy: actor, updatedBy: actor,
+      expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, innerQty: v.innerQty, isActive: v.isActive, createdBy: actor, updatedBy: actor,
     },
   });
   await syncItemChildren(tx, row.id, v.clientId, v, actor);
@@ -490,7 +498,7 @@ export async function saveItem(input: z.input<typeof itemSchema>): Promise<Actio
       const before = {
         clientCode: cur.clientCode,
         name: cur.name, baseUnit: cur.baseUnit, storageTemp: cur.storageTemp, expiryManaged: cur.expiryManaged,
-        lotManaged: cur.lotManaged, isActive: cur.isActive, uoms: uomText(cur.uoms), barcodes: barcodeText(cur.barcodes),
+        lotManaged: cur.lotManaged, innerQty: cur.innerQty, isActive: cur.isActive, uoms: uomText(cur.uoms), barcodes: barcodeText(cur.barcodes),
         aliases: aliasText(cur.aliases.map((a) => a.alias)),
       };
       const d = diff(before, snapshot);
@@ -499,7 +507,7 @@ export async function saveItem(input: z.input<typeof itemSchema>): Promise<Actio
         where: { id: v.id, version: v.version },
         data: {
           clientCode: v.clientCode, name: v.name, baseUnit: v.baseUnit, storageTemp: v.storageTemp, expiryManaged: v.expiryManaged,
-          lotManaged: v.lotManaged, isActive: v.isActive, updatedBy: actor, version: { increment: 1 },
+          lotManaged: v.lotManaged, innerQty: v.innerQty, isActive: v.isActive, updatedBy: actor, version: { increment: 1 },
         },
       });
       if (r.count === 0) return conflict();
@@ -518,13 +526,20 @@ const registerSchema = z.object({
   clientCode: z.string().trim().max(40, "화주사 품목코드는 40자 이내로 입력하세요.").nullish().transform((x) => cleanClientCode(x)),
   itemName: trimmed(200, "품목명"),
   unit: z.enum(ITEM_UNITS, { error: "단위를 선택하세요." }),
+  /** 입수 — 단위가 BOX면 필수 (2026-11-17 Sol) */
+  innerQty: z.number().nullish(),
   barcode: z.string().trim().regex(BARCODE_PATTERN, "바코드는 숫자 8~14자리로 입력하세요."),
   storageTemp: z.enum(STORAGE_TEMPS, { error: "보관 온도대를 선택하세요." }),
   expiryManaged: z.boolean(),
   lotManaged: z.boolean(),
   /** 3PL이 품목명을 고쳤을 때 화주사가 보낸 원래 품목명을 별칭으로 남길지 */
   keepRequestNameAsAlias: z.boolean(),
-});
+})
+  .superRefine((v, ctx) => {
+    const err = innerQtyError(v.unit, v.innerQty);
+    if (err) ctx.addIssue({ code: "custom", path: ["innerQty"], message: err });
+  })
+  .transform((v) => ({ ...v, innerQty: needsInnerQty(v.unit) ? (v.innerQty ?? null) : null }));
 
 const FIELD_LABEL: Record<string, string> = { clientCode: "화주사 품목코드", itemName: "품목명", unit: "단위", barcode: "바코드" };
 const REQ_FIELDS = ["clientCode", "itemName", "unit", "barcode"] as const;
@@ -568,7 +583,7 @@ export async function registerItemRequest(input: z.input<typeof registerSchema>)
       const item = await tx.item.create({
         data: {
           clientId: req.clientId, code, clientCode: v.clientCode, name: v.itemName, baseUnit: v.unit, storageTemp: v.storageTemp,
-          expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, createdBy: actor, updatedBy: actor,
+          expiryManaged: v.expiryManaged, lotManaged: v.lotManaged, innerQty: v.innerQty, createdBy: actor, updatedBy: actor,
           uoms: { create: [{ unit: v.unit, qty: 1 }] },
         },
       });
@@ -590,7 +605,7 @@ export async function registerItemRequest(input: z.input<typeof registerSchema>)
       await tx.itemRequestHistory.create({ data: { requestId: v.id, action: "REGISTER", actor, actorId: me.id, memo: memo || null } });
       await log(tx, "tb_item", String(item.id), "CREATE", actor, null, {
         code: item.code, clientCode: item.clientCode, name: item.name, baseUnit: item.baseUnit, storageTemp: item.storageTemp,
-        expiryManaged: item.expiryManaged, lotManaged: item.lotManaged, isActive: true,
+        expiryManaged: item.expiryManaged, lotManaged: item.lotManaged, innerQty: item.innerQty, isActive: true,
         uoms: `${v.unit}`, barcodes: `${v.barcode}(${v.unit}·대표)`, aliases: aliasText(aliases), fromRequest: req.requestNo,
       });
       return done(`${req.requestNo} 품목 ${item.code}을(를) 등록했습니다. 단위 환산·추가 바코드는 품목 화면에서 넣을 수 있습니다.`, { itemId: item.id });
@@ -924,13 +939,15 @@ const codeSchema = z.object({
   name: trimmed(100, "코드명"),
   sortOrder: z.number({ error: "순서를 숫자로 입력하세요." }).int("순서는 정수로 입력하세요.").min(0, "순서는 0 이상으로 입력하세요.").max(9999, "순서는 9999 이하로 입력하세요."),
   requiresText: z.boolean(),
+  /** 적용 상태 — 상차 차이 사유(LOAD_DIFF)만 (v2.0 D28). 다른 그룹은 비운다 */
+  appliesTo: z.array(z.enum(DIFF_STATES)).default([]),
   isActive: z.boolean(),
 });
 
 export async function saveCommonCode(input: z.input<typeof codeSchema>): Promise<ActionResult<{ id: number }>> {
   const p = codeSchema.safeParse(input);
   if (!p.success) return invalid(p.error);
-  const v = p.data;
+  const v = { ...p.data, appliesTo: p.data.groupCode === LOAD_DIFF_GROUP ? DIFF_STATES.filter((s) => p.data.appliesTo.includes(s)) : [] };
   const me = await getActor();
   const actor = me.name;
 
@@ -942,21 +959,21 @@ export async function saveCommonCode(input: z.input<typeof codeSchema>): Promise
         if (await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: v.groupCode, code: v.code } } }))
           return fail("VALIDATION", "입력 내용을 확인하세요.", { code: "이 그룹에 이미 있는 코드입니다." });
         const row = await tx.commonCode.create({
-          data: { groupCode: v.groupCode, code: v.code, name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, isActive: v.isActive, createdBy: actor, updatedBy: actor },
+          data: { groupCode: v.groupCode, code: v.code, name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, appliesTo: v.appliesTo, isActive: v.isActive, createdBy: actor, updatedBy: actor },
         });
         await log(tx, "tb_common_code", String(row.id), "CREATE", actor, null, {
-          groupCode: row.groupCode, code: row.code, name: row.name, sortOrder: row.sortOrder, requiresText: row.requiresText, isActive: row.isActive,
+          groupCode: row.groupCode, code: row.code, name: row.name, sortOrder: row.sortOrder, requiresText: row.requiresText, appliesTo: row.appliesTo, isActive: row.isActive,
         });
         return done(`코드 ${row.code} ${row.name}을(를) 등록했습니다.`, { id: row.id });
       }
       const cur = await tx.commonCode.findUnique({ where: { id: v.id } });
       if (!cur) return fail("NOT_FOUND", "코드를 찾을 수 없습니다.");
       if (cur.version !== v.version) return conflict();
-      const d = diff(cur, { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, isActive: v.isActive });
+      const d = diff(cur, { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, appliesTo: v.appliesTo, isActive: v.isActive });
       if (!d) return done("바뀐 내용이 없습니다.", { id: cur.id });
       const r = await tx.commonCode.updateMany({
         where: { id: v.id, version: v.version },
-        data: { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, isActive: v.isActive, updatedBy: actor, version: { increment: 1 } },
+        data: { name: v.name, sortOrder: v.sortOrder, requiresText: v.requiresText, appliesTo: v.appliesTo, isActive: v.isActive, updatedBy: actor, version: { increment: 1 } },
       });
       if (r.count === 0) return conflict();
       await log(tx, "tb_common_code", String(cur.id), "UPDATE", actor, d.b, d.a);

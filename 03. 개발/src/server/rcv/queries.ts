@@ -8,10 +8,10 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { PlanActor } from "@/server/plans/service";
 import { can } from "@/domain/permissions";
 import type { ItemUnit } from "@/domain/master";
-import { departureOf, qtyInUnit } from "@/domain/load-rules";
+import { departureOf, lineDiffState, qtyInUnit } from "@/domain/load-rules";
 import { lineDiff, needsReason, rcvLineState } from "@/domain/rcv-rules";
 import { DEFAULT_BUSINESS_DAY_START, businessDateOf, businessDayRange } from "@/domain/business-day";
-import type { PdaRcvDashboard, PdaRcvHistory, PdaRcvHome, PdaRcvRow, RcvLineView, RcvView } from "@/features/rcv/types";
+import type { PdaRcvDashboard, PdaRcvHistory, PdaRcvHome, PdaRcvRow, RcvLineView, RcvLoadDiff, RcvView } from "@/features/rcv/types";
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 const ymd = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
@@ -48,6 +48,12 @@ const VIEW_INCLUDE = {
       loadOrder: { select: { orderNo: true } },
       asn: { select: { asnNo: true, driverName: true, lines: { select: { itemId: true, unit: true, qty: true, baseQty: true, planLine: { select: { expiryDate: true, lotNo: true } } } } } },
       inputs: { where: { canceledAt: null }, select: { itemId: true, unit: true }, orderBy: { id: "asc" } },
+      // 상차 차이 사유 — 검수 화면 참고 표시 (정의서 v2.0 ⑥, 2026-11-19 Sol)
+      lines: {
+        where: { diffReasonCode: { not: null } },
+        include: { item: { select: { code: true, clientCode: true, name: true, baseUnit: true, uoms: { select: { unit: true, qty: true } } } } },
+        orderBy: { id: "asc" },
+      },
     },
   },
   lines: { include: { item: { select: { code: true, name: true, baseUnit: true, expiryManaged: true, lotManaged: true, uoms: { select: { unit: true, qty: true } } } } }, orderBy: { id: "asc" } },
@@ -67,8 +73,24 @@ function unitOf(r: RcvFull, itemId: number, baseUnit: ItemUnit, uoms: { unit: It
   return { showUnit: baseUnit, showFactor: 1 };
 }
 
+/**
+ * 상차 차이 사유 (정의서 v2.0 ⑥ 참고 표시) — 검수 기준은 상차 수량이라 상차 단계의 차이(ASN 대비)는 검수에 드러나지 않는다.
+ * 지시 상차만 품목별로 보낸다. 무지시 상차는 모든 품목이 "예정 외 차량"이라 한 줄로.
+ */
+function loadDiffsOf(r: RcvFull): RcvLoadDiff[] {
+  if (r.load.loadType !== "ORDERED") return [];
+  return r.load.lines.flatMap((d) => {
+    const state = lineDiffState(d.orderBaseQty, d.loadBaseQty);
+    if (!state || !d.diffReasonName) return [];
+    const u = unitOf(r, d.itemId, d.item.baseUnit, d.item.uoms);
+    const q = (n: number) => qtyInUnit(n, u.showUnit, u.showFactor, d.item.baseUnit);
+    return [{ itemId: d.itemId, itemCode: d.item.clientCode ?? d.item.code, itemName: d.item.name, state, loadText: q(d.loadBaseQty), orderText: d.orderBaseQty ? q(d.orderBaseQty) : null, reasonName: d.diffReasonName, reasonText: d.diffReasonText }];
+  });
+}
+
 function toView(r: RcvFull, meId: number | null): RcvView {
   const live = r.inputs.filter((i) => !i.canceledAt);
+  const loadDiffs = loadDiffsOf(r);
   const lines: RcvLineView[] = r.lines.map((l) => {
     const mine = live.filter((i) => i.itemId === l.itemId);
     const q = {
@@ -102,6 +124,7 @@ function toView(r: RcvFull, meId: number | null): RcvView {
       planLot: plan?.lotNo ?? null,
       imageIds: r.images.filter((im) => im.itemId === l.itemId).map((im) => im.id),
       workers: [...new Set(mine.map((i) => i.workerName))],
+      loadDiff: loadDiffs.find((d) => d.itemId === l.itemId) ?? null,
     };
   });
   const workers = new Map<number, { workerId: number; name: string; count: number; lastAt: string }>();
@@ -133,6 +156,14 @@ function toView(r: RcvFull, meId: number | null): RcvView {
       asnNo: r.load.asn?.asnNo ?? null,
       orderNo: r.load.loadOrder?.orderNo ?? null,
       driverName: r.load.asn?.driverName ?? null,
+      diffs: loadDiffs,
+      // 무지시 상차는 모든 품목 같은 사유(L04), v2.0 이전 차량은 차량 사유 1개 — 둘 다 한 줄
+      diffNote:
+        r.load.loadType === "UNORDERED"
+          ? `${r.load.lines[0]?.diffReasonName ?? r.load.diffReasonName ?? "예정 외 차량(무지시)"} · 모든 품목`
+          : !loadDiffs.length && r.load.diffReasonName
+            ? `${r.load.diffReasonName}${r.load.diffReasonText ? ` — ${r.load.diffReasonText}` : ""} (차량 사유)`
+            : null,
     },
     lines,
     inputs: r.inputs.map((i) => ({

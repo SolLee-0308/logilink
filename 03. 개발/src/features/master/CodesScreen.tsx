@@ -16,8 +16,21 @@ import { ACTIVE_OPTIONS, MasterHeader, matchActive, useAction, useSelection, typ
 import { LastChanged } from "./history";
 import { RULES } from "./rules";
 import type { CodeGroupRow, CommonCodeRow } from "./types";
+import { DIFF_STATES, LINE_STATE_LABEL, type DiffState } from "@/domain/load-rules";
+import { LOAD_DIFF_GROUP } from "@/domain/master";
 
-const LABELS = { name: "코드명", sortOrder: "순서", requiresText: "상세 내용 필수", isActive: "사용 여부" };
+const LABELS = { name: "코드명", sortOrder: "순서", requiresText: "상세 내용 필수", appliesTo: "적용 상태", isActive: "사용 여부" };
+
+/** 상차 차이 사유의 적용 상태 표시 (정의서 v2.0 D28) — 비어 있으면 드롭다운에 보이지 않음(무지시 전용 등) */
+const appliesText = (v: readonly string[]) =>
+  v.length ? DIFF_STATES.filter((s) => v.includes(s)).map((s) => LINE_STATE_LABEL[s]).join(" · ") : "없음 (드롭다운에 안 보임)";
+
+const historyFormat = (k: string, v: unknown) => {
+  if (k === "appliesTo") return appliesText(Array.isArray(v) ? (v as string[]) : []);
+  if (typeof v === "boolean") return k === "isActive" ? (v ? "사용" : "사용 안 함") : v ? "예" : "아니오";
+  if (v === null || v === undefined || v === "") return "없음";
+  return String(v);
+};
 
 export function CodesScreen({
   groups,
@@ -43,6 +56,8 @@ export function CodesScreen({
     { key: "name", header: "코드명", wrap: true, render: (r) => r.name },
     { key: "order", header: "순서", align: "center", render: (r) => <span className="mono">{r.sortOrder}</span> },
     { key: "text", header: "상세 내용", render: (r) => (r.requiresText ? "필수" : "선택") },
+    // 상차 차이 사유만 — 이 사유를 고를 수 있는 품목 상태 (v2.0 D28)
+    ...(groupCode === LOAD_DIFF_GROUP ? [{ key: "applies", header: "적용 상태", render: (r: CommonCodeRow) => appliesText(r.appliesTo) }] : []),
     { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
@@ -138,7 +153,7 @@ function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; 
       sub={`${group.name} 그룹 · ${row.name}`}
       footer={
         <>
-          <LastChanged by={row.updatedBy} at={row.updatedAt} title={row.name} entries={row.history} created={{ at: row.createdAt, by: row.createdBy }} labels={LABELS} />
+          <LastChanged by={row.updatedBy} at={row.updatedAt} title={row.name} entries={row.history} created={{ at: row.createdAt, by: row.createdBy }} labels={LABELS} format={historyFormat} />
           {/* 수정은 패널 아래 오른쪽 (2026-11-06 Sol 결정: 위쪽 접기 아이콘과 나눔) */}
           <Button size="sm" variant="editSoft" onClick={onEdit} disabled={opening}>수정</Button>
         </>
@@ -158,6 +173,7 @@ function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; 
         title="사용"
         items={[
           ["상세 내용", row.requiresText ? "필수 (이 코드를 고르면 글로 입력)" : "선택"],
+          ...(group.code === LOAD_DIFF_GROUP ? ([["적용 상태", appliesText(row.appliesTo)]] as [string, React.ReactNode][]) : []),
           ["사용 여부", row.isActive ? "사용 (드롭다운에 보임)" : "사용 안 함 (드롭다운에서 빠짐)"],
         ]}
       />
@@ -165,7 +181,7 @@ function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; 
   );
 }
 
-type Form = { code: string; name: string; order: string; requiresText: boolean; isActive: boolean };
+type Form = { code: string; name: string; order: string; requiresText: boolean; appliesTo: string; isActive: boolean };
 
 /** [+ 등록]·[수정] 공용 편집 모달 — 열 때 최신 데이터·version을 다시 읽는다(useEditTarget) */
 function CodeEditModal({
@@ -189,11 +205,16 @@ function CodeEditModal({
       name: row?.name ?? "",
       order: String(row?.sortOrder ?? nextOrder),
       requiresText: row?.requiresText ?? false,
+      // 비교하기 쉽게 정렬한 문자열로 둔다 (dirty 확인)
+      appliesTo: DIFF_STATES.filter((s) => (row?.appliesTo ?? (group.code === LOAD_DIFF_GROUP ? [...DIFF_STATES] : [])).includes(s)).join(","),
       isActive: row?.isActive ?? true,
     }),
-    [row, nextOrder],
+    [row, nextOrder, group.code],
   );
   const [f, setF] = useState<Form>(initial);
+  const applies = f.appliesTo ? (f.appliesTo.split(",") as DiffState[]) : [];
+  const toggleApplies = (s: DiffState, on: boolean) =>
+    setF({ ...f, appliesTo: DIFF_STATES.filter((x) => (x === s ? on : applies.includes(x))).join(",") });
   const act = useAction();
   const dirty = (Object.keys(f) as (keyof Form)[]).some((k) => f[k] !== initial[k]);
 
@@ -209,6 +230,7 @@ function CodeEditModal({
           name: f.name,
           sortOrder: Number.isFinite(sortOrder) ? sortOrder : (undefined as unknown as number),
           requiresText: f.requiresText,
+          appliesTo: applies,
           isActive: f.isActive,
         }),
       (d) => d && onSaved(d.id),
@@ -257,6 +279,19 @@ function CodeEditModal({
             hint="'기타'처럼 사유를 글로 적어야 하는 코드에 켭니다 (D19)."
           />
         </Full>
+        {/* 상차 차이 사유만 — PDA 상차완료에서 이 상태의 품목에만 보인다 (정의서 v2.0 D28) */}
+        {group.code === LOAD_DIFF_GROUP && (
+          <Full>
+            <FormStatic label="적용 상태">
+              {DIFF_STATES.map((s) => (
+                <FormCheck key={s} id={`k-applies-${s}`} label={LINE_STATE_LABEL[s]} checked={applies.includes(s)} onChange={(v) => toggleApplies(s, v)} />
+              ))}
+              <span className="muted">
+                {applies.length ? "PDA 상차완료에서 고른 상태의 차이 품목에만 이 사유가 보입니다." : "아무것도 고르지 않으면 드롭다운에 보이지 않습니다 (예: 무지시 상차 전용 코드)."}
+              </span>
+            </FormStatic>
+          </Full>
+        )}
         <Full>
           <FormCheck
             id="k-active"

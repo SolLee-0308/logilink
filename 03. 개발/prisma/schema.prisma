@@ -199,6 +199,9 @@ model Item {
   expiryManaged Boolean     @default(false) @map("expiry_managed")
   /// 로트 관리 품목이면 입고예정에 로트 입력 필수, 검수 시 실물과 다르면 현장 입력
   lotManaged    Boolean     @default(false) @map("lot_managed")
+  /// 입수 — BOX 1개에 든 EA 수. 기준 단위가 BOX인 품목만 저장(필수, 참고 정보 — 수량 계산에는 쓰지 않음).
+  /// EA 기준 품목의 입수는 단위 환산(BOX=n)이 대신한다 (2026-11-17 Sol)
+  innerQty      Int?        @map("inner_qty")
   isActive      Boolean     @default(true) @map("is_active")
   version       Int         @default(1)
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -352,6 +355,8 @@ model CommonCode {
   sortOrder    Int      @default(0) @map("sort_order")
   /// "기타"처럼 고르면 상세 내용 입력이 필수인 코드
   requiresText Boolean  @default(false) @map("requires_text")
+  /// 적용 상태 — 상차 차이 사유(LOAD_DIFF)만 씀: short(부족)·over(초과)·extra(지시 외). 비어 있으면 드롭다운에 보이지 않음(L04 무지시 전용) (v2.0 D28)
+  appliesTo    String[] @default([]) @map("applies_to")
   isActive     Boolean  @default(true) @map("is_active")
   version      Int      @default(1)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -883,7 +888,7 @@ model Load {
   /// 상차확인서 차수 — 상차 재개 때 +1, 확인서 번호는 그대로 (정의서 v1.5 D20)
   revisionNo     Int        @default(1) @map("revision_no")
   version        Int        @default(1)
-  /// ASN 대비 차이 사유 (LOAD_DIFF 그룹, 기타는 텍스트 필수)
+  /// ASN 대비 차이 사유 — v2.0 이전 차량 사유(차량당 1개) 조회용. v2.0부터는 품목별(TB_LOAD_D)에 저장하고 여기는 비운다 (D28)
   diffReasonCode String?    @map("diff_reason_cd") @db.VarChar(20)
   diffReasonName String?    @map("diff_reason_nm") @db.VarChar(100)
   diffReasonText String?    @map("diff_reason_text") @db.VarChar(500)
@@ -964,6 +969,11 @@ model LoadLine {
   orderBaseQty Int @default(0) @map("order_base_qty")
   /// 상차수량 합계 (기준 단위) = 취소되지 않은 입력 행의 합
   loadBaseQty  Int @default(0) @map("load_base_qty")
+  /// 품목별 차이 사유 (정의서 v2.0 ④·D28) — 상차완료 때 차이 품목(부족·초과·지시 외)만 저장, 일치 품목은 NULL.
+  /// LOAD_DIFF 그룹, 기타는 텍스트 필수. 무지시 상차는 시스템이 L04
+  diffReasonCode String? @map("diff_reason_cd") @db.VarChar(20)
+  diffReasonName String? @map("diff_reason_nm") @db.VarChar(100)
+  diffReasonText String? @map("diff_reason_text") @db.VarChar(500)
 
   load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
   item Item @relation(fields: [itemId], references: [id])

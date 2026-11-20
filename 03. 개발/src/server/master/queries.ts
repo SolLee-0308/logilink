@@ -157,6 +157,7 @@ export async function listItems(id?: number, clientId?: number): Promise<ItemRow
     storageTemp: r.storageTemp,
     expiryManaged: r.expiryManaged,
     lotManaged: r.lotManaged,
+    innerQty: r.innerQty,
     isActive: r.isActive,
     uoms: r.uoms.map((u) => ({ unit: u.unit, qty: u.qty })).sort((a, b) => a.qty - b.qty || UNIT_ORDER[a.unit] - UNIT_ORDER[b.unit]),
     barcodes: r.barcodes
@@ -189,7 +190,7 @@ export async function listCodeOptions(groupCode: string): Promise<CodeOption[]> 
   return db.commonCode.findMany({
     where: { groupCode, isActive: true },
     orderBy: { sortOrder: "asc" },
-    select: { code: true, name: true, requiresText: true },
+    select: { code: true, name: true, requiresText: true, appliesTo: true },
   });
 }
 
@@ -307,6 +308,7 @@ export async function listCommonCodes(id?: number): Promise<CommonCodeRow[]> {
     name: r.name,
     sortOrder: r.sortOrder,
     requiresText: r.requiresText,
+    appliesTo: r.appliesTo,
     isActive: r.isActive,
     ...audit(r),
     history: hist.get(String(r.id)) ?? [],

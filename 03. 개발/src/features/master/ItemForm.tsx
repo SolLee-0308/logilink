@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { FormCheck, FormError, FormField, FormStatic, Input, Select } from "@/components/ui/Form";
 import { ClientPicker } from "@/features/plans/ClientFinder";
-import { ALIAS_SOURCE_LABEL, ITEM_UNITS, STORAGE_TEMP_LABEL, STORAGE_TEMPS, normalizeAlias, type AliasSource, type ItemUnit, type StorageTemp } from "@/domain/master";
+import { ALIAS_SOURCE_LABEL, ITEM_UNITS, STORAGE_TEMP_LABEL, STORAGE_TEMPS, needsInnerQty, normalizeAlias, type AliasSource, type ItemUnit, type StorageTemp } from "@/domain/master";
 import { saveItem } from "@/server/master/actions";
+import { BoxBaseConfirm } from "./BoxBaseConfirm";
 import { EditCard, Full, FormSection } from "./record";
 import { useAction } from "./shared";
 import type { ClientOption, ItemBarcodeRow, ItemRow } from "./types";
@@ -23,6 +24,7 @@ const sig = (p: {
   lotManaged: boolean;
   isActive: boolean;
   baseUnit: string;
+  innerQty: string;
   uoms: { unit: string; qty: string | number }[];
   barcodes: ItemBarcodeRow[];
   aliases: { alias: string }[];
@@ -66,6 +68,10 @@ export function ItemForm({
   const [lotManaged, setLotManaged] = useState(row?.lotManaged ?? false);
   const [isActive, setIsActive] = useState(row?.isActive ?? true);
   const [baseUnit, setBaseUnit] = useState<ItemUnit>(row?.baseUnit ?? "EA");
+  // 입수 — BOX 기준 품목만 (BOX 1개에 든 EA 수, 2026-11-17 Sol)
+  const [innerQty, setInnerQty] = useState(row?.innerQty ? String(row.innerQty) : "");
+  // 기준 단위를 BOX로 바꿀 때 확인 창 (2026-11-17 Sol)
+  const [confirmBox, setConfirmBox] = useState(false);
   // 환산 수량은 입력 중 빈 값을 허용하려고 문자열로 둔다
   const [uoms, setUoms] = useState<{ unit: ItemUnit; qty: string }[]>(
     row?.uoms.map((u) => ({ unit: u.unit, qty: String(u.qty) })) ?? [{ unit: "EA", qty: "1" }],
@@ -78,9 +84,9 @@ export function ItemForm({
 
   // 처음 열었을 때의 값 — 달라진 것이 있어야 [저장]이 켜지고, 나갈 때 확인창을 띄운다
   const [initialSig] = useState(() =>
-    sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + `|${clientCode.trim()}` + (row ? "" : `|${clientId}`),
+    sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, innerQty, uoms, barcodes, aliases }) + `|${clientCode.trim()}` + (row ? "" : `|${clientId}`),
   );
-  const currentSig = sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, uoms, barcodes, aliases }) + `|${clientCode.trim()}` + (row ? "" : `|${clientId}`);
+  const currentSig = sig({ name, storageTemp, expiryManaged, lotManaged, isActive, baseUnit, innerQty: needsInnerQty(baseUnit) ? innerQty : "", uoms, barcodes, aliases }) + `|${clientCode.trim()}` + (row ? "" : `|${clientId}`);
   const dirty = currentSig !== initialSig || aliasInput.trim() !== "";
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
@@ -116,6 +122,7 @@ export function ItemForm({
           clientCode: clientCode.trim() || null,
           name,
           baseUnit,
+          innerQty: needsInnerQty(baseUnit) ? (innerQty === "" ? null : Number(innerQty)) : null,
           storageTemp: storageTemp as StorageTemp,
           expiryManaged,
           lotManaged,
@@ -204,7 +211,15 @@ export function ItemForm({
       <FormSection title="단위 · 바코드">
         <div className={styles.block}>
           <FormField label="기준 단위" htmlFor="i-base" required hint="수량 계산의 기준이 되는 가장 작은 단위입니다.">
-            <Select id="i-base" value={baseUnit} onChange={(e) => changeBase(e.target.value as ItemUnit)}>
+            <Select
+              id="i-base"
+              value={baseUnit}
+              onChange={(e) => {
+                const u = e.target.value as ItemUnit;
+                if (u === "BOX" && baseUnit !== "BOX") setConfirmBox(true);
+                else changeBase(u);
+              }}
+            >
               {ITEM_UNITS.map((u) => (
                 <option key={u} value={u}>
                   {u}
@@ -212,6 +227,30 @@ export function ItemForm({
               ))}
             </Select>
           </FormField>
+          {needsInnerQty(baseUnit) && (
+            <FormField
+              label="입수"
+              htmlFor="i-inner"
+              required
+              error={act.fieldErrors.innerQty}
+              hint="BOX 1개에 든 낱개(EA) 수입니다. 수량은 BOX로 세고, 입수는 참고 정보로 남깁니다."
+            >
+              <span className={styles.innerRow}>
+                <span className="mono">1 BOX</span>
+                <span aria-hidden="true">=</span>
+                <Input
+                  id="i-inner"
+                  className={`mono ${styles.innerInput}`}
+                  inputMode="numeric"
+                  value={innerQty}
+                  onChange={(e) => setInnerQty(e.target.value.replace(/[^\d]/g, ""))}
+                  maxLength={6}
+                  autoComplete="off"
+                />
+                <span className="mono">EA</span>
+              </span>
+            </FormField>
+          )}
           <ul className={styles.rows} aria-label="단위 환산 목록">
             {uoms.map((u, i) => (
               <li key={u.unit} className={styles.uomRow}>
@@ -319,6 +358,14 @@ export function ItemForm({
           <FormError>{act.fieldErrors.barcodes}</FormError>
         </div>
       </FormSection>
+      <BoxBaseConfirm
+        open={confirmBox}
+        onCancel={() => setConfirmBox(false)}
+        onConfirm={() => {
+          setConfirmBox(false);
+          changeBase("BOX");
+        }}
+      />
 
       <FormSection title="별칭 (AI 판독·엑셀 자동 매칭용)">
         <Full>

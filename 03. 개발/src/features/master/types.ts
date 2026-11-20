@@ -98,6 +98,8 @@ export interface ItemRow extends Audit {
   storageTemp: StorageTemp;
   expiryManaged: boolean;
   lotManaged: boolean;
+  /** 입수 — BOX 기준 품목만 저장값 (EA 기준은 uoms의 BOX 환산을 쓴다, innerQtyOf) */
+  innerQty: number | null;
   isActive: boolean;
   uoms: ItemUomRow[];
   barcodes: ItemBarcodeRow[];
@@ -175,6 +177,8 @@ export interface CodeOption {
   code: string;
   name: string;
   requiresText: boolean;
+  /** 적용 상태 — 상차 차이 사유만 씀 (short·over·extra, v2.0 D28) */
+  appliesTo: string[];
 }
 
 export interface CodeGroupRow {
@@ -191,6 +195,8 @@ export interface CommonCodeRow extends Audit {
   name: string;
   sortOrder: number;
   requiresText: boolean;
+  /** 적용 상태 — 상차 차이 사유만 (short·over·extra, v2.0 D28) */
+  appliesTo: string[];
   isActive: boolean;
   history: ChangeEntry[];
 }

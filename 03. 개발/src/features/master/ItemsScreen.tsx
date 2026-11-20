@@ -11,7 +11,7 @@ import { ChipGroup, FilterBar, FilterCheckbox, FilterField, SearchInput } from "
 import { ClientPicker } from "@/features/plans/ClientFinder";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar, PanelTitle, SidePanel, SplitView } from "@/components/ui/SplitView";
-import { ALIAS_SOURCE_LABEL, STORAGE_TEMP_LABEL, STORAGE_TEMPS, type StorageTemp } from "@/domain/master";
+import { ALIAS_SOURCE_LABEL, STORAGE_TEMP_LABEL, STORAGE_TEMPS, innerQtyOf, needsInnerQty, type StorageTemp } from "@/domain/master";
 import { itemsTitle } from "@/domain/master";
 import { LastChanged } from "./history";
 import { ViewSection } from "./record";
@@ -31,6 +31,7 @@ export const LABELS = {
   storageTemp: "보관 온도대",
   expiryManaged: "소비기한 관리",
   lotManaged: "로트 관리",
+  innerQty: "입수",
   isActive: "사용 여부",
   uoms: "단위 환산",
   barcodes: "바코드",
@@ -194,6 +195,14 @@ export function ItemsScreen({
         </span>
       ),
     },
+    // 입수 = BOX 1개에 든 EA 수 (2026-11-17 Sol). BOX 기준인데 비어 있으면 '미입력'
+    {
+      key: "innerQty",
+      header: "입수",
+      align: "right",
+      width: 64,
+      render: (r) => <InnerQtyCell row={r} />,
+    },
     {
       key: "barcode",
       header: "대표 바코드",
@@ -220,16 +229,15 @@ export function ItemsScreen({
     { key: "active", header: "사용 여부", align: "center", render: (r) => <ActiveBadge active={r.isActive} /> },
   ];
 
-  const clientQuery = clientId ? `?client=${clientId}` : "";
-
   return (
     <>
       <MasterHeader
         title={title}
         count={rows.length}
         rules={RULES.items}
-        // 단건·엑셀 일괄 등록은 등록 화면의 '입력 방법' 스위치에서 고른다
-        actions={canEdit ? <CreateButton href={`/master/items/new${clientQuery}`}>등록</CreateButton> : undefined}
+        // 단건·엑셀 일괄 등록은 등록 화면의 '입력 방법' 스위치에서 고른다.
+        // 목록에서 거른 화주사는 넘기지 않는다 — 다른 화주사 품목을 잘못 등록하지 않게 등록 화면에서 매번 고른다 (2026-11-20 Sol)
+        actions={canEdit ? <CreateButton href="/master/items/new">등록</CreateButton> : undefined}
       />
       <FilterBar>
         {!singleClient && (
@@ -307,6 +315,14 @@ export function ItemsScreen({
 }
 
 /** 오른쪽 상세 조회 패널 — 3PL에게만 [수정] (수정 화면으로 이동) */
+/** 입수 표시 — 숫자, BOX 기준인데 없으면 '미입력', 해당 없으면 – */
+function InnerQtyCell({ row, long = false }: { row: ItemRow; long?: boolean }) {
+  const q = innerQtyOf(row);
+  if (q != null) return <span className="mono">{long ? `BOX 1개 = ${q.toLocaleString()} EA` : q.toLocaleString()}</span>;
+  if (needsInnerQty(row.baseUnit)) return <Tag tone="warn">미입력</Tag>;
+  return <span className="muted">{long ? "해당 없음" : "–"}</span>;
+}
+
 function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) {
   if (!row) {
     return (
@@ -342,6 +358,7 @@ function ItemPanel({ row, canEdit }: { row: ItemRow | null; canEdit: boolean }) 
           ["화주사 품목코드", row.clientCode ? <span key="cc" className="mono">{row.clientCode}</span> : <span key="cc" className="muted">없음</span>],
           ["품목명", row.name],
           ["보관 온도대", STORAGE_TEMP_LABEL[row.storageTemp]],
+          ["입수", <InnerQtyCell key="iq" row={row} long />],
           [
             "관리",
             row.expiryManaged || row.lotManaged ? (

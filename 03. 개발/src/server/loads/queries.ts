@@ -83,6 +83,9 @@ function toView(l: LoadRow, meId: number | null): LoadView {
         orderBase: d.orderBaseQty,
         loadBase: d.loadBaseQty,
         state: lineState(d.orderBaseQty, d.loadBaseQty),
+        diffReasonCode: d.diffReasonCode,
+        diffReasonName: d.diffReasonName,
+        diffReasonText: d.diffReasonText,
       };
     })
     // 지시 품목 먼저(품목코드 순), 그다음 지시 외 품목. 지시도 상차도 0인 줄(입력을 모두 취소한 지시 외 품목)은 뺀다
@@ -154,8 +157,8 @@ function toView(l: LoadRow, meId: number | null): LoadView {
     createdBy: l.createdBy,
     completedAt: l.completedAt ? iso(l.completedAt) : null,
     completedBy: l.completedBy,
-    diffReasonName: l.diffReasonName,
-    diffReasonText: l.diffReasonText,
+    legacyDiffReason: l.diffReasonName ? { name: l.diffReasonName, text: l.diffReasonText } : null,
+    diffLineCount: l.status === "COMPLETED" ? lines.filter((d) => d.diffReasonCode).length : 0,
   };
 }
 
@@ -211,7 +214,15 @@ const ROW_INCLUDE = {
   loadOrder: { select: { orderNo: true } },
   asn: { select: { shipDate: true } },
   inputs: { where: { canceledAt: null }, select: { workerId: true } },
+  lines: { where: { diffReasonCode: { not: null } }, select: { diffReasonName: true } },
 } satisfies Prisma.LoadInclude;
+
+/** 목록 한 줄의 차이 사유 — 품목별(v2.0), v2.0 이전 차량은 차량 사유 1개. 작업 중(재개 중)인 차량은 아직 없음 */
+function rowDiff(l: RowLoad) {
+  if (l.status !== "COMPLETED") return { diffCount: 0, diffReasonNames: [] as string[] };
+  if (l.lines.length) return { diffCount: l.lines.length, diffReasonNames: [...new Set(l.lines.map((d) => d.diffReasonName ?? ""))].filter(Boolean) };
+  return { diffCount: 0, diffReasonNames: l.diffReasonName ? [l.diffReasonName] : [] }; // v2.0 이전 차량 — 품목 수를 모름
+}
 
 type RowLoad = Prisma.LoadGetPayload<{ include: typeof ROW_INCLUDE }>;
 
@@ -230,7 +241,7 @@ const pdaRow = (l: RowLoad): PdaWorkingRow => ({
   workerCount: new Set(l.inputs.map((i) => i.workerId)).size,
   completedAt: l.completedAt ? iso(l.completedAt) : null,
   completedBy: l.completedBy,
-  diffReasonName: l.diffReasonName,
+  ...rowDiff(l),
 });
 
 /** PDA 상차내역 — 자기 화주사의 그 날짜(상차일) 상차완료 차량, 최근 완료가 앞 */
@@ -260,7 +271,7 @@ export async function pdaLoadDashboard(me: PlanActor): Promise<PdaLoadDashboard 
     working: home.working.length,
     done: home.done.length,
     unorderedDone: home.done.filter((d) => d.type === "UNORDERED").length,
-    diffDone: home.done.filter((d) => !!d.diffReasonName).length,
+    diffDone: home.done.filter((d) => d.diffCount > 0 || d.diffReasonNames.length > 0).length,
     myInputs,
     recent: home.done.slice(0, 3),
   };

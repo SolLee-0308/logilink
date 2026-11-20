@@ -25,11 +25,15 @@ import {
   addQtyError,
   departureOf,
   DEPART_TYPE_LABEL,
-  hasLoadDiff,
+  UNORDERED_REASON_CODE,
+  checkLineReasons,
+  lineDiffState,
+  lineReasonSummary,
   normalizeDocNo,
   normalizeScan,
   overWarning,
   qtyInUnit,
+  type LineReasonPick,
 } from "@/domain/load-rules";
 import { todayKst } from "@/lib/format";
 import type { ScanPreview } from "@/features/loads/types";
@@ -365,14 +369,12 @@ export interface CompleteInput {
   loadId: number;
   /** 확인 화면에서 본 마지막 입력 id */
   lastInputId: number;
-  reasonCode?: string | null;
-  reasonText?: string | null;
+  /** 품목별 차이 사유 (정의서 v2.0 D28) — 지시 상차의 차이 품목마다. 무지시 상차는 시스템이 L04로 정하므로 보내지 않는다 */
+  reasons?: LineReasonPick[];
 }
 
 export async function completeLoad(me: PlanActor, input: CompleteInput): Promise<ActionResult<{ loadNo: string }>> {
   if (!canLoad(me)) return forbidden();
-  const text = input.reasonText?.trim() ?? "";
-  if (text.length > 500) return fail("VALIDATION", "상세 내용은 500자 이내로 입력하세요.", { reasonText: "상세 내용은 500자 이내로 입력하세요." });
   return guarded(() =>
     db.$transaction(async (tx) => {
       const load = await lockLoad(tx, input.loadId);
@@ -381,36 +383,55 @@ export async function completeLoad(me: PlanActor, input: CompleteInput): Promise
       const last = await tx.loadInput.findFirst({ where: { loadId: load.id }, orderBy: { id: "desc" }, select: { id: true } });
       if ((last?.id ?? 0) !== input.lastInputId) return fail("CONFLICT", LOAD_CONFLICT_MSG);
 
-      const lines = await tx.loadLine.findMany({ where: { loadId: load.id } });
+      const lines = await tx.loadLine.findMany({ where: { loadId: load.id }, include: { item: { select: { code: true, clientCode: true, name: true } } } });
       if (!lines.some((l) => l.loadBaseQty > 0))
         return fail("STATE", "아직 실은 품목이 없습니다. 품목을 스캔해 수량을 입력한 뒤 상차완료하세요. 차량이 출발하지 않으면 화주사 담당자에게 알리세요.");
       const ordered = load.loadType === "ORDERED";
-      const diff = hasLoadDiff(ordered, lines.map((l) => ({ orderBase: l.orderBaseQty, loadBase: l.loadBaseQty })));
+      const label = (l: (typeof lines)[number]) => l.item.clientCode ?? l.item.code;
 
-      let reason: { code: string; name: string } | null = null;
-      if (diff) {
-        const code = input.reasonCode
-          ? await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: LOAD_DIFF_GROUP, code: input.reasonCode } } })
-          : null;
-        if (!code || !code.isActive) return fail("VALIDATION", "지시수량과 차이가 있습니다. 차이 사유를 고르세요.", { reasonCode: "차이 사유를 고르세요." });
-        if (code.requiresText && !text) return fail("VALIDATION", `"${code.name}"을(를) 고르면 상세 내용을 입력해야 합니다.`, { reasonText: "상세 내용을 입력하세요." });
-        reason = { code: code.code, name: code.name };
+      // 품목별 차이 사유 (v2.0 D28) — 지시 상차는 차이 품목마다 상차담당이 고르고, 무지시 상차는 시스템이 L04
+      const reasons = new Map<number, { code: string; name: string; text: string | null }>();
+      if (ordered) {
+        const codes = await tx.commonCode.findMany({ where: { groupCode: LOAD_DIFF_GROUP, isActive: true }, select: { code: true, name: true, requiresText: true, appliesTo: true } });
+        const checked = checkLineReasons(
+          lines.map((l) => ({ itemId: l.itemId, itemLabel: `${label(l)} ${l.item.name}`, orderBase: l.orderBaseQty, loadBase: l.loadBaseQty })),
+          // 화면에서 온 값 — 모양이 맞는 것만 쓴다
+          (Array.isArray(input.reasons) ? input.reasons : [])
+            .filter((p) => p && Number.isInteger(p.itemId) && typeof p.code === "string")
+            .map((p) => ({ itemId: p.itemId, code: p.code, text: typeof p.text === "string" ? p.text : null })),
+          codes,
+        );
+        if (!checked.ok) {
+          const errs = [...checked.errors.values()];
+          return fail("VALIDATION", errs.length > 1 ? `차이 품목 ${errs.length}건의 사유를 확인하세요. ${errs[0]}` : errs[0], Object.fromEntries([...checked.errors].map(([k, v]) => [`reason_${k}`, v])));
+        }
+        for (const [k, v] of checked.reasons) reasons.set(k, v);
+      } else {
+        const l04 = await tx.commonCode.findUnique({ where: { groupCode_code: { groupCode: LOAD_DIFF_GROUP, code: UNORDERED_REASON_CODE } } });
+        for (const l of lines) if (l.loadBaseQty > 0) reasons.set(l.itemId, { code: UNORDERED_REASON_CODE, name: l04?.name ?? "예정 외 차량(무지시)", text: null });
       }
+      // 차이 없는 품목은 비우고, 차이 품목은 이번 사유로 덮어쓴다 (재개 후 재완료 포함)
+      for (const l of lines) {
+        const r = reasons.get(l.itemId) ?? null;
+        if (r || l.diffReasonCode) await tx.loadLine.update({ where: { id: l.id }, data: { diffReasonCode: r?.code ?? null, diffReasonName: r?.name ?? null, diffReasonText: r?.text ?? null } });
+      }
+      const summary = reasons.size
+        ? lineReasonSummary(
+            lines
+              .filter((l) => reasons.has(l.itemId))
+              .map((l) => ({ label: label(l), state: lineDiffState(l.orderBaseQty, l.loadBaseQty) ?? "extra", ...reasons.get(l.itemId)! })),
+          )
+        : null;
 
       const now = new Date();
       const r = await tx.load.updateMany({
         where: { id: load.id, status: "WORKING" },
-        data: {
-          status: "COMPLETED", version: { increment: 1 }, completedAt: now, completedBy: me.name, completeUserId: me.id,
-          diffReasonCode: reason?.code ?? null, diffReasonName: reason?.name ?? null, diffReasonText: reason ? text || null : null,
-        },
+        // 헤더 사유는 v2.0 이전 차량 조회용 — 새로 저장하지 않는다
+        data: { status: "COMPLETED", version: { increment: 1 }, completedAt: now, completedBy: me.name, completeUserId: me.id, diffReasonCode: null, diffReasonName: null, diffReasonText: null },
       });
       if (!r.count) return fail("STATE", "이미 상차완료된 차량입니다.");
       await tx.loadHistory.create({
-        data: {
-          loadId: load.id, action: "COMPLETE", revisionNo: load.revisionNo, actor: me.name, actorId: me.id,
-          reasonCode: reason?.code ?? null, reasonName: reason?.name ?? null, reasonText: reason ? text || null : null,
-        },
+        data: { loadId: load.id, action: "COMPLETE", revisionNo: load.revisionNo, actor: me.name, actorId: me.id, reasonCode: null, reasonName: summary?.name ?? null, reasonText: summary?.text ?? null },
       });
 
       // 지시 상차: ASN 상차완료(= ASN 확정), 상차지시서 상차완료
@@ -421,7 +442,7 @@ export async function completeLoad(me: PlanActor, input: CompleteInput): Promise
         await tx.asnHistory.create({
           data: {
             asnId: asn.id, action: "LOAD_COMPLETE", version: asn.version + 1, actor: me.name, actorId: me.id,
-            reasonCode: reason?.code ?? null, reasonName: reason?.name ?? null, reasonText: reason ? text || null : null,
+            reasonCode: null, reasonName: summary?.name ?? null, reasonText: summary?.text ?? null,
           },
         });
       }
@@ -472,7 +493,8 @@ export async function reopenLoad(me: PlanActor, input: ReopenInput): Promise<Act
         where: { id: load.id, status: "COMPLETED" },
         data: {
           status: "WORKING", revisionNo: next, version: { increment: 1 },
-          // 재완료 때 다시 채운다 — 이전 완료 정보는 이력(TB_LOAD_HIS)에 남아 있다
+          // 재완료 때 다시 채운다 — 이전 완료 정보는 이력(TB_LOAD_HIS)에 남아 있다.
+          // 품목별 사유(TB_LOAD_D)는 지우지 않고 두어, 재완료 화면에서 상태가 같은 품목에 미리 채운다 (v2.0 ④)
           completedAt: null, completedBy: null, completeUserId: null, diffReasonCode: null, diffReasonName: null, diffReasonText: null,
         },
       });

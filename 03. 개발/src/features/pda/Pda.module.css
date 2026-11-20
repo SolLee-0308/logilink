@@ -1510,6 +1510,13 @@ select.field {
   font-weight: 600;
 }
 
+/* 입고검수 — 상차 차이 사유 참고 표시 (정의서 v2.0 ⑥, 2026-11-19 Sol). 검수 정보와 섞이지 않게 회색 작은 글씨 */
+.loadRef {
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .scanCard {
   position: sticky;
   top: 0;
@@ -1899,6 +1906,62 @@ select.field {
   padding: 8px 0;
   border-bottom: 1px solid var(--line);
   font-size: var(--fs-13);
+}
+
+/* 품목별 차이 사유 (정의서 v2.0 D28) — 품목 줄 아래 한 줄 전체 */
+.diffPick {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 아직 고르지 않은 사유 칸 */
+.fieldNeed {
+  border-color: var(--st-rej-fg);
+}
+
+/* 상차완료 화면 — 차이 사유: 상태별 건수 + [사유 보기]로 품목별 목록 (2026-11-19 Sol B안) */
+.reasonFold summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.reasonFold summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasonCounts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.reasonToggle {
+  font-size: var(--fs-12);
+  color: var(--st-ok-fg);
+  text-decoration: underline;
+}
+
+.reasonToggle::before {
+  content: "▸ ";
+}
+
+.reasonFold[open] .reasonToggle::before {
+  content: "▾ ";
+}
+
+.reasonList {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .diffName {

@@ -29,6 +29,35 @@ export const isManagerCandidate = (roles: readonly UserRole[]) => roles.some((r)
 export const ITEM_UNITS = ["EA", "BOX", "PLT"] as const;
 export type ItemUnit = (typeof ITEM_UNITS)[number];
 
+/* ───────── 입수 (2026-11-17 Sol) ─────────
+ * 입수 = BOX 1개에 든 EA 수. 물류센터 품목 마스터 관행대로 항상 받아 둔다.
+ * - EA 기준 품목: 단위 환산 'BOX = n EA'가 곧 입수 (따로 저장하지 않음)
+ * - BOX 기준 품목: 품목의 입수(innerQty)에 저장, 등록·수정 때 필수. 수량 계산에는 쓰지 않는 참고 정보
+ * - PLT 기준 품목: 해당 없음
+ */
+export const INNER_QTY_MIN = 2;
+export const INNER_QTY_MAX = 100000;
+export const INNER_QTY_REQUIRED_MSG = "기준 단위가 BOX이면 입수(BOX 1개에 든 EA 수)를 입력하세요.";
+export const INNER_QTY_RANGE_MSG = `입수는 ${INNER_QTY_MIN} 이상 ${INNER_QTY_MAX} 이하의 정수로 입력하세요.`;
+
+/** 품목의 입수 — EA 기준은 BOX 환산, BOX 기준은 저장한 입수. 모르면 null */
+export function innerQtyOf(i: { baseUnit: ItemUnit; innerQty: number | null; uoms: { unit: ItemUnit; qty: number }[] }): number | null {
+  if (i.baseUnit === "BOX") return i.innerQty ?? null;
+  if (i.baseUnit === "EA") return i.uoms.find((u) => u.unit === "BOX")?.qty ?? null;
+  return null;
+}
+
+/** 입수를 받아야 하는 품목인지 (BOX 기준) */
+export const needsInnerQty = (baseUnit: ItemUnit) => baseUnit === "BOX";
+
+/** 입수 입력값 확인 — BOX 기준이면 필수·범위, 아니면 무시. 오류 문구 또는 null */
+export function innerQtyError(baseUnit: ItemUnit, innerQty: number | null | undefined): string | null {
+  if (!needsInnerQty(baseUnit)) return null;
+  if (innerQty == null || Number.isNaN(innerQty)) return INNER_QTY_REQUIRED_MSG;
+  if (!Number.isInteger(innerQty) || innerQty < INNER_QTY_MIN || innerQty > INNER_QTY_MAX) return INNER_QTY_RANGE_MSG;
+  return null;
+}
+
 export const ITEM_REQUEST_STATUSES = ["WAITING", "REJECTED", "REGISTERED"] as const;
 export type ItemRequestStatus = (typeof ITEM_REQUEST_STATUSES)[number];
 

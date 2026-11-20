@@ -327,7 +327,7 @@ export function PdaHomeScreen({
                       <b className={`mono ${styles.cardId}`}>{w.vehicleNo}</b>
                       {/* 카드 색이 이미 상차완료(연두) — 알약은 출차 전·차이 있음만 (2026-11-12 Sol: 출차) */}
                       <span className={styles.pills}>
-                        {w.diffReasonName && <Pill tone="amber">차이 있음</Pill>}
+                        {(w.diffCount > 0 || w.diffReasonNames.length > 0) && <Pill tone="amber">{w.diffCount > 0 ? `차이 ${w.diffCount.toLocaleString()}품목` : "차이 있음"}</Pill>}
                         {!w.departure && <Pill tone="blue">출차 전</Pill>}
                       </span>
                     </span>
@@ -349,7 +349,7 @@ export function PdaHomeScreen({
                         {w.completedBy} · 입력 {w.inputCount.toLocaleString()}건
                       </span>
                     </span>
-                    {w.diffReasonName && <span className={styles.metaWarn}>차이 사유: {w.diffReasonName}</span>}
+                    {w.diffReasonNames.length > 0 && <span className={styles.metaWarn}>차이 사유: {w.diffReasonNames.join(", ")}</span>}
                   </Link>
                 </li>
               ))}
