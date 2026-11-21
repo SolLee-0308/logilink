@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DANGER_COUNT_KEYS, NAV_GROUPS, type NavCountKey, type NavItem } from "@/config/navigation";
 import { can, isShipperRole, resourceOfPath } from "@/domain/permissions";
 import type { UserRole } from "@/domain/master";
@@ -97,19 +97,65 @@ export function Sidebar({ serverCounts = {}, viewer, onCollapse }: { serverCount
         ))}
       </nav>
 
-      <div className={styles.user}>
-        {/* 성 글자 원(아바타)은 뺐다 — 좁아진 메뉴 패널에서 이름·역할을 넓게 (2026-11-14 Sol) */}
-        <div className={styles.userText}>
-          {viewer.name}
-          <small>{viewer.roleLabel}</small>
-        </div>
-        <form action={logout}>
-          <button type="submit" className={styles.logout}>
-            로그아웃
-          </button>
-        </form>
-      </div>
+      <UserBox viewer={viewer} />
     </aside>
+  );
+}
+
+/**
+ * 메뉴 패널 맨 아래 고정 — 이름 + 로그아웃만 (2026-11-21 Sol).
+ * 역할은 이름을 누르면 위로 뜨는 작은 카드에서 본다. 바깥을 누르거나 Esc면 닫는다.
+ */
+function UserBox({ viewer }: { viewer: Viewer }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        btnRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={boxRef} className={styles.user}>
+      {open && (
+        <div id="user-info" className={styles.userPop} role="dialog" aria-label="사용자 정보">
+          <span className={styles.userPopName}>{viewer.name}</span>
+          <span className={styles.userPopRole}>{viewer.roleLabel}</span>
+        </div>
+      )}
+      {/* 로그아웃 왼쪽 · 이름 오른쪽 (2026-11-21 Sol) */}
+      <form action={logout}>
+        <button type="submit" className={styles.logout}>
+          로그아웃
+        </button>
+      </form>
+      <button
+        ref={btnRef}
+        type="button"
+        className={styles.userName}
+        aria-expanded={open}
+        aria-controls="user-info"
+        title="역할 보기"
+        onClick={() => setOpen(!open)}
+      >
+        {viewer.name}
+      </button>
+    </div>
   );
 }
 

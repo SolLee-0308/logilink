@@ -7,13 +7,13 @@
   position: sticky;
   top: var(--gap-shell);
   height: calc(100vh - var(--gap-shell) * 2);
-  /* 메뉴는 한 화면에 들어가게 간격을 잡는다. 아주 낮은 화면에서만 스크롤바 없이 휠로 이동 */
-  overflow-y: auto;
-  scrollbar-width: none;
+  /* 위 CI(로고)·아래 이름·로그아웃은 고정, 가운데 메뉴만 스크롤 (2026-11-21 Sol) */
+  overflow: hidden;
 }
 
-.side::-webkit-scrollbar {
-  display: none;
+.brand,
+.user {
+  flex: none;
 }
 
 .brand {
@@ -54,6 +54,15 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* 남는 높이를 다 쓰고, 메뉴가 넘치면 이 안에서만 스크롤바 없이 휠로 이동 */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
 }
 
 .group {
@@ -139,7 +148,8 @@ a.on:hover {
 }
 
 .user {
-  margin-top: auto;
+  position: relative;
+  margin-top: 4px;
   background: var(--ink-2);
   border-radius: var(--r-box);
   padding: 8px 12px;
@@ -150,10 +160,59 @@ a.on:hover {
   color: #e4e4e7;
 }
 
-.user small {
-  display: block;
+/* 이름 — 누르면 역할 카드 (2026-11-21 Sol) */
+.userName {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  margin-right: -4px;
+  border-radius: var(--r-chip);
+  color: inherit;
+  font: inherit;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userName:hover,
+.userName[aria-expanded="true"] {
+  background: var(--ink-hover);
+  color: #fff;
+}
+
+.userName:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+/* 역할 카드 — 이름 줄 바로 위에 뜬다 */
+.userPop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--ink-2);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-box);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.userPopName {
+  color: #fff;
+  font-weight: 600;
+}
+
+.userPopRole {
   color: var(--ink-text-dim);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
 }
 
 /* 하위 메뉴가 있는 메뉴 */
@@ -213,10 +272,6 @@ a.on:hover {
   background: var(--ink-hover);
 }
 
-.userText {
-  flex: 1;
-  min-width: 0;
-}
 .logout {
   flex: none;
   background: none;
