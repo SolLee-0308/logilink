@@ -226,10 +226,10 @@ export function DailyCloseTab({ view, onRemainTab }: { view: DailyView; onRemain
       <Card
         title="미종결 입고예정"
         count={view.unclosedCount}
-        description="잔량이 남은 승인·부분입고 건입니다. 일마감은 이 건들을 닫지 않으며, 더 입고되지 않을 건은 잔량 종결 탭에서 종결합니다."
+        description="잔량이 남은 승인·부분입고 건입니다. 일마감은 이 건들을 닫지 않으며, 더 입고되지 않을 건은 잔량 종결에서 종결합니다."
         aside={
           <Button size="sm" onClick={onRemainTab}>
-            잔량 종결 탭으로
+            잔량 종결로 이동
           </Button>
         }
       >

@@ -48,3 +48,71 @@
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(76, 60, 200, 0.18);
 }
+
+/* 내역 카드 — 칸에 마우스를 올리거나 키보드로 고르면 칸 아래에 뜬다 (2026-11-21 Sol) */
+.item {
+  position: relative;
+}
+
+.pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 220px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  box-shadow: var(--shadow-pop);
+  color: var(--fg);
+  font-size: var(--fs-13);
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.item:hover .pop,
+.item:focus-visible .pop {
+  display: block;
+}
+
+.popTitle {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.popRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  line-height: 1.7;
+}
+
+.popRow b {
+  font-weight: 600;
+}
+
+/* 칸 안 건수 — Tabs의 .n과 같은 크기 (2026-11-21 Sol) */
+.n {
+  font-size: var(--fs-12);
+}
+
+/* 칸 안 ⚠N — Tabs의 .alert와 같은 모양 (2026-11-21 Sol) */
+.alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--r-tag);
+  padding: 0 6px;
+  line-height: 18px;
+}
