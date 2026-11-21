@@ -11,7 +11,7 @@ import { ChipGroup, FilterBar, FilterField, SearchInput } from "@/components/ui/
 import { Select } from "@/components/ui/Form";
 import { NoteBox } from "@/components/ui/NoteBox";
 import { ListToolbar } from "@/components/ui/SplitView";
-import { Tabs } from "@/components/ui/Tabs";
+import { ModeSwitch } from "@/components/ui/ModeSwitch";
 import { MAX_CLOSE_BATCH } from "@/domain/close-rules";
 import { daysBetween, isOverdue } from "@/domain/inquiry-rules";
 import { fmtShortDateTime, includesText } from "@/lib/format";
@@ -32,6 +32,7 @@ const qtyText = (byUnit: [string, number][]) => byUnit.map(([u, q]) => `${q.toLo
  * 잔량 종결 탭: 미종결 입고예정을 경과일 순으로 보고, 골라서 사유와 함께 종결(건별·일괄, 한 번에 최대 50건).
  * 입고 대기 중인 ASN이 있는 건은 고를 수 없다(임시안). 행의 입고예정번호를 누르면 입고예정 조회 상세로.
  * 일마감 탭(2026-11-12): 센터의 지금 업무일 마감 — DailyCloseTab.
+ * 두 업무 전환은 제목 줄 오른쪽 ModeSwitch (2026-11-21 Sol, 이전엔 회색 탭 — 회색 탭은 상태 필터 전용).
  */
 export function ClosingScreen({
   tab,
@@ -158,16 +159,41 @@ export function ClosingScreen({
 
   return (
     <>
-      <MasterHeader title="잔량 종결·일마감" count={rows.length} rules={CLOSING_RULES} crumbs={["입고 운영", "잔량 종결·일마감"]} />
-
-      <Tabs
-        label="잔량 종결·일마감"
-        value={tab}
-        onChange={go}
-        items={[
-          { key: "remain", label: "잔량 종결", count: rows.length, alert: overdueCount, alertLabel: `경과 기준(${alertDays}일) 초과` },
-          { key: "daily", label: "일마감", alert: daily && !daily.center.closed ? daily.expire.length : 0, alertLabel: "오늘 기한경과 취소 대상" },
-        ]}
+      {/* 건수는 제목 옆이 아니라 전환 버튼 칸마다 — 제목 옆 하나로는 일마감 쪽에서 잔량 건수로 잘못 읽힌다 (2026-11-21 Sol) */}
+      <MasterHeader
+        title="잔량 종결·일마감"
+        rules={CLOSING_RULES}
+        crumbs={["입고 운영", "잔량 종결·일마감"]}
+        actions={
+          <ModeSwitch<ClosingTab>
+            label="업무"
+            value={tab}
+            onChange={go}
+            items={[
+              { key: "remain", label: "잔량 종결", count: rows.length, countLabel: "미종결 입고예정", alert: overdueCount, alertLabel: `경과 기준(${alertDays}일) 초과` },
+              {
+                key: "daily",
+                label: "일마감",
+                // 마감 전일 때만 이번 일마감이 처리할 건수 = 확정할 검수 실적 + 기한경과 취소 + 미출차 차량
+                count: daily && !daily.center.closed ? daily.rcvs.length + daily.expire.length + daily.departs.length : undefined,
+                countLabel: "이번 일마감 처리 대상",
+                detail:
+                  daily && !daily.center.closed
+                    ? {
+                        title: "이번 일마감 처리 대상",
+                        rows: [
+                          { label: "검수 실적 확정", value: `${daily.rcvs.length.toLocaleString()}건` },
+                          { label: "기한경과 취소", value: `${daily.expire.length.toLocaleString()}건` },
+                          { label: "미출차 출차", value: `${daily.departs.length.toLocaleString()}대` },
+                        ],
+                      }
+                    : undefined,
+                alert: daily && !daily.center.closed ? daily.expire.length : 0,
+                alertLabel: "오늘 기한경과 취소 대상",
+              },
+            ]}
+          />
+        }
       />
 
       {tab === "daily" ? (
@@ -214,7 +240,7 @@ export function ClosingScreen({
             <SearchInput value={search} onChange={setSearch} placeholder="입고예정번호·화주사·품목코드·품목명" />
           </FilterBar>
 
-          {/* 고정 영역(제목·조회조건·탭) 아래, 목록 바로 위 — 있을 때만 보이는 알림은 여기 (2026-11-14 Sol) */}
+          {/* 고정 영역(제목·조회조건) 아래, 목록 바로 위 — 있을 때만 보이는 알림은 여기 (2026-11-14 Sol) */}
           <AlertStrip count={overdueCount} unit="건" active={elapsed === "over"} onShow={() => setElapsed("over")} onClear={() => setElapsed("all")}>
             입고예정일에서 {alertDays}일 이상 지난 미종결 입고예정
           </AlertStrip>
