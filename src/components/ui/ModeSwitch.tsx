@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import styles from "./ModeSwitch.module.css";
 
 const ICONS = {
@@ -31,6 +31,7 @@ const ICONS = {
 /**
  * 입력 방법 전환 스위치 (2026-11-06 시안) — 별도 영역 없이 화면 제목 줄 오른쪽에 둔다.
  * 앞에 라벨, 연회색 묶음 안에서 고른 칸은 흰 바탕 + 보라 테두리·글자. 라디오 그룹: 좌우 화살표로 이동.
+ * count·alert(2026-11-21 Sol): 있을 때만 칸 오른쪽에 처리할 건수와 ⚠N — 고르지 않은 쪽도 건수가 보이게 (탭과 같은 모양).
  */
 export function ModeSwitch<K extends string>({
   items,
@@ -38,12 +39,23 @@ export function ModeSwitch<K extends string>({
   onChange,
   label,
 }: {
-  items: { key: K; label: string; icon?: keyof typeof ICONS }[];
+  items: {
+    key: K;
+    label: string;
+    icon?: keyof typeof ICONS;
+    count?: number;
+    countLabel?: string;
+    alert?: number;
+    alertLabel?: string;
+    /** 마우스를 올리면 뜨는 내역 카드 — 있을 때만 */
+    detail?: { title: string; rows: { label: string; value: string }[] };
+  }[];
   value: K;
   onChange: (key: K) => void;
   label: string;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const popId = useId();
 
   function onKeyDown(e: React.KeyboardEvent, index: number) {
     let next = -1;
@@ -75,6 +87,7 @@ export function ModeSwitch<K extends string>({
               aria-checked={on}
               tabIndex={on ? 0 : -1}
               className={styles.item}
+              aria-describedby={m.detail ? `${popId}-${i}` : undefined}
               onClick={() => onChange(m.key)}
               onKeyDown={(e) => onKeyDown(e, i)}
             >
@@ -94,6 +107,30 @@ export function ModeSwitch<K extends string>({
                 </svg>
               )}
               {m.label}
+              {m.count !== undefined && (
+                <span className={`${styles.n} mono`} title={m.detail ? undefined : m.countLabel}>
+                  {m.count.toLocaleString()}
+                  {m.countLabel && <span className="sr-only"> {m.countLabel}</span>}
+                </span>
+              )}
+              {!!m.alert && (
+                <span className={`${styles.alert} mono`} title={m.alertLabel}>
+                  <span aria-hidden="true">⚠</span>
+                  {m.alert.toLocaleString()}
+                  {m.alertLabel && <span className="sr-only"> {m.alertLabel}</span>}
+                </span>
+              )}
+              {m.detail && (
+                <span id={`${popId}-${i}`} role="tooltip" className={styles.pop}>
+                  <span className={styles.popTitle}>{m.detail.title}</span>
+                  {m.detail.rows.map((r) => (
+                    <span key={r.label} className={styles.popRow}>
+                      <span>{r.label}</span>
+                      <b className="mono">{r.value}</b>
+                    </span>
+                  ))}
+                </span>
+              )}
             </button>
           );
         })}

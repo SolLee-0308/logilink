@@ -14,6 +14,12 @@ body {
   margin: 0;
 }
 
+/* 화면 오른쪽 끝 스크롤바 자리를 항상 비워 둔다 (2026-11-21 Sol) — 스크롤바가 생겼다 없어져도 화면 너비가 바뀌지 않는다.
+   내용이 길 때만 막대가 그 자리에 나타나 아래에 내용이 더 있는지 알 수 있다 */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--ink);
   color: var(--fg);
