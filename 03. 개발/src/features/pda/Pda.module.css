@@ -2060,6 +2060,20 @@ p.askBody {
   display: block;
 }
 
+/* 훼손 사진 지우기 확인 창 — 지울 사진을 크게 보여 준다 (2026-11-21 Sol) */
+.askPhoto {
+  width: 100%;
+  max-height: 40vh;
+  object-fit: contain;
+  border-radius: var(--r-control);
+  background: var(--card-head);
+}
+
+.askNote {
+  display: block;
+  margin-top: 4px;
+}
+
 .askItem {
   font-size: var(--fs-16);
 }
