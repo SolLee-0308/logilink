@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sidebar, type Viewer } from "./Sidebar";
 import type { NavCountKey } from "@/config/navigation";
 import { NAV_COOKIE } from "./nav-cookie";
+import { ScrollTopButton } from "./ScrollTopButton";
 import styles from "./AppShell.module.css";
 
 
@@ -47,6 +48,7 @@ export function ShellFrame({
         </button>
       )}
       <main className={styles.main}>{children}</main>
+      <ScrollTopButton />
     </div>
   );
 }

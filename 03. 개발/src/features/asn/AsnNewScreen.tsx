@@ -301,7 +301,7 @@ export function AsnNewScreen({ options }: { options: AsnOptions }) {
           )}
         </Card>
 
-        <div className={styles.foot}>
+        <div className={styles.foot} data-stick-bottom>
           <span className={styles.total}>
             입고예정 <strong className="mono">{pickedPlans}</strong>건 · 품목 <strong className="mono">{picked.length.toLocaleString()}</strong>줄
             {totals.map(([u, n]) => (

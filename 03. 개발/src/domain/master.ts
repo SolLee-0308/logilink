@@ -113,7 +113,7 @@ export const PLAN_REJECT_GROUP = "PLAN_REJECT";
 export const CANCEL_GROUP = "CANCEL";
 /** 상차 차이 사유 코드 그룹 (정의서 ④, C6) */
 export const LOAD_DIFF_GROUP = "LOAD_DIFF";
-/** 상차 재개 사유 (정의서 v1.5 ④·D20, 임시안 — 스캔 누락·타 차량 이관·추가 적재·기타) */
+/** 상차 재개 사유 (정의서 v2.2 ④·D20, 2026-11-21 확정 — 스캔 누락·타 차량 이관·추가 적재·수량 오입력 정정·기타) */
 export const LOAD_REOPEN_GROUP = "LOAD_REOPEN";
 /** 검수 차이·반송 사유 (정의서 ⑥, U1) */
 export const RCV_DIFF_GROUP = "RCV_DIFF";

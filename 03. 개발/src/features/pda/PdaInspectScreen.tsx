@@ -857,6 +857,8 @@ function RcvLineItem({
   }, [editable, problem]);
   const dis = pending || busy;
   const run = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>) => startBusy(async () => onDone(await fn()));
+  // 훼손 사진 지우기 — 브라우저 기본 확인 대신 아래에서 올라오는 확인 창 (2026-11-21 Sol)
+  const [delPhoto, setDelPhoto] = useState<number | null>(null);
 
   // 검수자별 이 품목 수량(기준 단위) — 검수자가 2명 이상일 때만, 안 넣은 사람은 null
   const byWorker: [string, number | null][] = (() => {
@@ -953,7 +955,7 @@ function RcvLineItem({
                   key={id}
                   type="button"
                   className={styles.photo}
-                  onClick={() => editable && window.confirm("이 사진을 지울까요? (본인이 찍은 사진만)") && run(() => deleteRcvImage({ imageId: id }))}
+                  onClick={() => editable && setDelPhoto(id)}
                   disabled={!editable || dis}
                   aria-label="훼손 사진"
                 >
@@ -984,6 +986,41 @@ function RcvLineItem({
               <span className={styles.dim}>
                 훼손 사진 {l.imageIds.length.toLocaleString()}/{RCV_IMAGE_MAX}
               </span>
+            </div>
+          )}
+          {delPhoto !== null && (
+            /* 다른 확인 창과 같게 밖을 눌러도 닫지 않는다 */
+            <div className={styles.modalScrim}>
+              <section className={styles.modalSheet} role="alertdialog" aria-modal="true" aria-labelledby={`photo-del-${delPhoto}`} aria-describedby={`photo-del-body-${delPhoto}`}>
+                <h2 id={`photo-del-${delPhoto}`} className={styles.h2}>
+                  훼손 사진 지우기
+                </h2>
+                <div id={`photo-del-body-${delPhoto}`} className={styles.askBody}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/rcv-image/${delPhoto}`} alt="지울 훼손 사진" className={styles.askPhoto} />
+                  <p className={styles.askBody}>
+                    <b className={styles.askItem}>{l.itemName}</b>
+                    <span className={`${styles.dim} ${styles.askNote}`}>이 사진을 지웁니다. 본인이 찍은 사진만 지울 수 있습니다.</span>
+                  </p>
+                </div>
+                <div className={styles.btnRow}>
+                  <button type="button" className={styles.secondary} onClick={() => setDelPhoto(null)} disabled={dis} autoFocus>
+                    그만두기
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.dangerBtn}
+                    onClick={() => {
+                      const id = delPhoto;
+                      setDelPhoto(null);
+                      run(() => deleteRcvImage({ imageId: id }));
+                    }}
+                    disabled={dis}
+                  >
+                    사진 지우기
+                  </button>
+                </div>
+              </section>
             </div>
           )}
         </div>
