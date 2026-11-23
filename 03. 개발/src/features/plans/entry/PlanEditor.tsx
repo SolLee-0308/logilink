@@ -507,7 +507,7 @@ export function PlanEditor({
         </div>
       </Card>
 
-      <div className={styles.foot}>
+      <div className={styles.foot} data-stick-bottom>
         <span className={styles.total}>
           품목 <strong className="mono">{lines.filter((l) => l.itemId).length}</strong>
           {[...totals].map(([u, n]) => (

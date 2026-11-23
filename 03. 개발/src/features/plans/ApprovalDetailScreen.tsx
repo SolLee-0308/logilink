@@ -242,7 +242,7 @@ export function ApprovalDetailScreen({
       </Card>
 
       {waiting && (
-        <div className={page.foot}>
+        <div className={page.foot} data-stick-bottom>
           <span className="muted">품목과 수량을 확인한 뒤 처리하세요. 처리하면 {queue.afterId ? "다음 승인대기 건이 열립니다." : "목록으로 돌아갑니다."}</span>
           <Button variant="danger" onClick={() => setRejecting(true)} disabled={act.pending || !!conflict}>
             반려
