@@ -439,7 +439,7 @@ function ReviewCard({ row, queue, itemKeys, reasons }: { row: ItemRequestRow; qu
         </FormSection>
         <p className="muted">BOX·PLT 입수와 추가 바코드는 등록한 뒤 품목 관리에서 보완합니다.</p>
       </div>
-      <div className={styles.cardFoot}>
+      <div className={styles.cardFoot} data-stick-bottom>
         <Button variant="danger" onClick={() => setRejecting(true)} disabled={act.pending || !!conflict}>
           반려
         </Button>

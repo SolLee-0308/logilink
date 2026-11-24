@@ -177,7 +177,7 @@ export function EditCard({
         {error && <NoteBox tone="error">{error}</NoteBox>}
         {children}
       </div>
-      <div className={styles.cardFoot}>
+      <div className={styles.cardFoot} data-stick-bottom>
         <Button onClick={cancel} disabled={pending}>
           취소
         </Button>

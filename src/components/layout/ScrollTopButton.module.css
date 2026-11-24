@@ -1,0 +1,57 @@
+/* 맨 위로 — 오른쪽 아래 원형 버튼. 내려갔을 때만 나타난다. 모달(24~30)·토스트(40)보다 아래 */
+.btn {
+  position: fixed;
+  z-index: 15;
+  right: calc(var(--gap-shell) + 18px + env(safe-area-inset-right, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--card-line);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    visibility 0.18s,
+    bottom 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.btn[data-shown] {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.btn:hover {
+  background: var(--violet-600);
+  border-color: var(--violet-600);
+  color: #fff;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+}
+
+@media print {
+  .btn {
+    display: none;
+  }
+}
