@@ -181,7 +181,7 @@ export function AsnListScreen({
         );
       },
     },
-    { key: "status", header: "상태", align: "center", render: (r) => <AsnStatusBadge status={r.status} /> },
+    { key: "status", header: "상태", align: "center", render: (r) => <AsnStatusBadge status={r.status} allMissing={r.allMissing} /> },
   ];
 
   return (

@@ -87,7 +87,7 @@ export function InquiryDetailScreen({ detail: d, cancelReasons, today }: { detai
     { key: "vehicle", header: "차량", align: "center", render: (v) => <b className="mono">{v.vehicleNo}</b> },
     { key: "asn", header: "ASN번호", align: "center", render: (v) => <span className="mono">{v.asnNo}</span> },
     { key: "qty", header: "이 입고예정에서 담은 수량", render: (v) => <span className="mono">{`${v.lineCount.toLocaleString()}품목 · ${v.qtyByUnit.map(([u, n]) => `${u} ${n.toLocaleString()}`).join(" · ")}`}</span> },
-    { key: "status", header: "상태", align: "center", render: (v) => <AsnStatusBadge status={v.status} /> },
+    { key: "status", header: "상태", align: "center", render: (v) => <AsnStatusBadge status={v.status} allMissing={v.allMissing} /> },
     // 입고 대기 단계 (v1.9 D27) — 상차 전·상차중·출차 대기·운송 중·도착·검수 대기·검수중
     { key: "stage", header: "입고 대기 단계", render: (v) => (v.waitStage ? WAIT_STAGE_LABEL[v.waitStage] : <span className="muted">–</span>) },
   ];

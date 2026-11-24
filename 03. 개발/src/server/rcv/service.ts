@@ -39,6 +39,8 @@ import {
   planStatusAfterReceive,
   hasValidRcvRecord,
   RCV_NO_RECORD_MSG,
+  isAllMissing,
+  ALL_MISSING_LABEL,
   type RcvLineQty,
 } from "@/domain/rcv-rules";
 import { todayKst } from "@/lib/format";
@@ -662,7 +664,11 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
           const asn = await tx.asn.findUniqueOrThrow({ where: { id: load.asnId } });
           await tx.asn.update({ where: { id: asn.id }, data: { status: "RECEIVED", version: { increment: 1 }, updatedBy: me.name } });
           await tx.loadOrder.updateMany({ where: { asnId: asn.id }, data: { status: "INSPECTED" } });
-          await tx.asnHistory.create({ data: { asnId: asn.id, action: "RECEIVE", version: asn.version + 1, actor: me.name, actorId: me.id, reasonText: `입고검수 ${rcv.rcvNo} 확정` } });
+          // 전량 미도착(Q2·D32)은 상태값(RECEIVED)은 같고 이력 문구로 구분한다
+          const allMissing = isAllMissing(lines.map(q));
+          await tx.asnHistory.create({
+            data: { asnId: asn.id, action: "RECEIVE", version: asn.version + 1, actor: me.name, actorId: me.id, reasonText: `입고검수 ${rcv.rcvNo} 확정${allMissing ? ` · ${ALL_MISSING_LABEL}` : ""}` },
+          });
         }
 
         const r = await tx.rcv.updateMany({

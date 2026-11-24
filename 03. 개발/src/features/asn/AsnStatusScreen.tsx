@@ -216,7 +216,7 @@ export function AsnStatusScreen({
       align: "center",
       render: (r) => (
         <>
-          <AsnStatusBadge status={r.status} />
+          <AsnStatusBadge status={r.status} allMissing={r.allMissing} />
           {/* 상차완료 차량의 출차·입차 (v1.9) — 센터가 도착 예상을 볼 수 있게. 시스템 처리 출차는 구분 표시 */}
           {r.status === "LOADED" && (
             <CellSub>

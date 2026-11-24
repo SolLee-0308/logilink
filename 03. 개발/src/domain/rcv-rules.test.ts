@@ -114,6 +114,16 @@ test("K5 입차 취소 안내: 검수 시작 후에는 재입력·관리자 알�
   assert.ok(!msg!.includes("검수 확정하세요"));
 });
 
+test("Q2 전량 미도착: 예정 품목이 모두 0 확인이고 정상·반송·불일치 수량이 모두 0", async () => {
+  const { isAllMissing } = await import("./rcv-rules");
+  const z = { mismatch: false, zeroConfirm: true, good: 0, damaged: 0, mismatchQty: 0 };
+  assert.equal(isAllMissing([z, z]), true); // 전량 미도착
+  assert.equal(isAllMissing([z, { ...z, zeroConfirm: false, good: 5 }]), false); // 일부 미도착(정상 입고 있음)
+  assert.equal(isAllMissing([z, { ...z, zeroConfirm: false, damaged: 2 }]), false); // 훼손 반송
+  assert.equal(isAllMissing([z, { mismatch: true, zeroConfirm: false, good: 0, damaged: 0, mismatchQty: 3 }]), false); // 품목 불일치 반송(Q6)
+  assert.equal(isAllMissing([]), false);
+});
+
 test("K4 검수 확정 조건: 유효한 입력 또는 직접 한 0 확인이 하나 이상", async () => {
   const { hasValidRcvRecord } = await import("./rcv-rules");
   // 입력 전 / 입력을 모두 취소함(취소된 입력은 hasInputs에 넣지 않는다)

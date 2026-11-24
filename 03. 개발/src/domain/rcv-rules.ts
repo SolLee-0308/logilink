@@ -57,7 +57,18 @@ export const lineEntered = (l: Pick<RcvLineQty, "hasInputs" | "zeroConfirm">) =>
  * 유효한 기록 = 취소되지 않은 입력(품목 불일치 반송 포함) 또는 검수자가 직접 한 0(미도착) 확인.
  * 취소된 입력·검수 시작 시각만 남은 차량은 해당하지 않는다. [남은 품목 전부 0 처리]보다 먼저 검사한다.
  */
-export const hasValidRcvRecord = (lines: readonly Pick<RcvLineQty, "hasInputs" | "zeroConfirm">[]) => lines.some(lineEntered);
+/**
+ * 전량 미도착 (Q2·D32, 2026-11-24 Sol) — 확정한 검수에서 예정 품목(품목 불일치 제외)이 모두 0(미도착) 확인이고
+ * 정상·훼손 반송·품목 불일치 반송 수량이 모두 0이다. DB 상태(ASN RECEIVED)는 그대로 두고 표시만 구분한다.
+ * 품목 불일치 반송이 있는 차량(Q6)은 해당하지 않는다 — 기존대로 '품목 불일치 반송'으로 보인다.
+ */
+export const ALL_MISSING_LABEL = "검수완료 · 전량 미도착";
+export function isAllMissing(lines: readonly Pick<RcvLineQty, "mismatch" | "zeroConfirm" | "good" | "damaged" | "mismatchQty">[]): boolean {
+  const planned = lines.filter((l) => !l.mismatch);
+  return planned.length > 0 && planned.every((l) => l.zeroConfirm) && lines.every((l) => l.good + l.damaged + l.mismatchQty === 0) && !lines.some((l) => l.mismatch);
+}
+
+export const hasValidRcvRecord =(lines: readonly Pick<RcvLineQty, "hasInputs" | "zeroConfirm">[]) => lines.some(lineEntered);
 export const RCV_NO_RECORD_MSG = "확정할 검수 기록이 없습니다. 품목을 스캔해 실제 수량을 입력하거나, 도착하지 않은 품목을 0(미도착)으로 확인한 뒤 확정하세요.";
 
 /** 사유가 필요한 라인 — 차이가 있거나 반송이 있거나 품목 불일치 */

@@ -525,7 +525,7 @@ function VehicleTable({
                     )}
                   </td>
                   <td className={styles.center}>
-                    <AsnStatusBadge status={v.status} />
+                    <AsnStatusBadge status={v.status} allMissing={v.allMissing} />
                   </td>
                 </tr>
                 {expanded && (
