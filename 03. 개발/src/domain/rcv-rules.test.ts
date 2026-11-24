@@ -103,6 +103,27 @@ test("입차 취소: 첫 입력 전에만, 입력·0 확인이 있었으면 불�
   assert.ok(arriveCancelBlock({ status: "CONFIRMED", startedAt: null, inputCount: 0, zeroCount: 0 }));
 });
 
+test("K5 입차 취소 안내: 검수 시작 후에는 재입력·관리자 알림을 안내하고, 검수 확정을 권하지 않는다", async () => {
+  const { arriveCancelBlock, ARRIVE_CANCEL_STARTED_MSG } = await import("./rcv-rules");
+  const msg = arriveCancelBlock({ status: "WORKING", startedAt: new Date(), inputCount: 2, zeroCount: 0 });
+  assert.equal(msg, ARRIVE_CANCEL_STARTED_MSG);
+  assert.equal(
+    msg,
+    "이미 검수를 시작한 차량은 입차 취소할 수 없습니다. 차량이 맞으면 실제 검수 결과를 다시 입력해 주세요. 차량을 잘못 선택했다면 검수를 중단하고 3PL 관리자에게 알려 주세요.",
+  );
+  assert.ok(!msg!.includes("검수 확정하세요"));
+});
+
+test("K4 검수 확정 조건: 유효한 입력 또는 직접 한 0 확인이 하나 이상", async () => {
+  const { hasValidRcvRecord } = await import("./rcv-rules");
+  // 입력 전 / 입력을 모두 취소함(취소된 입력은 hasInputs에 넣지 않는다)
+  assert.equal(hasValidRcvRecord([]), false);
+  assert.equal(hasValidRcvRecord([{ hasInputs: false, zeroConfirm: false }, { hasInputs: false, zeroConfirm: false }]), false);
+  // 유효한 입력 1건 / 0(미도착) 확인만
+  assert.equal(hasValidRcvRecord([{ hasInputs: true, zeroConfirm: false }, { hasInputs: false, zeroConfirm: false }]), true);
+  assert.equal(hasValidRcvRecord([{ hasInputs: false, zeroConfirm: true }, { hasInputs: false, zeroConfirm: false }]), true);
+});
+
 test("입고검수 진입: 정확히 입력하고 1건이면 바로, 여럿이면 목록, 일부만 입력하면 1건이어도 목록", async () => {
   const { pickEntry } = await import("./rcv-rules");
   const rows = [

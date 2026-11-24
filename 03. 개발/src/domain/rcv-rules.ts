@@ -52,6 +52,14 @@ export const lineDiff = (l: Pick<RcvLineQty, "expect" | "good" | "damaged" | "mi
 /** 검수자가 손을 댄 라인인지 — 입력이 있거나 0을 확인했다 (D15: 시스템이 임의로 0 처리하지 않는다) */
 export const lineEntered = (l: Pick<RcvLineQty, "hasInputs" | "zeroConfirm">) => l.hasInputs || l.zeroConfirm;
 
+/**
+ * 검수 확정 조건 (K4, 2026-11-24 Sol) — 유효한 검수 기록이 하나 이상 있어야 한다.
+ * 유효한 기록 = 취소되지 않은 입력(품목 불일치 반송 포함) 또는 검수자가 직접 한 0(미도착) 확인.
+ * 취소된 입력·검수 시작 시각만 남은 차량은 해당하지 않는다. [남은 품목 전부 0 처리]보다 먼저 검사한다.
+ */
+export const hasValidRcvRecord = (lines: readonly Pick<RcvLineQty, "hasInputs" | "zeroConfirm">[]) => lines.some(lineEntered);
+export const RCV_NO_RECORD_MSG = "확정할 검수 기록이 없습니다. 품목을 스캔해 실제 수량을 입력하거나, 도착하지 않은 품목을 0(미도착)으로 확인한 뒤 확정하세요.";
+
 /** 사유가 필요한 라인 — 차이가 있거나 반송이 있거나 품목 불일치 */
 export const needsReason = (l: RcvLineQty) => l.mismatch || l.damaged > 0 || lineDiff(l) !== 0;
 
@@ -169,10 +177,17 @@ export const rcvStageOf = (r: { status: RcvStatus; startedAt: Date | string | nu
 /** 입차 취소 사유 코드 그룹 (임시안 — 차량 오인 스캔·기타) */
 export const ARRIVE_CANCEL_GROUP = "ARRIVE_CANCEL";
 
+/**
+ * 검수를 시작한 차량의 입차 취소 안내 (K5, 2026-11-24 Sol) — 입력을 모두 취소해도 검수 시작 기록은 남아 입차 취소할 수 없다.
+ * 잘못 입차한 차량을 검수 확정·일괄 0 처리로 정리하라고 안내하지 않는다(관리자 인계 후 정리 방법은 정책 결정 대기).
+ */
+export const ARRIVE_CANCEL_STARTED_MSG =
+  "이미 검수를 시작한 차량은 입차 취소할 수 없습니다. 차량이 맞으면 실제 검수 결과를 다시 입력해 주세요. 차량을 잘못 선택했다면 검수를 중단하고 3PL 관리자에게 알려 주세요.";
+
 /** 입차 취소 가능 여부 — 첫 입력 전(검수 시작 시각 없음, 살아 있는 입력·0 확인 없음)만. 불가하면 이유 문장 */
 export function arriveCancelBlock(r: { status: RcvStatus; startedAt: Date | string | null; inputCount: number; zeroCount: number }): string | null {
   if (r.status !== "WORKING") return "검수 중인 차량만 입차 취소할 수 있습니다.";
-  if (r.startedAt || r.inputCount > 0 || r.zeroCount > 0) return "이미 검수를 시작한 차량은 입차 취소할 수 없습니다. 입력을 모두 취소해도 검수 시작 기록은 남습니다. 그대로 검수 확정하세요.";
+  if (r.startedAt || r.inputCount > 0 || r.zeroCount > 0) return ARRIVE_CANCEL_STARTED_MSG;
   return null;
 }
 

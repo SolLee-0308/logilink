@@ -37,6 +37,8 @@ import {
   autoReason,
   needsReason,
   planStatusAfterReceive,
+  hasValidRcvRecord,
+  RCV_NO_RECORD_MSG,
   type RcvLineQty,
 } from "@/domain/rcv-rules";
 import { todayKst } from "@/lib/format";
@@ -49,10 +51,21 @@ const ok = <T>(message: string, data?: T): ActionResult<T> => ({ ok: true, messa
 const forbidden = () => fail("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
 const notFound = () => fail("NOT_FOUND", "검수 건을 찾을 수 없습니다. 첫 화면에서 다시 시작하세요.");
 
+/**
+ * 트랜잭션 안에서 이미 쓴 내용을 되돌리고 결과만 돌려줄 때 던진다.
+ * 예: 검수 확정 중 [남은 품목 전부 0 처리]를 반영한 뒤 사진·공통코드 검사에서 막히면 일괄 0 처리도 남기지 않는다.
+ */
+class Abort<T> extends Error {
+  constructor(readonly result: ActionResult<T>) {
+    super(result.ok ? "" : result.error);
+  }
+}
+
 async function guarded<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
   try {
     return await fn();
   } catch (e) {
+    if (e instanceof Abort) return e.result as ActionResult<T>;
     if ((e as { code?: string }).code === "P2002") return fail("CONFLICT", "다른 검수자가 같은 차량을 동시에 시작했습니다. 다시 스캔하세요.");
     console.error(e);
     return fail("ERROR", "처리하지 못했습니다. 잠시 후 다시 시도하세요.");
@@ -528,6 +541,10 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
           expect: l.expectBaseQty, good: l.goodBaseQty, damaged: l.damagedBaseQty, mismatchQty: l.mismatchBaseQty, mismatch: l.mismatch, zeroConfirm: l.zeroConfirm, hasInputs: has.has(l.itemId),
         });
 
+        // K4 (2026-11-24 Sol): 유효한 검수 기록(취소되지 않은 입력 또는 직접 한 0 확인)이 하나도 없으면 확정하지 않는다.
+        // 미입력 경고·[남은 품목 전부 0 처리]보다 먼저 검사한다 — 일괄 0 처리는 확정 조건을 갖춘 차량의 남은 품목용
+        if (!hasValidRcvRecord(lines.map((l) => ({ hasInputs: has.has(l.itemId), zeroConfirm: l.zeroConfirm })))) return fail("STATE", RCV_NO_RECORD_MSG);
+
         // D15: 미입력 라인 — 시스템이 임의로 0 처리하지 않는다. 검수자가 고르면 0 확인 표시를 남긴다
         const unentered = lines.filter((l) => !l.mismatch && !has.has(l.itemId) && !l.zeroConfirm);
         // 화면은 fieldErrors.unentered(품목명을 줄바꿈으로 이은 값)로 경고창 목록을 그린다
@@ -539,8 +556,9 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
             await tx.rcvLine.update({ where: { id: l.id }, data: { zeroConfirm: true, ...(l.reasonCode ? {} : { reasonCode: missing?.code ?? null, reasonName: missing?.name ?? null }) } });
           lines = await tx.rcvLine.findMany({ where: { rcvId: rcv.id }, include: { item: { select: { name: true, expiryManaged: true, lotManaged: true } } }, orderBy: { id: "asc" } });
         }
+        // 여기부터 실패하면 위의 일괄 0 처리까지 되돌린다(Abort)
         if (!lines.some((l) => l.goodBaseQty + l.damagedBaseQty + l.mismatchBaseQty > 0 || l.zeroConfirm))
-          return fail("STATE", "입력한 수량이 없습니다. 품목을 스캔해 수량을 입력하세요.");
+          throw new Abort(fail("STATE", "입력한 수량이 없습니다. 품목을 스캔해 수량을 입력하세요."));
 
         // 사유(D19)는 확정 시점의 수량으로 시스템이 정한다 (2026-11-13 Sol, A안) — 수량과 어긋난 사유가 남지 않게 항상 다시 쓴다.
         // 차이가 없어진 라인에 남은 사유도 지운다. 훼손 사진(C7) 검사는 그대로
@@ -552,13 +570,13 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
           }
           const code = autoReason(lq);
           const c = code ? await reasonOf(tx, code) : null;
-          if (!c) return fail("STATE", `차이 사유 공통코드(${RCV_DIFF_GROUP} ${code ?? "-"})가 사용 중이 아닙니다. 3PL 관리자에게 공통코드 확인을 요청하세요.`);
+          if (!c) throw new Abort(fail("STATE", `차이 사유 공통코드(${RCV_DIFF_GROUP} ${code ?? "-"})가 사용 중이 아닙니다. 3PL 관리자에게 공통코드 확인을 요청하세요.`));
           if (l.reasonCode !== c.code || l.reasonName !== c.name || l.reasonText)
             await tx.rcvLine.update({ where: { id: l.id }, data: { reasonCode: c.code, reasonName: c.name, reasonText: null } });
           l.reasonCode = c.code;
           if (l.damagedBaseQty > 0) {
             const n = await tx.rcvImage.count({ where: { rcvId: rcv.id, itemId: l.itemId } });
-            if (n < RCV_IMAGE_MIN) return fail("VALIDATION", `${l.item.name}: 훼손 반송은 사진을 ${RCV_IMAGE_MIN}장 이상 찍어야 합니다.`, { [`line-${l.itemId}`]: "사진을 찍으세요." });
+            if (n < RCV_IMAGE_MIN) throw new Abort(fail("VALIDATION", `${l.item.name}: 훼손 반송은 사진을 ${RCV_IMAGE_MIN}장 이상 찍어야 합니다.`, { [`line-${l.itemId}`]: "사진을 찍으세요." }));
           }
         }
 
@@ -651,7 +669,7 @@ export async function confirmRcv(me: PlanActor, input: ConfirmRcvInput): Promise
           where: { id: rcv.id, status: "WORKING" },
           data: { status: "CONFIRMED", version: { increment: 1 }, confirmedAt: new Date(), confirmedBy: me.name, confirmUserId: me.id, ...(rcv.startedAt ? {} : { startedAt: new Date() }) },
         });
-        if (!r.count) return fail("STATE", "이미 검수 확정된 차량입니다.");
+        if (!r.count) throw new Abort(fail("STATE", "이미 검수 확정된 차량입니다."));
         return ok(`검수 확정 · ${rcv.rcvNo} — 입고예정 ${touchedPlans.size}건에 자동 배분했습니다.`, { rcvNo: rcv.rcvNo });
       },
       { timeout: 30_000 },

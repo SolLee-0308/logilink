@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { DEPART_TYPE_LABEL, DIFF_STATES, LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
-import { RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
+import { ARRIVE_CANCEL_STARTED_MSG, RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
 import { fmtDateTime } from "@/lib/format";
 import {
   addRcvImage, addRcvInput, cancelRcvInput, confirmRcv, correctRcvInput, deleteRcvImage, previewRcvScan, reloadRcv, setRcvLineInfo, setRcvZero, voidRcv,
@@ -593,6 +593,13 @@ export function PdaInspectScreen({
             <button type="button" className={styles.link} onClick={() => (setError(null), setVoiding({ code: "", text: "" }))} disabled={pending}>
               입차 취소
             </button>
+          </p>
+        )}
+        {/* K5 (2026-11-24 Sol): 검수를 시작했지만 유효한 입력·0 확인이 하나도 없는 차량(입력을 모두 취소함) — 입차 취소 대신 할 일 안내.
+            [검수 확정]은 K4에 따라 꺼져 있다 */}
+        {view.status === "WORKING" && !view.canVoid && !anyEntered && !preview && (
+          <p className={styles.warnText} role="note">
+            {ARRIVE_CANCEL_STARTED_MSG}
           </p>
         )}
       </section>
