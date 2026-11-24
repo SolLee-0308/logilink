@@ -20,14 +20,14 @@ import styles from "./CompanyScreen.module.css";
  * 운영 설정 — 회사 전체 정책값. 항목이 적어 목록 대신 설정마다 단건 카드로 보여 준다.
  * 카드는 회사 정보와 같은 방식: 기본 조회, [수정]을 누르면 최신 값을 다시 읽어 같은 자리에서 편집.
  */
-export function SettingsScreen({ rows }: { rows: SettingRow[] }) {
+export function SettingsScreen({ rows, canEdit }: { rows: SettingRow[]; canEdit: boolean }) {
   return (
     <>
       <MasterHeader title="운영 설정" rules={RULES.settings} />
       <div className={styles.grid}>
         {rows.length === 0 && <NoteBox tone="error">운영 설정이 없습니다. 초기 데이터(시드)를 확인하세요.</NoteBox>}
         {rows.map((r) => (
-          <SettingCard key={`${r.key}-${r.version}`} row={r} />
+          <SettingCard key={`${r.key}-${r.version}`} row={r} canEdit={canEdit} />
         ))}
       </div>
     </>
@@ -41,7 +41,7 @@ const fmtValue = (r: SettingRow, v: string) => (
   </>
 );
 
-function SettingCard({ row }: { row: SettingRow }) {
+function SettingCard({ row, canEdit }: { row: SettingRow; canEdit: boolean }) {
   const toast = useToast();
   const [editing, setEditing] = useState<SettingRow | null>(null);
   const [opening, setOpening] = useState(false);
@@ -54,7 +54,7 @@ function SettingCard({ row }: { row: SettingRow }) {
     setEditing(r.data!);
   }
 
-  if (editing) return <SettingForm key={editing.version + editing.updatedAt} base={editing} onDone={() => setEditing(null)} onReload={startEdit} />;
+  if (canEdit && editing) return <SettingForm key={editing.version + editing.updatedAt} base={editing} onDone={() => setEditing(null)} onReload={startEdit} />;
 
   const range = row.valueType !== "TIME" && row.minValue !== null && row.maxValue !== null ? `${row.minValue}~${row.maxValue}${row.unit ?? ""}` : null;
 
@@ -64,11 +64,13 @@ function SettingCard({ row }: { row: SettingRow }) {
       title={
         <>
           <PanelTitle>{row.label}</PanelTitle>
-          <span className={styles.headAction}>
-            <Button size="sm" variant="editSoft" onClick={startEdit} disabled={opening}>
-              수정
-            </Button>
-          </span>
+          {canEdit && (
+            <span className={styles.headAction}>
+              <Button size="sm" variant="editSoft" onClick={startEdit} disabled={opening}>
+                수정
+              </Button>
+            </span>
+          )}
         </>
       }
       sub={row.description ?? undefined}

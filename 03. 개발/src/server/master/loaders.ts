@@ -2,19 +2,19 @@
 
 /**
  * 편집 모달을 여는 순간 최신 데이터와 version을 다시 읽는 서버 액션.
- * 조회 권한을 확인하고, 화주사 계정은 자기 화주사 범위만 읽는다(queries의 clientScope).
+ * 메뉴별 권한을 확인하고, 화주사 계정은 자기 화주사 범위만 읽는다(queries의 clientScope).
  */
 import { db } from "@/server/db";
 import { getActor } from "@/server/session";
 import { fail, type ActionResult } from "@/server/action-result";
-import { can, type Resource } from "@/domain/permissions";
+import { can, type Op, type Resource } from "@/domain/permissions";
 import { CLIENT_PREFIX_PATTERN, PREFIX_EXHAUSTED_MSG, composeClientCode, nextClientSerial } from "@/domain/client-code";
 import { getCompany, listCenterRows, listClients, listCommonCodes, listItems, listSettings, listUsers } from "@/server/master/queries";
 import type { CenterRow, ClientRow, CommonCodeRow, CompanyRow, ItemRow, SettingRow, UserRow } from "@/features/master/types";
 
-async function allowed(resource: Resource) {
+async function allowed(resource: Resource, op: Op = "view") {
   const me = await getActor();
-  return can(me.roles, resource, "view");
+  return can(me.roles, resource, op);
 }
 
 const notFound = (what: string) => fail("NOT_FOUND", `${what}을(를) 찾을 수 없습니다. 목록을 새로 고쳐 보세요.`);
@@ -50,13 +50,13 @@ export async function loadItem(id: number): Promise<ActionResult<ItemRow>> {
 }
 
 export async function loadCommonCode(id: number): Promise<ActionResult<CommonCodeRow>> {
-  if (!(await allowed("master"))) return fail("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
+  if (!(await allowed("codes", "edit"))) return fail("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
   const [row] = await listCommonCodes(id);
   return row ? { ok: true, message: "", data: row } : notFound("사유 코드");
 }
 
 export async function loadSetting(key: string): Promise<ActionResult<SettingRow>> {
-  if (!(await allowed("master"))) return fail("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
+  if (!(await allowed("settings", "edit"))) return fail("FORBIDDEN", "이 작업을 할 권한이 없습니다.");
   const [row] = await listSettings(key);
   return row ? { ok: true, message: "", data: row } : notFound("운영 설정");
 }
