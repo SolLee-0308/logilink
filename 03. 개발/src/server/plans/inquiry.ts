@@ -9,6 +9,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { PlanActor } from "@/server/plans/service";
 import { getPlanDetail } from "@/server/plans/queries";
 import { distributedByLine } from "@/server/asn/queries";
+import { allMissingAsnIds } from "@/server/rcv/queries";
 import { can, isShipperRole } from "@/domain/permissions";
 import { CANCEL_GROUP, type ItemUnit } from "@/domain/master";
 import {
@@ -240,6 +241,7 @@ export async function listInquiryVehicles(me: PlanActor, q: InquiryQuery): Promi
     else v.ret += g._sum.allocQty ?? 0;
     got.set(k, v);
   }
+  const missing = await allMissingAsnIds(asns.filter((a) => a.status === "RECEIVED").map((a) => a.id));
   return asns.map((a) => {
     const open = a.status !== "RECEIVED";
     const confirmed = a.load?.rcvs.find((r) => r.status === "CONFIRMED");
@@ -255,6 +257,7 @@ export async function listInquiryVehicles(me: PlanActor, q: InquiryQuery): Promi
       driverName: a.driverName,
       driverTel: a.driverTel,
       status: a.status,
+      allMissing: a.status === "RECEIVED" && missing.has(a.id),
       receivedAt: confirmed?.confirmedAt ? iso(confirmed.confirmedAt) : null,
       waitStage: waitStageOf({ asnStatus: a.status, load: a.load, rcv: a.load?.rcvs.find((r) => r.status === "WORKING") ?? null }),
       planNos: [...new Set(a.lines.map((l) => l.plan.planNo))],
@@ -326,6 +329,7 @@ export async function getInquiryDetail(me: PlanActor, id: number): Promise<Inqui
       shipDate: ymd(l.asn.shipDate),
       vehicleNo: l.asn.vehicleNo,
       status: l.asn.status,
+      allMissing: false,
       qtyByUnit: [],
       lineCount: 0,
       sums: new Map(),
@@ -334,9 +338,13 @@ export async function getInquiryDetail(me: PlanActor, id: number): Promise<Inqui
     v.sums.set(l.unit, (v.sums.get(l.unit) ?? 0) + l.qty);
     byAsn.set(l.asn.id, v);
   }
-  const stages = await asnStages([...byAsn.keys()]);
+  const [stages, missing] = await Promise.all([
+    asnStages([...byAsn.keys()]),
+    allMissingAsnIds([...byAsn.values()].filter((v) => v.status === "RECEIVED").map((v) => v.id)),
+  ]);
   const vehicles = [...byAsn.values()].map(({ sums, ...v }) => ({
     ...v,
+    allMissing: v.status === "RECEIVED" && missing.has(v.id),
     waitStage: stages.get(v.id) ?? null,
     qtyByUnit: UNIT_ORDER.filter((u) => sums.has(u)).map((u) => [u, sums.get(u)!] as [ItemUnit, number]),
   }));

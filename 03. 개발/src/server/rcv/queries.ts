@@ -9,7 +9,7 @@ import type { PlanActor } from "@/server/plans/service";
 import { can } from "@/domain/permissions";
 import type { ItemUnit } from "@/domain/master";
 import { departureOf, lineDiffState, qtyInUnit } from "@/domain/load-rules";
-import { lineDiff, needsReason, rcvLineState } from "@/domain/rcv-rules";
+import { isAllMissing, lineDiff, needsReason, rcvLineState } from "@/domain/rcv-rules";
 import { DEFAULT_BUSINESS_DAY_START, businessDateOf, businessDayRange } from "@/domain/business-day";
 import type { PdaRcvDashboard, PdaRcvHistory, PdaRcvHome, PdaRcvRow, RcvLineView, RcvLoadDiff, RcvView } from "@/features/rcv/types";
 
@@ -23,6 +23,33 @@ export const kstDay = (s: string) => {
 };
 
 export const canInspect = (me: PlanActor) => can(me.roles, "inspection", "edit");
+
+/** 검수 라인 → 전량 미도착 판정 입력 */
+const missingQty = (l: { mismatch: boolean; zeroConfirm: boolean; goodBaseQty: number; damagedBaseQty: number; mismatchBaseQty: number }) => ({
+  mismatch: l.mismatch, zeroConfirm: l.zeroConfirm, good: l.goodBaseQty, damaged: l.damagedBaseQty, mismatchQty: l.mismatchBaseQty,
+});
+export const isAllMissingRcv = (lines: Parameters<typeof missingQty>[0][]) => isAllMissing(lines.map(missingQty));
+
+/**
+ * 전량 미도착으로 확정한 차량(상차 실적) id — Q2·D32. 확정(CONFIRMED) 검수만 본다.
+ * 입고취소(CANCELED)한 검수는 빼므로, 입고취소 뒤 재검수 전에는 표시되지 않는다.
+ */
+export async function allMissingLoadIds(loadIds: number[]): Promise<Set<number>> {
+  if (!loadIds.length) return new Set();
+  const rcvs = await db.rcv.findMany({
+    where: { loadId: { in: [...new Set(loadIds)] }, status: "CONFIRMED" },
+    select: { loadId: true, lines: { select: { mismatch: true, zeroConfirm: true, goodBaseQty: true, damagedBaseQty: true, mismatchBaseQty: true } } },
+  });
+  return new Set(rcvs.filter((r) => isAllMissingRcv(r.lines)).map((r) => r.loadId));
+}
+
+/** 전량 미도착으로 확정한 ASN id */
+export async function allMissingAsnIds(asnIds: number[]): Promise<Set<number>> {
+  if (!asnIds.length) return new Set();
+  const loads = await db.load.findMany({ where: { asnId: { in: [...new Set(asnIds)] } }, select: { id: true, asnId: true } });
+  const hit = await allMissingLoadIds(loads.map((l) => l.id));
+  return new Set(loads.filter((l) => hit.has(l.id)).map((l) => l.asnId!));
+}
 
 /**
  * 검수자의 "오늘" = 소속 센터 업무일 (2026-11-17 Sol: 웹 대시보드와 같은 기준).
@@ -139,6 +166,7 @@ function toView(r: RcvFull, meId: number | null): RcvView {
     id: r.id,
     rcvNo: r.rcvNo,
     status: r.status,
+    allMissing: r.status === "CONFIRMED" && isAllMissingRcv(r.lines),
     startedAt: iso(r.startedAt),
     arrivedAt: iso(r.load.arrivedAt),
     arrivedBy: r.load.arrivedBy,

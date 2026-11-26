@@ -35,9 +35,11 @@ const historyFormat = (k: string, v: unknown) => {
 export function CodesScreen({
   groups,
   rows,
+  canEdit,
 }: {
   groups: CodeGroupRow[];
   rows: CommonCodeRow[];
+  canEdit: boolean;
 }) {
   const [groupCode, setGroupCode] = useState(groups[0]?.code ?? "");
   const [active, setActive] = useState<ActiveFilter>("on") // 사용 여부 기본 = 사용 (2026-11-14 Sol);
@@ -67,11 +69,7 @@ export function CodesScreen({
         title="사유 코드"
         count={rows.length}
         rules={RULES.codes}
-        actions={
-          <CreateButton onClick={edit.openNew} disabled={!group}>
-            등록
-          </CreateButton>
-        }
+        actions={canEdit ? <CreateButton onClick={edit.openNew} disabled={!group}>등록</CreateButton> : undefined}
       />
       <FilterBar>
         {/* 코드 그룹은 드롭다운 (2026-11-14 Sol) — 그룹이 늘어도 한 칸 */}
@@ -111,9 +109,9 @@ export function CodesScreen({
             />
           </>
         }
-        panel={<CodeView row={current} group={group} onEdit={() => current && edit.openEdit(current.id)} opening={edit.loading} />}
+        panel={<CodeView row={current} group={group} canEdit={canEdit} onEdit={() => current && edit.openEdit(current.id)} opening={edit.loading} />}
       />
-      {edit.target && group && (
+      {canEdit && edit.target && group && (
         <CodeEditModal
           key={edit.nonce}
           row={edit.target === "new" ? null : edit.target}
@@ -132,7 +130,19 @@ export function CodesScreen({
 }
 
 /** 조회 전용 패널 + [수정] */
-function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; group: CodeGroupRow | undefined; onEdit: () => void; opening: boolean }) {
+function CodeView({
+  row,
+  group,
+  canEdit,
+  onEdit,
+  opening,
+}: {
+  row: CommonCodeRow | null;
+  group: CodeGroupRow | undefined;
+  canEdit: boolean;
+  onEdit: () => void;
+  opening: boolean;
+}) {
   if (!row || !group) {
     return (
       <SidePanel label="사유 코드 상세">
@@ -155,7 +165,7 @@ function CodeView({ row, group, onEdit, opening }: { row: CommonCodeRow | null; 
         <>
           <LastChanged by={row.updatedBy} at={row.updatedAt} title={row.name} entries={row.history} created={{ at: row.createdAt, by: row.createdBy }} labels={LABELS} format={historyFormat} />
           {/* 수정은 패널 아래 오른쪽 (2026-11-06 Sol 결정: 위쪽 접기 아이콘과 나눔) */}
-          <Button size="sm" variant="editSoft" onClick={onEdit} disabled={opening}>수정</Button>
+          {canEdit && <Button size="sm" variant="editSoft" onClick={onEdit} disabled={opening}>수정</Button>}
         </>
       }
     >

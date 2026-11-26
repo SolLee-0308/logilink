@@ -42,6 +42,8 @@ export interface RcvResultRow {
   returnBaseQty: number;
   /** 차이·반송 품목 수 */
   issueCount: number;
+  /** 전량 미도착으로 확정 (Q2·D32) */
+  allMissing: boolean;
   /** 일마감 — 확정 건만. 마감 전이면 null */
   closedDate: string | null;
   workerCount: number;

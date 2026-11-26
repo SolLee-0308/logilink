@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { DEPART_TYPE_LABEL, DIFF_STATES, LINE_STATE_LABEL, LOAD_TYPE_LABEL, qtyInUnit } from "@/domain/load-rules";
-import { RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
+import { ALL_MISSING_LABEL, ARRIVE_CANCEL_STARTED_MSG, RCV_IMAGE_MAX, RCV_KIND_LABEL, RCV_LINE_STATE_LABEL, autoReason, type RcvLineState } from "@/domain/rcv-rules";
 import { fmtDateTime } from "@/lib/format";
 import {
   addRcvImage, addRcvInput, cancelRcvInput, confirmRcv, correctRcvInput, deleteRcvImage, previewRcvScan, reloadRcv, setRcvLineInfo, setRcvZero, voidRcv,
@@ -304,7 +304,11 @@ export function PdaInspectScreen({
             </span>
           )}
           <h2 className={styles.successTitle}>{doneBy === "other" ? "다른 검수자가 검수를 확정했습니다." : doneBy === "me" ? "검수를 확정했습니다." : "검수 결과"}</h2>
-          <p className={styles.successSub}>입고예정에 자동 배분했습니다. 확정 뒤에는 고칠 수 없습니다. 잘못 확정했으면 3PL 관리자가 일마감 전에 웹에서 입고취소한 뒤 다시 검수합니다.</p>
+          {/* 전량 미도착(Q2·D32) — 배분 없이 검수만 완료. 입고예정 잔량은 그대로 */}
+          {view.allMissing && <p className={styles.warnText}>{ALL_MISSING_LABEL} — 정상입고 0, 입고예정 잔량은 그대로 남습니다.</p>}
+          <p className={styles.successSub}>
+            {view.allMissing ? "배분한 수량은 없습니다." : "입고예정에 자동 배분했습니다."} 확정 뒤에는 고칠 수 없습니다. 잘못 확정했으면 3PL 관리자가 일마감 전에 웹에서 입고취소한 뒤 다시 검수합니다.
+          </p>
           <InfoRows
             rows={[
               ["검수 번호", <b key="n" className="mono">{view.rcvNo}</b>],
@@ -593,6 +597,13 @@ export function PdaInspectScreen({
             <button type="button" className={styles.link} onClick={() => (setError(null), setVoiding({ code: "", text: "" }))} disabled={pending}>
               입차 취소
             </button>
+          </p>
+        )}
+        {/* K5 (2026-11-24 Sol): 검수를 시작했지만 유효한 입력·0 확인이 하나도 없는 차량(입력을 모두 취소함) — 입차 취소 대신 할 일 안내.
+            [검수 확정]은 K4에 따라 꺼져 있다 */}
+        {view.status === "WORKING" && !view.canVoid && !anyEntered && !preview && (
+          <p className={styles.warnText} role="note">
+            {ARRIVE_CANCEL_STARTED_MSG}
           </p>
         )}
       </section>

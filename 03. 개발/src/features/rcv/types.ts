@@ -91,6 +91,8 @@ export interface RcvView {
   id: number;
   rcvNo: string;
   status: RcvStatus;
+  /** 확정했고 전량 미도착 (Q2·D32) */
+  allMissing: boolean;
   /** 검수 시작 = 첫 입력 시각 (v1.9 D26). 없으면 도착·검수 대기 */
   startedAt: string | null;
   /** 입차 (v1.9 D25) — 시각·처리자 */
