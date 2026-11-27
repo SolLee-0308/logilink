@@ -80,6 +80,8 @@ export interface InquiryVehicleRow {
   driverName: string | null;
   driverTel: string | null;
   status: AsnStatus;
+  /** 전량 미도착으로 확정 (Q2·D32) */
+  allMissing: boolean;
   /** 입고(검수 확정) 시각 */
   receivedAt: string | null;
   planNos: string[];
@@ -101,6 +103,8 @@ export interface InquiryDetail extends PlanDetail {
     shipDate: string;
     vehicleNo: string;
     status: AsnStatus;
+    /** 전량 미도착으로 확정 (Q2·D32) */
+    allMissing: boolean;
     /** 입고 대기 단계 — 입고완료·취소면 null (v1.9 D27) */
     waitStage: WaitStage | null;
     /** 이 입고예정에서 담은 수량 [단위, 수량] */

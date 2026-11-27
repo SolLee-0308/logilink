@@ -19,6 +19,8 @@ export interface AsnRow {
   key: string;
   /** 행을 누르면 갈 상세 주소 */
   href: string;
+  /** 전량 미도착으로 확정 — RECEIVED일 때 '검수완료 · 전량 미도착'으로 표시 (Q2·D32) */
+  allMissing: boolean;
   id: number;
   clientId: number;
   clientName: string;
@@ -124,6 +126,8 @@ export interface AsnDetail {
   id: number;
   asnNo: string;
   status: AsnStatus;
+  /** 전량 미도착으로 확정 (Q2·D32) */
+  allMissing: boolean;
   version: number;
   clientName: string;
   centerId: number;

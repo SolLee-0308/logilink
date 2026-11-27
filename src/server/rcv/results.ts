@@ -12,6 +12,7 @@ import { businessDateOf } from "@/domain/business-day";
 import { needsReason } from "@/domain/rcv-rules";
 import { REVERSE_LOCKED_PLAN, rcvCancelBlock } from "@/domain/rcv-cancel-rules";
 import { rcvSums } from "@/server/plans/closing";
+import { isAllMissingRcv } from "@/server/rcv/queries";
 import type { RcvResultQuery, RcvResultRow } from "@/features/rcv-results/types";
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -77,6 +78,7 @@ export async function listRcvResults(me: PlanActor, q: RcvResultQuery): Promise<
         lineCount: s.lineCount,
         goodBaseQty: s.good,
         returnBaseQty: s.ret,
+        allMissing: r.status === "CONFIRMED" && isAllMissingRcv(r.lines),
         cancelBlock: confirmed ? rcvCancelBlock({ status: r.status, dailyClosed: !!r.dailyCloseId, lockedPlanNos: locked }) : null,
         reverse: r.reverseDoc
           ? {

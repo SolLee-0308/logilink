@@ -94,7 +94,7 @@ export function AsnDetailScreen({
         backHref={tpl ? "/plans/asn-status" : "/plans/asn"}
         storageKey={tpl ? ASN_STATUS_LIST_KEY : ASN_LIST_KEY}
         rules={tpl ? ASN_STATUS_RULES : ASN_RULES}
-        badges={<AsnStatusBadge status={d.status} />}
+        badges={<AsnStatusBadge status={d.status} allMissing={d.allMissing} />}
         actions={
           tpl ? undefined : (
           <div className={styles.actions}>

@@ -1,5 +1,6 @@
 import { PLAN_STATUS_META, type PlanStatus, type StatusTone } from "@/domain/plan-status";
 import { ASN_STATUS_META, type AsnStatus } from "@/domain/asn-rules";
+import { ALL_MISSING_LABEL } from "@/domain/rcv-rules";
 import styles from "./Badges.module.css";
 
 /** 상태 배지 — 상태는 반드시 이 색으로만 표시한다 (바이올렛 금지) */
@@ -13,8 +14,9 @@ export function StatusBadge({ status }: { status: PlanStatus }) {
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }
 
-/** ASN 상태 배지 */
-export function AsnStatusBadge({ status }: { status: AsnStatus }) {
+/** ASN 상태 배지 — 입고완료(RECEIVED)라도 검수 결과가 전량 미도착이면 '검수완료 · 전량 미도착'(Q2·D32) */
+export function AsnStatusBadge({ status, allMissing = false }: { status: AsnStatus; allMissing?: boolean }) {
+  if (status === "RECEIVED" && allMissing) return <Badge tone="close">{ALL_MISSING_LABEL}</Badge>;
   const meta = ASN_STATUS_META[status];
   return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }

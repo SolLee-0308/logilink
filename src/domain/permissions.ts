@@ -2,7 +2,7 @@
  * 역할별 권한 — 화면 숨김과 서버 검사가 이 표 하나를 같이 본다.
  * 적용 범위(2026-11-03): 회사 정보·센터·화주사·사용자·역할·계정 관리(잠금 해제·비밀번호 초기화).
  * 2026-11-04: 품목·품목 등록 요청·휴무일 추가. 같은 날 ASN 등록 추가. 2026-11-05: 상차등록(PDA)·입고검수(PDA) 추가. 사용자는 역할을 여러 개 가질 수 있다(roles 배열).
- * 나머지 기준정보 메뉴는 Sol이 권한 매트릭스를 정한 뒤 반영한다 (지금은 Web 역할 모두 기존처럼 사용).
+ * 사유 코드·운영 설정: 3PL 관리자·운영담당 조회, 수정은 3PL 관리자만.
  */
 import { ROLE_META, type UserRole } from "./master";
 
@@ -15,6 +15,8 @@ export type Resource =
   | "items"
   | "itemRequests"
   | "holidays"
+  | "codes"
+  | "settings"
   | "master"
   | "approval"
   | "planEntry"
@@ -43,6 +45,8 @@ const MATRIX: Record<Resource, Record<Op, readonly UserRole[]>> = {
   itemRequests: { view: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"], edit: ["SHIPPER_STAFF"] },
   // 휴무일: 센터 운영 정보라 3PL만 등록·삭제
   holidays: { view: ["TPL_ADMIN", "TPL_OPERATOR", "SHIPPER_STAFF"], edit: ["TPL_ADMIN", "TPL_OPERATOR"] },
+  codes: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: ["TPL_ADMIN"] },
+  settings: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: ["TPL_ADMIN"] },
   // 승인 대기: 3PL 관리자·운영담당만 (화주사 메뉴 비노출). 승인·반려는 상세를 보고 단건만
   approval: { view: ["TPL_ADMIN", "TPL_OPERATOR"], edit: ["TPL_ADMIN", "TPL_OPERATOR"] },
   // 입고예정 등록·수정·취소: 화주사 담당자 (승인 전 상태만 — plan-rules.ts)
@@ -100,6 +104,8 @@ export function resourceOfPath(href: string): Resource {
   if (href.startsWith("/master/items")) return "items";
   if (href.startsWith("/master/item-requests")) return "itemRequests";
   if (href.startsWith("/master/holidays")) return "holidays";
+  if (href.startsWith("/master/codes")) return "codes";
+  if (href.startsWith("/master/settings")) return "settings";
   if (href.startsWith("/plans/approval")) return "approval";
   if (href.startsWith("/plans/entry")) return "planEntry";
   if (href.startsWith("/plans/inquiry")) return "planInquiry";

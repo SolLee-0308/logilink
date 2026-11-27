@@ -12,7 +12,7 @@ import { ASN_OPEN, DISTRIBUTABLE_PLAN, remainingBase, toLineUnitQty, type AsnSta
 import type { ItemUnit } from "@/domain/master";
 import { todayKst } from "@/lib/format";
 import { getLoadOfAsn, listUnorderedLoads } from "@/server/loads/queries";
-import { getRcvOfLoad } from "@/server/rcv/queries";
+import { allMissingAsnIds, allMissingLoadIds, getRcvOfLoad } from "@/server/rcv/queries";
 import { departureOf } from "@/domain/load-rules";
 import type { AsnDetail, AsnOptions, AsnRow, AsnTab, DistPlan, LoadOrderPrint } from "@/features/asn/types";
 
@@ -46,12 +46,14 @@ export async function distributedByLine(planLineIds: number[], tx: Pick<typeof d
 /** 무지시 상차 실적을 ASN 목록 행으로 — 작업중은 상차중, 상차완료는 검수 대기, 검수 확정은 입고완료로 보인다 */
 async function unorderedRows(scope: Prisma.LoadWhereInput): Promise<AsnRow[]> {
   const loads = await listUnorderedLoads(scope);
+  const missing = await allMissingLoadIds(loads.filter((l) => l.rcvs[0]?.confirmedAt).map((l) => l.id));
   return loads.map((l) => {
     const received = l.rcvs[0]?.confirmedAt ?? null;
     return {
     kind: "load" as const,
     key: `load-${l.id}`,
     href: `/plans/loads/${l.id}`,
+    allMissing: !!received && missing.has(l.id),
     id: l.id,
     clientId: l.clientId,
     clientName: l.client.name,
@@ -136,10 +138,12 @@ async function listAsnRows(where: Prisma.AsnWhereInput, base: string): Promise<A
       lines: { select: { unit: true, qty: true, plan: { select: { planNo: true } }, item: { select: { code: true, name: true } } } },
     },
   });
+  const missing = await allMissingAsnIds(asns.filter((a) => a.status === "RECEIVED").map((a) => a.id));
   return asns.map((a) => ({
     kind: "asn" as const,
     key: `asn-${a.id}`,
     href: `${base}/${a.id}`,
+    allMissing: a.status === "RECEIVED" && missing.has(a.id),
     id: a.id,
     clientId: a.clientId,
     clientName: a.client.name,
@@ -258,10 +262,12 @@ async function loadAsnDetail(where: Prisma.AsnWhereInput): Promise<AsnDetail | n
   const cancel = a.histories.findLast((h) => h.action === "CANCEL");
   const load = await getLoadOfAsn(a.id);
   const rcv = load ? await getRcvOfLoad(load.id) : null;
+  const allMissing = a.status === "RECEIVED" && !!load && (await allMissingLoadIds([load.id])).has(load.id);
   return {
     id: a.id,
     asnNo: a.asnNo,
     status: a.status,
+    allMissing,
     version: a.version,
     clientName: a.client.name,
     centerId: a.centerId,

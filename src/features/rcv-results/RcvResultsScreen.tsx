@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Tag } from "@/components/ui/Badges";
+import { ALL_MISSING_LABEL } from "@/domain/rcv-rules";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ChipGroup, FilterBar, FilterField, SearchInput } from "@/components/ui/FilterBar";
 import { Select } from "@/components/ui/Form";
@@ -151,7 +152,19 @@ export function RcvResultsScreen({
     { key: "ret", header: "반송", align: "right", render: (r) => (r.returnBaseQty ? <span className="mono">{n(r.returnBaseQty)}</span> : <span className="muted">–</span>) },
     ...(confirmed
       ? [
-          { key: "issue", header: "차이", render: (r: RcvResultRow) => (r.issueCount ? <Tag tone="warn">{r.issueCount.toLocaleString()}품목</Tag> : <span className="muted">–</span>) },
+          {
+            key: "issue",
+            header: "차이",
+            // 전량 미도착(Q2·D32)은 차이 품목 수 대신 구분 표시 — 정상입고 0, 입고예정 잔량 유지
+            render: (r: RcvResultRow) =>
+              r.allMissing ? (
+                <Tag tone="neutral">{ALL_MISSING_LABEL}</Tag>
+              ) : r.issueCount ? (
+                <Tag tone="warn">{r.issueCount.toLocaleString()}품목</Tag>
+              ) : (
+                <span className="muted">–</span>
+              ),
+          },
           {
             key: "close",
             header: "일마감",

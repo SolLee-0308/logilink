@@ -945,10 +945,11 @@ const codeSchema = z.object({
 });
 
 export async function saveCommonCode(input: z.input<typeof codeSchema>): Promise<ActionResult<{ id: number }>> {
+  const me = await actorFor("codes", "edit");
+  if (!me) return forbidden();
   const p = codeSchema.safeParse(input);
   if (!p.success) return invalid(p.error);
   const v = { ...p.data, appliesTo: p.data.groupCode === LOAD_DIFF_GROUP ? DIFF_STATES.filter((s) => p.data.appliesTo.includes(s)) : [] };
-  const me = await getActor();
   const actor = me.name;
 
   return run(() =>
@@ -1082,10 +1083,11 @@ const settingSchema = z.object({
 });
 
 export async function saveSetting(input: z.input<typeof settingSchema>): Promise<ActionResult> {
+  const me = await actorFor("settings", "edit");
+  if (!me) return forbidden();
   const p = settingSchema.safeParse(input);
   if (!p.success) return invalid(p.error);
   const v = p.data;
-  const me = await getActor();
   const actor = me.name;
 
   return run(() =>
